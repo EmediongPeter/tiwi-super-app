@@ -87,6 +87,67 @@ body {
   animation: toast-slide-in 0.3s ease-out;
 }
 
+/* Hero banner slide-in animation */
+@keyframes hero-slide-in-from-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.hero-slide-in {
+  animation: hero-slide-in-from-right 0.4s ease-out;
+}
+
+/* Spotlight slide-in animation */
+@keyframes spotlight-slide-in-from-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.spotlight-slide-in {
+  animation: spotlight-slide-in-from-right 0.4s ease-out;
+}
+
+/* Smart Markets Marquee Animations */
+@keyframes smart-markets-marquee-left-to-right {
+  from {
+    transform: translateX(-33.333%);
+  }
+  to {
+    transform: translateX(0%);
+  }
+}
+
+@keyframes smart-markets-marquee-right-to-left {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(-33.333%);
+  }
+}
+
+.smart-markets-row-top {
+  animation: smart-markets-marquee-left-to-right 40s linear infinite;
+  will-change: transform;
+}
+
+.smart-markets-row-bottom {
+  animation: smart-markets-marquee-right-to-left 40s linear infinite;
+  will-change: transform;
+}
+
 /* Bottom sheet slide animations */
 @keyframes slide-in-from-bottom {
   from {
@@ -146,5 +207,145 @@ body {
 }
 
 .token-list-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2a3229;
+}
+
+/* Custom scrollbar styling for market table - Tiwi Protocol design */
+.market-table-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #1f261e #0b0f0a;
+}
+
+.market-table-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  display: block !important;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-track {
+  background: #0b0f0a;
+  border-radius: 4px;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-thumb {
+  background: #1f261e;
+  border-radius: 4px;
+  border: 1px solid #0b0f0a;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2a3229;
+  border-color: #1f261e;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-thumb:active {
+  background: #3a4239;
+}
+
+/* Horizontal scrollbar styling */
+.market-table-scrollbar::-webkit-scrollbar:horizontal {
+  height: 8px;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-track:horizontal {
+  background: #0b0f0a;
+  border-radius: 4px;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-thumb:horizontal {
+  background: #1f261e;
+  border-radius: 4px;
+  border: 1px solid #0b0f0a;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-thumb:horizontal:hover {
+  background: #2a3229;
+  border-color: #1f261e;
+}
+
+.market-table-scrollbar::-webkit-scrollbar-thumb:horizontal:active {
+  background: #3a4239;
+}
+
+/* Mobile Menu Drawer Animations */
+@keyframes mobile-menu-backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mobile-menu-backdrop-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes mobile-menu-drawer-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes mobile-menu-drawer-slide-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.mobile-menu-backdrop-fade-in {
+  animation: mobile-menu-backdrop-fade-in 0.3s ease-out forwards;
+}
+
+.mobile-menu-backdrop-fade-out {
+  animation: mobile-menu-backdrop-fade-out 0.3s ease-in forwards;
+}
+
+.mobile-menu-drawer-initial {
+  transform: translateX(100%);
+}
+
+.mobile-menu-drawer-slide-in {
+  animation: mobile-menu-drawer-slide-in 0.3s ease-out forwards;
+  will-change: transform;
+}
+
+.mobile-menu-drawer-slide-out {
+  animation: mobile-menu-drawer-slide-out 0.3s ease-in forwards;
+  will-change: transform;
+}
+
+/* Custom scrollbar for mobile menu */
+.mobile-menu-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #1f261e #010501;
+}
+
+.mobile-menu-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  display: block !important;
+}
+
+.mobile-menu-scrollbar::-webkit-scrollbar-track {
+  background: #010501;
+}
+
+.mobile-menu-scrollbar::-webkit-scrollbar-thumb {
+  background: #1f261e;
+  border-radius: 3px;
+}
+
+.mobile-menu-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #2a3229;
 }

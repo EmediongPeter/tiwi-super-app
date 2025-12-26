@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Link from "next/link";
@@ -7,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import ConnectWalletModal from "@/components/wallet/connect-wallet-modal";
 import WalletConnectedToast from "@/components/wallet/wallet-connected-toast";
+import { MobileMenuDrawer } from "./mobile-menu-drawer";
 
 interface NavItem {
   label: string;
@@ -24,6 +26,7 @@ const navItems: NavItem[] = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const {
     isModalOpen,
     isToastOpen,
@@ -44,13 +47,20 @@ export default function Navbar() {
   };
 
   const handleMenu = () => {
-    // TODO: Implement mobile menu drawer
-    console.log("Menu clicked");
+    if (isMenuOpen) {
+      setIsMenuOpen(false);
+    } else {
+      setIsMenuOpen(true);
+    }
+  };
+
+  const handleCloseMenu = () => {
+    setIsMenuOpen(false);
   };
 
   return (
     <nav className="bg-[#010501] border-b border-[#1f261e] shadow-[0px_8px_48px_-12px_rgba(177,241,40,0.16)]">
-      <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-4 sm:py-5 md:py-6">
+      <div className="2xl:container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-4 sm:py-5 md:py-3">
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-1.5 sm:gap-2">
@@ -119,16 +129,34 @@ export default function Navbar() {
             </Button>
             <button
               onClick={handleMenu}
-              className="bg-[#081f02] p-2.5 rounded-full hover:opacity-90 transition-opacity"
-              aria-label="Menu"
+              className="bg-[#081f02] p-2.5 rounded-full hover:opacity-90 transition-opacity cursor-pointer"
+              aria-label={isMenuOpen ? "Close menu" : "Open menu"}
             >
-              <Image
-                src="/assets/icons/menu.svg"
-                alt="Menu"
-                width={20}
-                height={20}
-                className="h-5 w-5"
-              />
+              {isMenuOpen ? (
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  className="w-5 h-5"
+                >
+                  <path
+                    d="M12 4L4 12M4 4L12 12"
+                    stroke="#b5b5b5"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                <Image
+                  src="/assets/icons/menu.svg"
+                  alt="Menu"
+                  width={20}
+                  height={20}
+                  className="h-5 w-5"
+                />
+              )}
             </button>
           </div>
         </div>
@@ -150,6 +178,12 @@ export default function Navbar() {
           duration={5000}
         />
       )}
+
+      {/* Mobile Menu Drawer */}
+      <MobileMenuDrawer
+        open={isMenuOpen}
+        onClose={handleCloseMenu}
+      />
     </nav>
   );
 }

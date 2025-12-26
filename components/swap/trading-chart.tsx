@@ -32,7 +32,7 @@ export default function TradingChart({
         </div>
       </div>
       {/* Chart */}
-      <div className="h-[320px] lg:h-[400px] xl:h-[450px] 2xl:h-[500px] bg-[#0b0f0a] flex items-center justify-center overflow-hidden">
+      <div className="h-[320px] lg:h-[460px] xl:h-[450px] 2xl:h-[500px] bg-[#0b0f0a] flex items-center justify-center overflow-hidden">
         <Image
           src="/assets/images/tradingview.svg"
           alt="Trading Chart"

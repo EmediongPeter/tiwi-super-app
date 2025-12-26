@@ -2,6 +2,7 @@
 
 import ChainRow from "./chain-row";
 import SearchInput from "@/components/ui/search-input";
+import { sortChains } from "@/lib/shared/utils/chains";
 import type { Chain } from "@/lib/frontend/types/tokens";
 
 interface ChainSelectorPanelProps {
@@ -23,6 +24,9 @@ export default function ChainSelectorPanel({
   isLoading = false,
   error = null,
 }: ChainSelectorPanelProps) {
+  // Sort chains: Ethereum first, then BNB Chain, then others
+  const sortedChains = sortChains(chains);
+  
   return (
     <div className="flex flex-col items-start relative shrink-0 h-full w-full overflow-hidden">
       {/* Search Bar */}
@@ -75,7 +79,7 @@ export default function ChainSelectorPanel({
             />
 
             {/* Other Chains - Filter out "all" from the list */}
-            {chains
+            {sortedChains
               .filter((chain) => chain.id !== "all")
               .map((chain) => (
                 <ChainRow
@@ -90,7 +94,7 @@ export default function ChainSelectorPanel({
 
             {/* Empty State (if search returns no results) */}
             {searchQuery.trim() &&
-              chains.filter((chain) => chain.id !== "all").length === 0 && (
+              sortedChains.filter((chain) => chain.id !== "all").length === 0 && (
                 <div className="flex flex-col items-center justify-center px-6 py-12 w-full">
                   <p className="text-[#7c7c7c] font-medium text-base text-center">
                     No chains found

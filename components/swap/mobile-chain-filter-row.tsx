@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { sortChains } from "@/lib/shared/utils/chains";
 import type { Chain } from "@/lib/frontend/types/tokens";
 
 interface MobileChainFilterRowProps {
@@ -16,8 +17,12 @@ export default function MobileChainFilterRow({
   onChainSelect,
   onMoreClick,
 }: MobileChainFilterRowProps) {
-  // Get top 4-5 chains for quick access (excluding "all")
-  const topChains = chains.filter((chain) => chain.id !== "all").slice(0, 4);
+  // Sort chains: Ethereum first, then BNB Chain, then others
+  const sortedChains = sortChains(chains);
+  
+  // Get top 4 chains for quick access (excluding "all")
+  // This will show Ethereum, BNB Chain, and 2 others
+  const topChains = sortedChains.filter((chain) => chain.id !== "all").slice(0, 4);
 
   return (
     <div className="flex items-center gap-2 px-4 sm:px-6 py-2 overflow-x-auto scrollbar-hide">

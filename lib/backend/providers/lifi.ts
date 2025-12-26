@@ -27,6 +27,9 @@ export class LiFiProvider extends BaseTokenProvider {
     try {
       const limit = params.limit ?? 30; // Default limit: 30
       
+      // Import priority chains to check if chain is supported by LiFi
+      const { PRIORITY_EVM_CHAINS } = await import('@/lib/backend/registry/chain-resolver');
+      
       // Determine which chains to fetch
       let lifiChainIds: number[] = [];
       
@@ -34,17 +37,32 @@ export class LiFiProvider extends BaseTokenProvider {
         // Single chain request
         const chainId = typeof params.chainId === 'number' ? params.chainId : parseInt(String(params.chainId), 10);
         if (!isNaN(chainId)) {
-          lifiChainIds = [chainId];
+          // Check if chain is in static registry or priority list
+          const canonicalChain = getCanonicalChain(chainId);
+          if (canonicalChain) {
+            // Use static registry mapping
+            const lifiChainId = this.getChainId(canonicalChain);
+            if (lifiChainId && typeof lifiChainId === 'number') {
+              lifiChainIds.push(lifiChainId);
+            }
+          } else if (PRIORITY_EVM_CHAINS.has(chainId)) {
+            // Priority chain: use chainId directly as LiFi chain ID
+            lifiChainIds.push(chainId);
+          }
         }
       } else if (params.chainIds && params.chainIds.length > 0) {
         // Multi-chain request: map canonical chain IDs to LiFi chain IDs
         for (const canonicalChainId of params.chainIds) {
+          // First try static registry
           const canonicalChain = getCanonicalChain(canonicalChainId);
-          if (!canonicalChain) continue;
-          
-          const lifiChainId = this.getChainId(canonicalChain);
-          if (lifiChainId && typeof lifiChainId === 'number') {
-            lifiChainIds.push(lifiChainId);
+          if (canonicalChain) {
+            const lifiChainId = this.getChainId(canonicalChain);
+            if (lifiChainId && typeof lifiChainId === 'number') {
+              lifiChainIds.push(lifiChainId);
+            }
+          } else if (PRIORITY_EVM_CHAINS.has(canonicalChainId)) {
+            // Priority chain: use chainId directly as LiFi chain ID
+            lifiChainIds.push(canonicalChainId);
           }
         }
       } else {
@@ -106,7 +124,9 @@ export class LiFiProvider extends BaseTokenProvider {
       }
       
       // Single API call for all chains
+      // console.log("🚀 ~ LiFiProvider ~ fetchTokensFromLiFi ~ requestParams:", requestParams)
       const response = await getTokens(requestParams);
+      // console.log("🚀 ~ LiFiProvider ~ fetchTokensFromLiFi ~ response:", response)
       
       // LiFi returns: { tokens: { [chainId]: Token[] } }
       // Collect all tokens from all chains
@@ -174,17 +194,9 @@ export class LiFiProvider extends BaseTokenProvider {
 
   async fetchChains(): Promise<ProviderChain[]> {
     try {
-      // Priority EVM chain IDs to fetch (from user's list)
-      const priorityEVMChainIds = new Set([
-        1, 42161, 8453, 792703809, 2741, 888888888, 69000, 33139, 466, 42170,
-        7897, 43114, 8333, 80094, 8253038, 81457, 56, 60808, 288, 42220,
-        21000000, 25, 7560, 666666666, 9286185, 5064014, 747, 984122, 33979,
-        100, 1625, 43419, 43111, 999, 1337, 57073, 747474, 59144, 1135, 169,
-        5000, 1088, 34443, 143, 2818, 42018, 10, 1424, 9745, 98866, 137, 1101,
-        7869, 1380012617, 690, 2020, 1996, 534352, 1329, 360, 5031, 1868, 146,
-        9286186, 988, 1514, 55244, 5330, 1923, 510003, 167000, 728126428, 130,
-        480, 660279, 543210, 48900, 324, 7777777
-      ]);
+      // Import priority chain IDs from chain resolver (single source of truth)
+      const { PRIORITY_EVM_CHAINS } = await import('@/lib/backend/registry/chain-resolver');
+      const priorityEVMChainIds = PRIORITY_EVM_CHAINS;
       
       // Fetch EVM and SVM chains from LiFi (server-side filtering)
       const allChains = await getChains({ chainTypes: [ChainType.EVM, ChainType.SVM, ChainType.MVM] });

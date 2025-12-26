@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layout/navbar";
 import StatusBar from "@/components/layout/status-bar";
+import GlobalBackground from "@/components/layout/global-background";
 import { QueryProvider } from "@/lib/frontend/providers/query-provider";
 import { PrefetchProvider } from "@/components/prefetch/prefetch-provider";
 
@@ -38,9 +39,15 @@ export default function RootLayout({
         <QueryProvider>
           <PrefetchProvider>
             <div className="min-h-screen bg-[#010501] relative">
-              <Navbar />
-              <StatusBar />
-              {children}
+              {/* Global Background System - Applied to all pages */}
+              <GlobalBackground />
+              
+              {/* Content Layers - Above background */}
+              <div className="relative z-10">
+                <Navbar />
+                <StatusBar />
+                {children}
+              </div>
             </div>
           </PrefetchProvider>
         </QueryProvider>

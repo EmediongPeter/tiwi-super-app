@@ -1,0 +1,41 @@
+<svg width="1100" height="180" viewBox="0 0 1100 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="markets-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#010501"/>
+      <stop offset="0.4" stop-color="#0B0F0A"/>
+      <stop offset="1" stop-color="#0D3600"/>
+    </linearGradient>
+    <linearGradient id="markets-line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3FEA9B"/>
+      <stop offset="1" stop-color="#B1F128"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="1099" height="179" rx="16" fill="url(#markets-bg)" stroke="#1F261E"/>
+  <text x="84" y="59" fill="#CCCCCC" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="16" font-weight="600">
+    20+ smart markets live
+  </text>
+  <text x="72" y="98" fill="#FFFFFF" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="28" font-weight="700">
+    Route volume like a pro
+  </text>
+  <text x="72" y="129" fill="#B5B5B5" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="16" font-weight="500">
+    Tiwi scans chains, pools and fees to keep your swaps efficient.
+  </text>
+  <g transform="translate(780,36)">
+    <rect x="0" y="14" width="260" height="106" rx="14" fill="#010501" stroke="#1F261E"/>
+    <text x="16" y="40" fill="#B5B5B5" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="12" font-weight="500">
+      24h Volume (USD)
+    </text>
+    <text x="16" y="60" fill="#FFFFFF" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="18" font-weight="600">
+      $32.4M
+    </text>
+    <text x="116" y="60" fill="#3FEA9B" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="12" font-weight="500">
+      +12.3%
+    </text>
+    <path d="M16 92C36 72 58 70 82 86C104 100 128 96 150 82C172 68 196 68 220 80C234 88 246 88 256 84" stroke="url(#markets-line)" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <circle cx="82" cy="86" r="4" fill="#3FEA9B"/>
+    <circle cx="150" cy="82" r="4" fill="#B1F128"/>
+    <circle cx="220" cy="80" r="4" fill="#3FEA9B"/>
+  </g>
+</svg>
+
+

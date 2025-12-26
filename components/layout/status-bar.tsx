@@ -87,8 +87,8 @@ export default function StatusBar({
   return (
     <div className="border-b border-[#1f261e] bg-[#010501]">
       {/* Desktop Status Bar */}
-      <div className="hidden md:block">
-        <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-3 sm:py-3.5 md:py-4">
+      <div className="hidden lg:block">
+        <div className="2xl:container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-3 sm:py-3.5 md:py-1">
           <div className="flex flex-wrap items-center gap-3 sm:gap-4 md:gap-6 lg:gap-8 xl:gap-10">
             {/* Active Chains */}
             <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 lg:gap-4 flex-wrap">
@@ -169,7 +169,7 @@ export default function StatusBar({
       </div>
 
       {/* Mobile Status Bar with Auto-Scrolling Animation */}
-      <div className="md:hidden overflow-hidden relative">
+      <div className="lg:hidden overflow-hidden relative">
         <div className="flex whitespace-nowrap animate-marquee">
           <StatusContent />
           <StatusContent prefix="dup1" />

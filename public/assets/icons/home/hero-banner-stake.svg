@@ -1,0 +1,30 @@
+<svg width="1100" height="180" viewBox="0 0 1100 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="stake-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0D3600"/>
+      <stop offset="0.35" stop-color="#009288"/>
+      <stop offset="1" stop-color="#010501"/>
+    </linearGradient>
+    <radialGradient id="stake-glow" cx="0.5" cy="0" r="0.9">
+      <stop offset="0" stop-color="#B1F128" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#B1F128" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="1099" height="179" rx="16" fill="url(#stake-bg)" stroke="#1F261E"/>
+  <circle cx="870" cy="70" r="90" fill="url(#stake-glow)"/>
+  <text x="84" y="59" fill="#CCCCCC" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="16" font-weight="600">
+    Stake TWC, earn yield
+  </text>
+  <text x="72" y="98" fill="#FFFFFF" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="28" font-weight="700">
+    Auto-compound across chains
+  </text>
+  <text x="72" y="129" fill="#B5B5B5" font-family="Manrope, system-ui, -apple-system, BlinkMacSystemFont" font-size="16" font-weight="500">
+    Let Tiwi route rewards from the best pools in DeFi.
+  </text>
+  <g transform="translate(820,40)">
+    <circle cx="50" cy="50" r="42" fill="#010501" stroke="#B1F128" stroke-width="4"/>
+    <circle cx="50" cy="50" r="26" fill="#0B0F0A" stroke="#1F261E" stroke-width="2"/>
+    <path d="M50 32L62 45L57 49L50 42L43 49L38 45L50 32Z" fill="#B1F128"/>
+    <path d="M44 54H56V58H44V54Z" fill="#B1F128"/>
+  </g>
+</svg>

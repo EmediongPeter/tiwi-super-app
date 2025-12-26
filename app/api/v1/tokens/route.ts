@@ -48,42 +48,51 @@ export async function GET(req: NextRequest) {
       const chainValues = chainsParam.split(',').map(id => id.trim());
       
       // Resolve each chain identifier to canonical chain ID
-      const { getCanonicalChain, getCanonicalChainByProviderId } = await import('@/lib/backend/registry/chains');
+      const { resolveChain, isChainSupported } = await import('@/lib/backend/registry/chain-resolver');
+      const { getCanonicalChainByProviderId } = await import('@/lib/backend/registry/chains');
       
-      chainIds = chainValues
-        .map(chainIdentifier => {
-          // Try parsing as number first (canonical ID)
-          const numericId = parseInt(chainIdentifier, 10);
-          if (!isNaN(numericId)) {
-            // Check if it's a valid canonical chain ID
-            const chain = getCanonicalChain(numericId);
-            if (chain) return numericId;
-          }
-          
-          // If not a valid numeric ID, try looking up by provider-specific string ID
-          // This supports future Cosmos chains like 'solana-mainnet-beta', 'cosmoshub-4'
-          // Try common providers that use string IDs
-          const providers: Array<'squid' | 'dexscreener'> = ['squid', 'dexscreener'];
-          for (const provider of providers) {
-            const chain = getCanonicalChainByProviderId(provider, chainIdentifier);
-            if (chain) return chain.id;
-          }
-          
-          return null;
-        })
-        .filter((id): id is number => id !== null);
+      const resolvedChainIds: number[] = [];
       
-      // If no valid chain IDs found, return error
-      if (chainIds.length === 0) {
+      for (const chainIdentifier of chainValues) {
+        // Try parsing as number first (canonical ID or LiFi chain ID)
+        const numericId = parseInt(chainIdentifier, 10);
+        if (!isNaN(numericId)) {
+          // Check if chain is supported (static registry or priority list)
+          if (isChainSupported(numericId)) {
+            // Resolve to canonical chain (handles both static and dynamic chains)
+            const chain = await resolveChain(numericId);
+            if (chain) {
+              resolvedChainIds.push(chain.id);
+              continue;
+            }
+          }
+        }
+        
+        // If not a valid numeric ID, try looking up by provider-specific string ID
+        // This supports future Cosmos chains like 'solana-mainnet-beta', 'cosmoshub-4'
+        const providers: Array<'squid' | 'dexscreener'> = ['squid', 'dexscreener'];
+        for (const provider of providers) {
+          const chain = getCanonicalChainByProviderId(provider, chainIdentifier);
+          if (chain) {
+            resolvedChainIds.push(chain.id);
+            break;
+          }
+        }
+      }
+      
+      // If no valid chain IDs found, return user-friendly error
+      if (resolvedChainIds.length === 0) {
         return NextResponse.json(
           { 
-            error: 'Invalid chains parameter. Must be valid chain IDs (numbers) or chain identifiers (strings like "solana-mainnet-beta").',
+            error: `Unable to find supported chains for: ${chainValues.join(', ')}. Please check the chain IDs and try again.`,
             tokens: [],
             total: 0,
           },
           { status: 400 }
         );
       }
+      
+      chainIds = resolvedChainIds;
     }
     
     // Parse limit
@@ -93,13 +102,21 @@ export async function GET(req: NextRequest) {
     return await handleTokenRequest({ chainIds, query, limit });
   } catch (error: any) {
     console.error('[API] /api/v1/tokens GET error:', error);
+    
+    // Determine user-friendly error message
+    const errorMessage = error?.message?.includes('not supported') 
+      ? 'One or more chains are not supported'
+      : error?.message?.includes('Invalid chains')
+      ? error.message
+      : 'Unable to load tokens. Please try again later.';
+    
     return NextResponse.json(
       { 
-        error: error?.message || 'Failed to fetch tokens', 
+        error: errorMessage,
         tokens: [],
         total: 0,
       },
-      { status: error?.message?.includes('not supported') ? 400 : 500 }
+      { status: error?.message?.includes('not supported') || error?.message?.includes('Invalid chains') ? 400 : 500 }
     );
   }
 }
@@ -122,9 +139,15 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('[API] /api/v1/tokens POST error:', error);
+    
+    // Determine user-friendly error message
+    const errorMessage = error?.message?.includes('not supported') 
+      ? 'One or more chains are not supported'
+      : 'Unable to load tokens. Please try again later.';
+    
     return NextResponse.json(
       { 
-        error: error?.message || 'Failed to fetch tokens', 
+        error: errorMessage,
         tokens: [],
         total: 0,
       },

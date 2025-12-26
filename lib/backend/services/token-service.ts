@@ -2,14 +2,21 @@
  * Token Service
  * 
  * Business logic layer for token fetching.
- * Phase 1.1: Uses real LiFi provider, with fallback to mocked data.
+ * Phase 1.2: Uses TokenAggregationService for multi-provider support.
  */
 
 import { getCanonicalChain, getCanonicalChains, getCanonicalChainByProviderId } from '@/lib/backend/registry/chains';
+import { resolveChain, isChainSupported } from '@/lib/backend/registry/chain-resolver';
+
 import { getChainBadge } from '@/lib/backend/registry/chains';
+import { getTokenAggregationService } from './token-aggregation-service';
 import { LiFiProvider } from '@/lib/backend/providers/lifi';
-import type { NormalizedToken, ChainDTO } from '@/lib/backend/types/backend-tokens';
+import type { NormalizedToken, ChainDTO, FetchTokensParams } from '@/lib/backend/types/backend-tokens';
 import { MOCK_TOKENS } from '@/lib/backend/data/mock-tokens';
+import { getFeaturedTokens, getFeaturedTokensForChains } from '@/lib/backend/data/featured-tokens';
+
+// Initialize providers (must be called before using aggregation service)
+import '@/lib/backend/providers/init';
 
 // ============================================================================
 // Token Service Class
@@ -17,6 +24,7 @@ import { MOCK_TOKENS } from '@/lib/backend/data/mock-tokens';
 
 export class TokenService {
   private lifiProvider: LiFiProvider;
+  private aggregationService = getTokenAggregationService();
 
   constructor() {
     this.lifiProvider = new LiFiProvider();
@@ -24,43 +32,56 @@ export class TokenService {
 
   /**
    * Get all tokens across all chains
+   * 
+   * Fetches tokens from major supported chains with balanced distribution.
+   * Prioritizes BNB Chain tokens and ensures even distribution across chains.
    */
   async getAllTokens(limit: number = 30): Promise<NormalizedToken[]> {
     try {
-      // Fetch tokens from all supported chains using LiFi
-      const canonicalChains = getCanonicalChains();
-      const canonicalChainIds = canonicalChains
-        .map(chain => chain.id)
-        .filter(id => {
-          const chain = getCanonicalChain(id);
-          return chain && this.lifiProvider.getChainId(chain);
-        });
+      // Define major chains to include (prioritize BNB Chain)
+      // Order: BNB Chain first, then Ethereum, then others
+      const majorChainIds = [
+        56,    // BNB Chain (priority)
+        1,     // Ethereum
+        137,   // Polygon
+        42161, // Arbitrum
+        10,    // Optimism
+        8453,  // Base
+        43114, // Avalanche
+        7565164, // Solana
+      ];
 
-      if (canonicalChainIds.length === 0) {
+      // Filter to only chains that LiFi supports
+      const supportedChainIds = majorChainIds.filter(id => {
+        const chain = getCanonicalChain(id);
+        return chain && this.lifiProvider.getChainId(chain);
+      });
+
+      if (supportedChainIds.length === 0) {
         return MOCK_TOKENS.slice(0, limit);
       }
 
-      // Use multi-chain fetch with mixing
-      const providerTokens = await this.lifiProvider.fetchTokens({
-        chainIds: canonicalChainIds,
+      const featuredTokens = getFeaturedTokensForChains(supportedChainIds);
+      const featuredAddresses = new Set(featuredTokens.map(t => `${t.chainId}:${t.address.toLowerCase()}`));
+
+      // Fetch tokens from aggregation service
+      // This will trigger balanced mixing (BNB prioritized, max 3 per chain, 6 for BNB)
+      const tokens = await this.aggregationService.searchTokens({
+        chainIds: supportedChainIds,
         limit: limit,
       });
-
-      // Normalize tokens
-      const tokens: NormalizedToken[] = [];
-      for (const providerToken of providerTokens) {
-        const chainId = typeof providerToken.chainId === 'number' 
-          ? providerToken.chainId 
-          : parseInt(String(providerToken.chainId), 10);
-        
-        const canonicalChain = getCanonicalChainByProviderId('lifi', chainId);
-        if (canonicalChain) {
-          tokens.push(this.lifiProvider.normalizeToken(providerToken, canonicalChain));
-        }
-      }
+      
+      // Remove featured tokens from regular results (to avoid duplicates)
+      const regularTokens = tokens.filter(t => 
+        !featuredAddresses.has(`${t.chainId}:${t.address.toLowerCase()}`)
+      );
+      
+      // Combine: featured tokens first, then regular tokens
+      // Featured tokens (like TWC) will appear at the top
+      const allTokens = [...featuredTokens, ...regularTokens].slice(0, limit);
 
       // Return real tokens if available, otherwise fallback to mock data
-      return tokens.length > 0 ? tokens : MOCK_TOKENS.slice(0, limit);
+      return allTokens.length > 0 ? allTokens : MOCK_TOKENS.slice(0, limit);
     } catch (error: any) {
       console.error('[TokenService] Error fetching all tokens:', error);
       // Fallback to mock data on error
@@ -72,36 +93,50 @@ export class TokenService {
    * Get tokens for a specific chain
    */
   async getTokensByChain(chainId: number, limit: number = 30): Promise<NormalizedToken[]> {
-    // Validate chain ID against registry
-    const chain = getCanonicalChain(chainId);
+    // Validate chain ID (supports both static and dynamic chains)
+    
+    // Check if chain is supported first (fast check)
+    if (!isChainSupported(chainId)) {
+      throw new Error(`Chain ID ${chainId} is not supported`);
+    }
+    
+    // Resolve chain (handles both static and dynamic resolution)
+    const chain = await resolveChain(chainId);
     if (!chain) {
       throw new Error(`Chain ID ${chainId} is not supported`);
     }
 
     try {
-      // Fetch tokens from LiFi for this chain
-      const lifiChainId = this.lifiProvider.getChainId(chain);
-      if (lifiChainId && typeof lifiChainId === 'number') {
-        const providerTokens = await this.lifiProvider.fetchTokens({
-          chainId: lifiChainId,
-          limit: limit,
-        });
+      // Get featured tokens for this chain (will appear first)
+      const featuredTokens = getFeaturedTokens(chainId);
+      const featuredAddresses = new Set(featuredTokens.map(t => t.address.toLowerCase()));
+      
+      // Fetch tokens from aggregation service
+      const tokens = await this.aggregationService.searchTokens({
+        chainIds: [chainId],
+        limit: limit,
+      });
+      
+      // Remove featured tokens from regular results (to avoid duplicates)
+      const regularTokens = tokens.filter(t => !featuredAddresses.has(t.address.toLowerCase()));
+      
+      // Combine: featured tokens first, then regular tokens
+      const allTokens = [...featuredTokens, ...regularTokens].slice(0, limit);
 
-        const tokens = providerTokens.map(token => 
-          this.lifiProvider.normalizeToken(token, chain)
-        );
-
-        // Return real tokens if available, otherwise fallback to mock data
-        if (tokens.length > 0) {
-          return tokens;
-        }
+      // Return real tokens if available, otherwise fallback to mock data
+      if (allTokens.length > 0) {
+        return allTokens;
       }
     } catch (error: any) {
       console.error(`[TokenService] Error fetching tokens for chain ${chainId}:`, error);
       // Fallback to mock data on error
     }
 
-    // Fallback to mock data
+    // Fallback: return featured tokens if available, otherwise mock data
+    const featuredTokens = getFeaturedTokens(chainId);
+    if (featuredTokens.length > 0) {
+      return featuredTokens;
+    }
     return MOCK_TOKENS.filter(token => token.chainId === chainId).slice(0, limit);
   }
 
@@ -109,43 +144,55 @@ export class TokenService {
    * Get tokens for multiple chains (with mixing)
    */
   async getTokensByChains(chainIds: number[], limit: number = 30): Promise<NormalizedToken[]> {
-    // Validate all chain IDs
-    const validChains = chainIds
-      .map(id => getCanonicalChain(id))
-      .filter((chain): chain is NonNullable<typeof chain> => chain !== null);
+    // Validate and resolve all chain IDs (supports both static and dynamic chains)
+    const { resolveChains, isChainSupported } = await import('@/lib/backend/registry/chain-resolver');
+    
+    // Filter to only supported chains
+    const supportedChainIds = chainIds.filter(id => isChainSupported(id));
+    
+    if (supportedChainIds.length === 0) {
+      throw new Error('No valid chain IDs provided');
+    }
+    
+    // Resolve all chains in parallel
+    const resolvedChains = await resolveChains(supportedChainIds);
+    const validChains = Array.from(resolvedChains.values());
 
     if (validChains.length === 0) {
       throw new Error('No valid chain IDs provided');
     }
 
     try {
-      // Fetch tokens using multi-chain method (will mix automatically)
-      const providerTokens = await this.lifiProvider.fetchTokens({
+      // Get featured tokens for these chains
+      const featuredTokens = getFeaturedTokensForChains(chainIds);
+      const featuredAddresses = new Set(featuredTokens.map(t => `${t.chainId}:${t.address.toLowerCase()}`));
+
+      // Fetch tokens from aggregation service
+      const tokens = await this.aggregationService.searchTokens({
         chainIds: chainIds,
         limit: limit,
       });
+      
+      // Remove featured tokens from regular results (to avoid duplicates)
+      const regularTokens = tokens.filter(t => 
+        !featuredAddresses.has(`${t.chainId}:${t.address.toLowerCase()}`)
+      );
+      
+      // Combine: featured tokens first, then regular tokens
+      const allTokens = [...featuredTokens, ...regularTokens].slice(0, limit);
 
-      // Normalize tokens
-      const tokens: NormalizedToken[] = [];
-      for (const providerToken of providerTokens) {
-        const chainId = typeof providerToken.chainId === 'number' 
-          ? providerToken.chainId 
-          : parseInt(String(providerToken.chainId), 10);
-        
-        const canonicalChain = getCanonicalChainByProviderId('lifi', chainId);
-        if (canonicalChain) {
-          tokens.push(this.lifiProvider.normalizeToken(providerToken, canonicalChain));
-        }
-      }
-
-      if (tokens.length > 0) {
-        return tokens;
+      if (allTokens.length > 0) {
+        return allTokens;
       }
     } catch (error: any) {
       console.error(`[TokenService] Error fetching tokens for chains ${chainIds.join(',')}:`, error);
     }
 
-    // Fallback to mock data
+    // Fallback: return featured tokens if available, otherwise mock data
+    const featuredTokens = getFeaturedTokensForChains(chainIds);
+    if (featuredTokens.length > 0) {
+      return featuredTokens;
+    }
     return MOCK_TOKENS
       .filter(token => chainIds.includes(token.chainId))
       .slice(0, limit);
@@ -154,6 +201,8 @@ export class TokenService {
   /**
    * Search tokens by query (name, symbol, or address)
    * Optionally filter by chain(s)
+   * 
+   * Now uses TokenAggregationService for multi-provider support.
    */
   async searchTokens(
     query: string, 
@@ -161,15 +210,23 @@ export class TokenService {
     chainIds?: number[],
     limit: number = 30
   ): Promise<NormalizedToken[]> {
-    // Validate chain ID if provided
+    // Validate chain ID if provided (supports both static and dynamic chains)
     if (chainId !== undefined) {
-      const chain = getCanonicalChain(chainId);
+      const { resolveChain, isChainSupported } = await import('@/lib/backend/registry/chain-resolver');
+      
+      if (!isChainSupported(chainId)) {
+        throw new Error(`Chain ID ${chainId} is not supported`);
+      }
+      
+      const chain = await resolveChain(chainId);
       if (!chain) {
         throw new Error(`Chain ID ${chainId} is not supported`);
       }
     }
 
     const lowerQuery = query.toLowerCase().trim();
+    
+    // If no query, return tokens by chain(s)
     if (!lowerQuery) {
       if (chainIds && chainIds.length > 0) {
         return this.getTokensByChains(chainIds, limit);
@@ -178,87 +235,35 @@ export class TokenService {
     }
 
     try {
-      // If specific chainIds provided, use multi-chain search
+      // Determine which chains to search
+      const chainsToSearch: number[] = [];
       if (chainIds && chainIds.length > 0) {
-        const providerTokens = await this.lifiProvider.fetchTokens({
-          chainIds: chainIds,
-          search: query,
-          limit: limit,
-        });
-
-        // Normalize tokens
-        const tokens: NormalizedToken[] = [];
-        for (const providerToken of providerTokens) {
-          const tokenChainId = typeof providerToken.chainId === 'number' 
-            ? providerToken.chainId 
-            : parseInt(String(providerToken.chainId), 10);
-          
-          const canonicalChain = getCanonicalChainByProviderId('lifi', tokenChainId);
-          if (canonicalChain) {
-            tokens.push(this.lifiProvider.normalizeToken(providerToken, canonicalChain));
-          }
-        }
-
-        if (tokens.length > 0) {
-          return tokens;
-        }
+        // Filter to only supported chains
+        const { isChainSupported } = await import('@/lib/backend/registry/chain-resolver');
+        chainsToSearch.push(...chainIds.filter(id => isChainSupported(id)));
       } else if (chainId !== undefined) {
-        // Search in specific chain
-        const chain = getCanonicalChain(chainId);
-        if (!chain) {
-          throw new Error(`Chain ID ${chainId} is not supported`);
-        }
-
-        const lifiChainId = this.lifiProvider.getChainId(chain);
-        if (lifiChainId && typeof lifiChainId === 'number') {
-          const providerTokens = await this.lifiProvider.fetchTokens({
-            chainId: lifiChainId,
-            search: query,
-            limit: limit,
-          });
-
-          const tokens = providerTokens.map(token => 
-            this.lifiProvider.normalizeToken(token, chain)
-          );
-
-          if (tokens.length > 0) {
-            return tokens;
-          }
-        }
+        chainsToSearch.push(chainId);
       } else {
-        // Search across all chains (use multi-chain method)
+        // Search all supported chains (static registry + priority chains)
+        const { PRIORITY_EVM_CHAINS } = await import('@/lib/backend/registry/chain-resolver');
         const canonicalChains = getCanonicalChains();
-        const canonicalChainIds = canonicalChains
-          .map(chain => chain.id)
-          .filter(id => {
-            const chain = getCanonicalChain(id);
-            return chain && this.lifiProvider.getChainId(chain);
-          });
+        const staticChainIds = canonicalChains.map(chain => chain.id);
+        const priorityChainIds = Array.from(PRIORITY_EVM_CHAINS);
+        // Combine and deduplicate
+        chainsToSearch.push(...new Set([...staticChainIds, ...priorityChainIds]));
+      }
 
-        if (canonicalChainIds.length > 0) {
-          const providerTokens = await this.lifiProvider.fetchTokens({
-            chainIds: canonicalChainIds,
-            search: query,
-            limit: limit,
-          });
+      // Use aggregation service for multi-provider search
+      const params: FetchTokensParams = {
+        chainIds: chainsToSearch,
+        search: lowerQuery,
+        limit,
+      };
 
-          // Normalize tokens
-          const tokens: NormalizedToken[] = [];
-          for (const providerToken of providerTokens) {
-            const tokenChainId = typeof providerToken.chainId === 'number' 
-              ? providerToken.chainId 
-              : parseInt(String(providerToken.chainId), 10);
-            
-            const canonicalChain = getCanonicalChainByProviderId('lifi', tokenChainId);
-            if (canonicalChain) {
-              tokens.push(this.lifiProvider.normalizeToken(providerToken, canonicalChain));
-            }
-          }
-
-          if (tokens.length > 0) {
-            return tokens;
-          }
-        }
+      const tokens = await this.aggregationService.searchTokens(params);
+      
+      if (tokens.length > 0) {
+        return tokens;
       }
     } catch (error: any) {
       console.error(`[TokenService] Error searching tokens:`, error);

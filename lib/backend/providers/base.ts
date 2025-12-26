@@ -50,5 +50,13 @@ export abstract class BaseTokenProvider implements TokenProvider {
    * This will be implemented by each provider
    */
   abstract normalizeChain(chain: ProviderChain): CanonicalChain | null;
+
+  /**
+   * Optional: Check if provider supports a specific chain
+   * If not implemented, assumes provider supports all chains
+   */
+  async supportsChain?(chainId: number): Promise<boolean> {
+    return true; // Default: supports all chains
+  }
 }
 

@@ -2,6 +2,7 @@
 
 import ChainRow from "./chain-row";
 import SearchInput from "@/components/ui/search-input";
+import { sortChains } from "@/lib/shared/utils/chains";
 import type { Chain } from "@/lib/frontend/types/tokens";
 
 interface MobileChainListPanelProps {
@@ -23,8 +24,11 @@ export default function MobileChainListPanel({
   isLoading = false,
   error = null,
 }: MobileChainListPanelProps) {
+  // Sort chains: Ethereum first, then BNB Chain, then others
+  const sortedChains = sortChains(chains);
+  
   // Filter chains based on search query
-  const filteredChains = chains.filter((chain) => {
+  const filteredChains = sortedChains.filter((chain) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase().trim();
     return chain.name.toLowerCase().includes(query);

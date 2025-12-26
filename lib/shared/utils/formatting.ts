@@ -69,6 +69,23 @@ export function formatPrice(price?: string): string {
   const num = parseFloat(price);
   if (isNaN(num) || num <= 0) return "-";
   
+  // Very small prices (< $0.000001): show up to 12 decimals to avoid rounding to 0.00
+  // This handles micro-cap tokens with very low prices (e.g., 0.0000000004160)
+  if (num < 0.000001) {
+    // Use toFixed to preserve precision (up to 12 decimal places)
+    const fixed = num.toFixed(12);
+    // Remove trailing zeros but keep the decimal point and at least one digit after it
+    // Example: "0.000000000416" stays as is, "0.000000000000" becomes "0.00"
+    let trimmed = fixed.replace(/0+$/, ''); // Remove trailing zeros
+    // If we removed all digits after decimal, ensure we have at least .00
+    if (!trimmed.includes('.')) {
+      trimmed = `${trimmed}.00`;
+    } else if (trimmed.endsWith('.')) {
+      trimmed = `${trimmed}00`;
+    }
+    return `$${trimmed}`;
+  }
+  
   // Small prices (< $0.01): show up to 6 decimals for precision
   if (num < 0.01) {
     return `$${num.toLocaleString("en-US", {
@@ -135,3 +152,4 @@ export function cleanImageUrl(
   }
 }
 
+/** */

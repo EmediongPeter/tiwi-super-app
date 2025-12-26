@@ -39,5 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-docs
+/docs
+/home
 cursor_swap_page_design_implementation.md

@@ -89,7 +89,7 @@ export default function SwapCard({
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[2px] bg-[#b1f128]/20 blur-[2px]"></div>
         <div className="absolute -top-px left-1/2 -translate-x-1/2 w-1/2 h-[3px] bg-[#b1f128]/10 blur-sm"></div>
 
-        <div className="flex flex-col gap-3 sm:gap-4">
+        <div className="flex flex-col gap-3 sm:gap-0 2xl:gap-4">
           {/* From / To group with arrow centered between them */}
           <div className="relative flex flex-col gap-3 sm:gap-4">
             {/* From Section */}

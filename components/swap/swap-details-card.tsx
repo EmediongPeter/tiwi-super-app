@@ -17,11 +17,11 @@ export default function SwapDetailsCard({
 }: SwapDetailsCardProps) {
   return (
     <div
-      className={`limit-collapse mt-3 sm:mt-0 ${
+      className={`limit-collapse sm:mt-0 ${
         isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
       }`}
     >
-      <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-2xl p-4 sm:p-6 w-full">
+      <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-2xl p-4 sm:p-6 w-full mt-3">
         <div className="space-y-3 sm:space-y-4">
           {/* Gas Fee */}
           <div className="flex items-center justify-between text-sm sm:text-base">

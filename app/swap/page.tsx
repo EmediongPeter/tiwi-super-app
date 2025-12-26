@@ -18,6 +18,35 @@ import { useSwapQuote } from "@/hooks/useSwapQuote";
 import { useSwapStore } from "@/lib/frontend/store/swap-store";
 import type { Token } from "@/lib/frontend/types/tokens";
 import { MOCK_TOKENS } from "@/data/mock-tokens";
+import ErrorToast from "@/components/ui/error-toast";
+import { parseRouteError } from "@/lib/shared/utils/error-messages";
+
+// Default tokens (ensure chainId/address/logo for routing + display)
+const DEFAULT_FROM_TOKEN: Token = {
+  id: "56-0xDA1060158F7D593667cCE0a15DB346BB3FfB3596".toLowerCase(),
+  name: "TIWI CAT",
+  symbol: "TWC",
+  address: "0xDA1060158F7D593667cCE0a15DB346BB3FfB3596",
+  chain: "BNB Chain",
+  chainId: 56,
+  // Use DexScreener openGraph image to avoid broken logos
+  logo:
+    "/assets/logos/twc-token.svg",
+  chainLogo: "/assets/icons/chains/bsc.svg",
+  chainBadge: "bsc",
+};
+
+const DEFAULT_TO_TOKEN: Token = {
+  id: "56-0x55d398326f99059ff775485246999027b3197955".toLowerCase(),
+  name: "Tether USD",
+  symbol: "USDT",
+  address: "0x55d398326f99059fF775485246999027B3197955",
+  chain: "BNB Chain",
+  chainId: 56,
+  logo: "/assets/icons/tokens/tether.svg",
+  chainLogo: "/assets/icons/chains/bsc.svg",
+  chainBadge: "bsc",
+};
 
 export default function SwapPage() {
   // ===== Zustand Store State =====
@@ -41,27 +70,42 @@ export default function SwapPage() {
   const setToAmount = useSwapStore((state) => state.setToAmount);
   const setQuoteLoading = useSwapStore((state) => state.setQuoteLoading);
 
-  // Initialize default fromToken on mount
-  // useEffect(() => {
-  //   if (!fromToken) {
-  //     const defaultToken = MOCK_TOKENS.find((t) => t.id === "twc") || null;
-  //     if (defaultToken) {
-  //       setFromToken(defaultToken);
-  //     }
-  //   }
-  // }, [fromToken, setFromToken]);
+  // Initialize default tokens on mount (use real chainId/address to avoid quote errors)
+  useEffect(() => {
+    if (!fromToken) {
+      setFromToken(DEFAULT_FROM_TOKEN);
+    }
+  }, [fromToken, setFromToken]);
 
   // Use custom hook for quote calculation (updates store)
   useSwapQuote({
     fromAmount,
     activeTab,
-    setToAmount,
-    setQuoteLoading,
+    fromToken,
+    toToken,
   });
 
   // Token selector modal state (stays local - UI only)
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
   const [tokenModalType, setTokenModalType] = useState<"from" | "to">("from");
+  
+  // Error toast state
+  const [isErrorToastOpen, setIsErrorToastOpen] = useState(false);
+  const [errorInfo, setErrorInfo] = useState<{ title: string; message: string; nextSteps: string[] } | null>(null);
+  
+  // Get quote error from store
+  const quoteError = useSwapStore((state) => state.quoteError);
+  
+  // Show error toast when quote error occurs
+  useEffect(() => {
+    if (quoteError) {
+      const parsed = parseRouteError(quoteError);
+      setErrorInfo({ title: parsed.title, message: parsed.message, nextSteps: parsed.nextSteps || [] });
+      setIsErrorToastOpen(true);
+    } else {
+      setIsErrorToastOpen(false);
+    }
+  }, [quoteError]);
 
   // Wallet connection state
   const {
@@ -141,11 +185,11 @@ export default function SwapPage() {
   const limitPriceUsd = calculateLimitPriceUsd(limitPriceNum);
 
   return (
-    <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-4 sm:py-5 md:py-6 lg:py-8 relative z-20 min-h-screen">
+    <div className="2xl:container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-4 sm:py-5 md:py-6 lg:py-8 relative z-20 min-h-screen">
       {/* Cards Container - Relative positioning for background elements tied to cards */}
       <div className="relative z-30">
         {/* Background elements positioned relative to cards container */}
-        <SwapBackgroundElements />
+        {/* <SwapBackgroundElements /> */}
 
         <div className="flex flex-col lg:flex-row lg:items-start gap-3 sm:gap-4 lg:gap-5 xl:gap-6 relative z-30 pb-[80px] sm:pb-[95px] md:pb-[110px] lg:pb-[125px] xl:pb-[145px] 2xl:pb-[160px]">
           {/* Chart Section - Left Side (Desktop) */}
@@ -223,6 +267,18 @@ export default function SwapPage() {
         onTokenSelect={handleTokenSelect}
         selectedToken={tokenModalType === "from" ? fromToken : toToken}
       />
+
+      {/* Error Toast */}
+      {errorInfo && (
+        <ErrorToast
+          title={errorInfo.title}
+          message={errorInfo.message}
+          nextSteps={errorInfo.nextSteps}
+          open={isErrorToastOpen}
+          onOpenChange={setIsErrorToastOpen}
+          duration={10000} // 10 seconds for routing errors
+        />
+      )}
     </div>
   );
 }

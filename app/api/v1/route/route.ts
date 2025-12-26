@@ -1,0 +1,259 @@
+/**
+ * Route API Endpoint
+ * 
+ * Single entry point for swap route fetching.
+ * Supports both GET (query params) and POST (JSON body) requests.
+ * 
+ * Returns the best route for a token swap, with alternatives if available.
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { getRouteService } from '@/lib/backend/services/route-service';
+import type { RouteRequest, RouteResponse } from '@/lib/backend/routers/types';
+
+// ============================================================================
+// Request Types
+// ============================================================================
+
+interface RouteRequestQuery {
+  fromChainId: string;          // Canonical chain ID
+  fromToken: string;             // Token address
+  toChainId: string;             // Canonical chain ID
+  toToken: string;               // Token address
+  fromAmount: string;            // Human-readable amount
+  slippage?: string;             // Slippage tolerance (0-100)
+  slippageMode?: 'fixed' | 'auto'; // Slippage mode
+  recipient?: string;             // Recipient address (optional)
+  order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST'; // Route preference
+}
+
+interface RouteRequestBody {
+  fromToken: {
+    chainId: number;
+    address: string;
+    symbol?: string;
+    decimals?: number;
+  };
+  toToken: {
+    chainId: number;
+    address: string;
+    symbol?: string;
+    decimals?: number;
+  };
+  fromAmount: string;
+  slippage?: number;
+  slippageMode?: 'fixed' | 'auto';
+  recipient?: string;
+  order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST';
+}
+
+// ============================================================================
+// Response Types
+// ============================================================================
+
+interface RouteAPIResponse {
+  route: RouteResponse['route'];
+  alternatives?: RouteResponse['alternatives'];
+  timestamp: number;
+  expiresAt: number;
+  error?: string;
+}
+
+// ============================================================================
+// GET Handler
+// ============================================================================
+
+export async function GET(req: NextRequest) {
+  try {
+    const searchParams = req.nextUrl.searchParams;
+    
+    // Parse required parameters
+    const fromChainId = searchParams.get('fromChainId');
+    const fromToken = searchParams.get('fromToken');
+    const toChainId = searchParams.get('toChainId');
+    const toToken = searchParams.get('toToken');
+    const fromAmount = searchParams.get('fromAmount');
+    
+    // Validate required parameters
+    if (!fromChainId || !fromToken || !toChainId || !toToken || !fromAmount) {
+      return NextResponse.json(
+        {
+          error: 'Missing required parameters: fromChainId, fromToken, toChainId, toToken, fromAmount',
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Parse optional parameters
+    const slippage = searchParams.get('slippage');
+    const slippageMode = searchParams.get('slippageMode') as 'fixed' | 'auto' | null;
+    const recipient = searchParams.get('recipient');
+    const order = searchParams.get('order') as 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST' | null;
+    
+    // Build route request
+    const routeRequest: RouteRequest = {
+      fromToken: {
+        chainId: parseInt(fromChainId, 10),
+        address: fromToken,
+      },
+      toToken: {
+        chainId: parseInt(toChainId, 10),
+        address: toToken,
+      },
+      fromAmount,
+      slippage: slippage ? parseFloat(slippage) : undefined,
+      slippageMode: slippageMode || 'fixed',
+      recipient: recipient || undefined,
+      order: order || 'RECOMMENDED',
+    };
+    
+    // Validate chain IDs
+    if (isNaN(routeRequest.fromToken.chainId) || isNaN(routeRequest.toToken.chainId)) {
+      return NextResponse.json(
+        {
+          error: 'Invalid chain IDs: must be valid numbers',
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Handle request
+    return await handleRouteRequest(routeRequest);
+  } catch (error: any) {
+    console.error('[API] /api/v1/route GET error:', error);
+    return NextResponse.json(
+      {
+        error: error?.message || 'Failed to fetch route',
+      },
+      { status: error?.message?.includes('Missing') || error?.message?.includes('Invalid') ? 400 : 500 }
+    );
+  }
+}
+
+// ============================================================================
+// POST Handler
+// ============================================================================
+
+export async function POST(req: NextRequest) {
+  try {
+    const body: RouteRequestBody = await req.json();
+    console.log("🚀 ~ POST ~ body:", body)
+    
+    // Validate required fields
+    if (!body.fromToken || !body.toToken || !body.fromAmount) {
+      return NextResponse.json(
+        {
+          error: 'Missing required fields: fromToken, toToken, fromAmount',
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (!body.fromToken.chainId || !body.fromToken.address) {
+      return NextResponse.json(
+        {
+          error: 'Invalid fromToken: chainId and address are required',
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (!body.toToken.chainId || !body.toToken.address) {
+      return NextResponse.json(
+        {
+          error: 'Invalid toToken: chainId and address are required',
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Build route request
+    const routeRequest: RouteRequest = {
+      fromToken: {
+        chainId: body.fromToken.chainId,
+        address: body.fromToken.address,
+        symbol: body.fromToken.symbol,
+        decimals: body.fromToken.decimals,
+      },
+      toToken: {
+        chainId: body.toToken.chainId,
+        address: body.toToken.address,
+        symbol: body.toToken.symbol,
+        decimals: body.toToken.decimals,
+      },
+      fromAmount: body.fromAmount,
+      slippage: body.slippage,
+      slippageMode: body.slippageMode || 'fixed',
+      recipient: body.recipient,
+      order: body.order || 'RECOMMENDED',
+    };
+    
+    // Handle request
+    return await handleRouteRequest(routeRequest);
+  } catch (error: any) {
+    console.error('[API] /api/v1/route POST error:', error);
+    
+    // Handle JSON parse errors
+    if (error instanceof SyntaxError || error.message?.includes('JSON')) {
+      return NextResponse.json(
+        {
+          error: 'Invalid JSON in request body',
+        },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json(
+      {
+        error: error?.message || 'Failed to fetch route',
+      },
+      { status: error?.message?.includes('Missing') || error?.message?.includes('Invalid') ? 400 : 500 }
+    );
+  }
+}
+
+// ============================================================================
+// Request Handler
+// ============================================================================
+
+async function handleRouteRequest(
+  routeRequest: RouteRequest
+): Promise<NextResponse<RouteAPIResponse>> {
+  try {
+    const routeService = getRouteService();
+    
+    // Get route from service
+    const routeResponse: RouteResponse = await routeService.getRoute(routeRequest);
+    
+    // Build API response
+    const apiResponse: RouteAPIResponse = {
+      route: routeResponse.route,
+      alternatives: routeResponse.alternatives,
+      timestamp: routeResponse.timestamp,
+      expiresAt: routeResponse.expiresAt,
+    };
+    
+    return NextResponse.json(apiResponse);
+  } catch (error: any) {
+    console.error('[API] Route service error:', error);
+    
+    // Determine error status code
+    let statusCode = 500;
+    if (error?.message?.includes('No route found') || error?.message?.includes('No routers support')) {
+      statusCode = 404;
+    } else if (error?.message?.includes('Missing') || error?.message?.includes('Invalid')) {
+      statusCode = 400;
+    }
+    
+    // Return error response
+    const errorResponse: RouteAPIResponse = {
+      route: {} as RouteResponse['route'], // Empty route object for error case
+      timestamp: Date.now(),
+      expiresAt: Date.now(),
+      error: error?.message || 'Failed to fetch route',
+    };
+    
+    return NextResponse.json(errorResponse, { status: statusCode });
+  }
+}
+

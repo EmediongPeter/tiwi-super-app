@@ -62,6 +62,17 @@ export interface NormalizedToken {
   liquidity?: number;          // Liquidity in USD
   marketCap?: number;          // Market capitalization
   
+  // Router compatibility (enriched)
+  routerFormats?: {
+    lifi?: { chainId: number; address: string };
+    squid?: { chainId: string; address: string };
+    relay?: { chainId: string; address: string };
+    jupiter?: { mint: string };
+  };
+  
+  // Enrichment tracking
+  enrichedBy?: string[];      // Providers that enriched this token
+  
   // Chain detection metadata (for UI display)
   chainBadge?: string;        // Chain badge identifier for UI display
   chainName?: string;         // Chain display name (for UI)

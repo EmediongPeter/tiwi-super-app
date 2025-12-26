@@ -52,7 +52,17 @@ export async function fetchTokens(params: FetchTokensParams = {}): Promise<Token
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Failed to fetch tokens: ${response.statusText}`);
+      
+      // Extract user-friendly error message from API response
+      const errorMessage = errorData.error || `Unable to load tokens`;
+      
+      // Create error with user-friendly message
+      const error = new Error(errorMessage);
+      // Preserve original error data for debugging
+      (error as any).status = response.status;
+      (error as any).data = errorData;
+      
+      throw error;
     }
     
     const data: TokensAPIResponse = await response.json();
@@ -61,7 +71,14 @@ export async function fetchTokens(params: FetchTokensParams = {}): Promise<Token
     return data.tokens.map(transformToken);
   } catch (error) {
     console.error('[TokenAPI] Error fetching tokens:', error);
-    throw error;
+    
+    // If error is already an Error with a message, re-throw as-is
+    if (error instanceof Error) {
+      throw error;
+    }
+    
+    // Otherwise, wrap in user-friendly error
+    throw new Error('Unable to load tokens. Please check your connection and try again.');
   }
 }
 
