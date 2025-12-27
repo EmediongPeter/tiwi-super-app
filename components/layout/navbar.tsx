@@ -12,6 +12,7 @@ import WalletExplorerModal from "@/components/wallet/wallet-explorer-modal";
 import ChainSelectionModal from "@/components/wallet/chain-selection-modal";
 import WalletConnectedToast from "@/components/wallet/wallet-connected-toast";
 import { MobileMenuDrawer } from "./mobile-menu-drawer";
+import { useRouter } from "next/navigation";
 import type { WalletProvider } from "@/lib/wallet/detection/types";
 import type { WalletConnectWallet } from "@/lib/wallet/services/wallet-explorer-service";
 import { getWalletById } from "@/lib/wallet/detection/detector";
@@ -33,6 +34,7 @@ const navItems: NavItem[] = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isWalletMenuOpen, setIsWalletMenuOpen] = useState(false);
   const {
@@ -58,8 +60,7 @@ export default function Navbar() {
   };
 
   const handleSettings = () => {
-    // TODO: Implement settings modal/drawer
-    console.log("Settings clicked");
+    router.push("/settings");
   };
 
   const handleMenu = () => {
