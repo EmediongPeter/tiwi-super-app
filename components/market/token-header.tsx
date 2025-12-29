@@ -1,0 +1,179 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+
+interface TokenHeaderProps {
+  token: {
+    symbol: string;
+    pair: string;
+    icon: string;
+  };
+  stats: {
+    price: string;
+    change: string;
+    changePositive: boolean;
+    vol24h: string;
+    high24h: string;
+    low24h: string;
+  };
+}
+
+/**
+ * Token Header Component
+ * Displays token info, price, 24h stats, and action buttons
+ */
+export default function TokenHeader({ token, stats }: TokenHeaderProps) {
+  const router = useRouter();
+
+  return (
+    <div className="border-b border-[#1f261e] flex h-16 lg:h-14 xl:h-15 2xl:h-16 items-center justify-between px-10 lg:px-7 xl:px-8 2xl:px-10 overflow-x-auto">
+      {/* Left: Token Info and Stats */}
+      <div className="flex gap-8 lg:gap-5 xl:gap-6 2xl:gap-8 items-center min-w-max">
+        {/* Back Arrow + Token */}
+        <div className="flex gap-2 xl:gap-1.5 2xl:gap-2 items-center">
+          <button
+            onClick={() => router.back()}
+            className="flex items-center justify-center w-2.5 h-2.5 cursor-pointer hover:opacity-80 transition-opacity"
+            aria-label="Go back"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" className="rotate-90">
+              <path d="M5 7.5L2.5 5L5 2.5" stroke="#b5b5b5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <Image
+            src={token.icon}
+            alt={token.symbol}
+            width={32}
+            height={32}
+            className="w-8 h-8 lg:w-6 lg:h-6 xl:w-7 xl:h-7 2xl:w-8 2xl:h-8 shrink-0"
+          />
+          <p className="text-white text-lg lg:text-sm xl:text-base 2xl:text-lg font-semibold leading-normal whitespace-nowrap">
+            {token.symbol}<span className="text-[#b5b5b5]">/{token.pair.split("/")[1]}</span>
+          </p>
+        </div>
+          {/* Separator */}
+          <div className="flex h-16 items-center justify-center w-0">
+            <div className="flex-none rotate-90">
+              <div className="h-0 relative w-16">
+                <div className="absolute inset-[-1px_0_0_0] border-t border-[#1f261e]"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Price and Change */}
+          <div className="flex flex-col font-semibold items-start justify-center leading-normal text-base lg:text-xs xl:text-sm 2xl:text-base">
+            <p className="relative shrink-0 text-white whitespace-nowrap">
+              {stats.price}
+            </p>
+            <p className={`relative shrink-0 whitespace-nowrap ${
+              stats.changePositive ? "text-[#3fea9b]" : "text-[#ff5c5c]"
+            }`}>
+              {stats.change}
+            </p>
+          </div>
+
+          {/* Separator */}
+          <div className="flex h-16 items-center justify-center w-0">
+            <div className="flex-none rotate-90">
+              <div className="h-0 relative w-16">
+                <div className="absolute inset-[-1px_0_0_0] border-t border-[#1f261e]"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* 24H Vol */}
+          <div className="flex flex-col font-semibold items-start justify-center leading-normal text-base lg:text-xs xl:text-sm 2xl:text-base">
+            <p className="relative shrink-0 text-white whitespace-nowrap">
+              {stats.vol24h}
+            </p>
+            <p className="relative shrink-0 text-[#7c7c7c] whitespace-nowrap">
+              24H Vol
+            </p>
+          </div>
+
+          {/* Separator */}
+          <div className="flex h-16 items-center justify-center w-0">
+            <div className="flex-none rotate-90">
+              <div className="h-0 relative w-16">
+                <div className="absolute inset-[-1px_0_0_0] border-t border-[#1f261e]"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* 24H High */}
+          <div className="flex flex-col font-semibold items-start justify-center leading-normal text-base lg:text-xs xl:text-sm 2xl:text-base">
+            <p className="relative shrink-0 text-white whitespace-nowrap">
+              {stats.high24h}
+            </p>
+            <p className="relative shrink-0 text-[#7c7c7c] whitespace-nowrap">
+              24H High
+            </p>
+          </div>
+
+          {/* Separator */}
+          <div className="flex h-16 items-center justify-center w-0">
+            <div className="flex-none rotate-90">
+              <div className="h-0 relative w-16">
+                <div className="absolute inset-[-1px_0_0_0] border-t border-[#1f261e]"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* 24H Low */}
+          <div className="flex flex-col font-semibold items-start justify-center leading-normal text-base lg:text-xs xl:text-sm 2xl:text-base">
+            <p className="relative shrink-0 text-white whitespace-nowrap">
+              {stats.low24h}
+            </p>
+            <p className="relative shrink-0 text-[#7c7c7c] whitespace-nowrap">
+              24H Low
+            </p>
+          </div>
+
+          {/* Separator */}
+          <div className="flex h-16 items-center justify-center w-0">
+            <div className="flex-none rotate-90">
+              <div className="h-0 relative w-16">
+                <div className="absolute inset-[-1px_0_0_0] border-t border-[#1f261e]"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* 24H Vol (duplicate in design) */}
+          <div className="flex flex-col font-semibold items-start justify-center leading-normal text-base lg:text-xs xl:text-sm 2xl:text-base">
+            <p className="relative shrink-0 text-white whitespace-nowrap">
+              {stats.vol24h}
+            </p>
+            <p className="relative shrink-0 text-[#7c7c7c] whitespace-nowrap">
+              24H Vol
+            </p>
+          </div>
+      </div>
+
+      {/* Right: Action Buttons */}
+      <div className="flex gap-4 lg:gap-3 xl:gap-3.5 2xl:gap-4 items-center shrink-0">
+        <button
+          className="relative w-5 h-5 cursor-pointer hover:opacity-80 transition-opacity"
+          aria-label="Add to favorites"
+        >
+          <Image
+            src="/assets/icons/home/star.svg"
+            alt="Favorite"
+            width={20}
+            height={20}
+            className="w-full h-full"
+          />
+        </button>
+        <button
+          className="relative w-5 h-5 cursor-pointer hover:opacity-80 transition-opacity"
+          aria-label="Share"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M18 8C19.6569 8 21 6.65685 21 5C21 3.34315 19.6569 2 18 2C16.3431 2 15 3.34315 15 5C15 5.12549 15.0077 5.24919 15.0227 5.37063L8.08261 9.79838C7.54305 9.29216 6.80891 9 6 9C4.34315 9 3 10.3431 3 12C3 13.6569 4.34315 15 6 15C6.80891 15 7.54305 14.7078 8.08261 14.2016L15.0227 18.6294C15.0077 18.7508 15 18.8745 15 19C15 20.6569 16.3431 22 18 22C19.6569 22 21 20.6569 21 19C21 17.3431 19.6569 16 18 16C17.1911 16 16.457 16.2922 15.9174 16.7984L8.97727 12.3706C8.99231 12.2492 9 12.1255 9 12C9 11.8745 8.99231 11.7508 8.97727 11.6294L15.9174 7.20162C16.457 7.70784 17.1911 8 18 8Z" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+

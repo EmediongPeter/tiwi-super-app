@@ -11,22 +11,28 @@ const tabs: MarketTab[] = ["Spot", "Perp"];
 
 export default function MarketTabs({ activeTab, onTabChange }: MarketTabsProps) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-4 lg:gap-5 xl:gap-6 2xl:gap-6">
       {tabs.map((tab) => {
         const isActive = activeTab === tab;
         return (
           <button
             key={tab}
             onClick={() => onTabChange(tab)}
-            className={`px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 rounded-lg text-xs lg:text-sm font-semibold transition-colors cursor-pointer ${
-              isActive ? "bg-[#081f02] text-[#b1f128]" : "bg-[#0b0f0a] text-[#b5b5b5]"
-            }`}
+            className="flex flex-col gap-1.5 lg:gap-2 xl:gap-2 2xl:gap-2 items-center relative"
           >
-            {tab}
+            <span className={`text-sm lg:text-base xl:text-base 2xl:text-lg font-semibold transition-colors cursor-pointer ${
+              isActive ? "text-[#b1f128]" : "text-[#7c7c7c]"
+            }`}>
+              {tab}
+            </span>
+            {isActive && (
+              <div className="h-[1px] lg:h-[1.5px] xl:h-[1.5px] 2xl:h-[1.5px] w-full bg-[#b1f128]"></div>
+            )}
           </button>
         );
       })}
     </div>
   );
 }
+
 

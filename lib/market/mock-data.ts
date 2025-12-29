@@ -18,8 +18,8 @@ export interface MarketToken {
   openInterest?: string;
 }
 
-// Spot market tokens
-export const SPOT_TOKENS: MarketToken[] = [
+// Base Spot market tokens (will be doubled for pagination testing)
+const BASE_SPOT_TOKENS: MarketToken[] = [
   { symbol: "BTC", icon: "https://www.figma.com/api/mcp/asset/9b5d0736-e593-414d-93cf-f3282597b4eb", price: "$86,569.91", change: "+1.31%", changePositive: true, vol: "$985.08M", liq: "$1.8B", holders: "3.7K" },
   { symbol: "ETH", icon: "https://www.figma.com/api/mcp/asset/00aba28c-de2a-4b16-af18-3fa036e03dde", price: "$2,404.25", change: "+5.30%", changePositive: true, vol: "$380.08M", liq: "$3.2B", holders: "5.4K" },
   { symbol: "BNB", icon: "https://www.figma.com/api/mcp/asset/2d673816-95d2-4d07-be23-0b2f11fe17ae", price: "$984.09", change: "-1.17%", changePositive: false, vol: "$285.58M", liq: "$2.8B", holders: "10.2K" },
@@ -34,12 +34,30 @@ export const SPOT_TOKENS: MarketToken[] = [
   { symbol: "USDC", icon: "https://www.figma.com/api/mcp/asset/00aba28c-de2a-4b16-af18-3fa036e03dde", price: "$1.00", change: "+0.01%", changePositive: true, vol: "$38.5B", liq: "$72.1B", holders: "7.2K" },
 ];
 
-// Perp market tokens (with funding rate and open interest)
-export const PERP_TOKENS: MarketToken[] = [
+// Base Perp market tokens (will be doubled for pagination testing)
+const BASE_PERP_TOKENS: MarketToken[] = [
   { symbol: "BTC-PERP", icon: "https://www.figma.com/api/mcp/asset/9b5d0736-e593-414d-93cf-f3282597b4eb", price: "$86,569.91", change: "+1.31%", changePositive: true, vol: "$985.08M", liq: "$1.8B", holders: "3.7K", fundingRate: "+0.01%", openInterest: "$2.5B" },
   { symbol: "ETH-PERP", icon: "https://www.figma.com/api/mcp/asset/00aba28c-de2a-4b16-af18-3fa036e03dde", price: "$2,404.25", change: "+5.30%", changePositive: true, vol: "$380.08M", liq: "$3.2B", holders: "5.4K", fundingRate: "+0.02%", openInterest: "$1.8B" },
   { symbol: "BNB-PERP", icon: "https://www.figma.com/api/mcp/asset/2d673816-95d2-4d07-be23-0b2f11fe17ae", price: "$984.09", change: "-1.17%", changePositive: false, vol: "$285.58M", liq: "$2.8B", holders: "10.2K", fundingRate: "-0.01%", openInterest: "$1.2B" },
   { symbol: "SOL-PERP", icon: "https://www.figma.com/api/mcp/asset/c4283df0-9482-4803-bdfa-1b6a600472a5", price: "$126.55", change: "+7.06%", changePositive: true, vol: "$65.18M", liq: "$900.2M", holders: "12.8K", fundingRate: "+0.03%", openInterest: "$850M" },
   { symbol: "TWC-PERP", icon: "https://www.figma.com/api/mcp/asset/9c1e9262-6046-41cc-8e34-4d873949c0af", price: "$0.095", change: "-1.17%", changePositive: false, vol: "$1.08K", liq: "$500.5K", holders: "1.2K", fundingRate: "-0.02%", openInterest: "$350K" },
 ];
+
+// Double the tokens for pagination testing
+export const SPOT_TOKENS: MarketToken[] = [
+  ...BASE_SPOT_TOKENS,
+  ...BASE_SPOT_TOKENS.map((token, idx) => ({
+    ...token,
+    symbol: `${token.symbol}-${idx + 1}`,
+  })),
+];
+
+export const PERP_TOKENS: MarketToken[] = [
+  ...BASE_PERP_TOKENS,
+  ...BASE_PERP_TOKENS.map((token, idx) => ({
+    ...token,
+    symbol: `${token.symbol}-${idx + 1}`,
+  })),
+];
+
 

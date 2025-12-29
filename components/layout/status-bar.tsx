@@ -85,7 +85,7 @@ export default function StatusBar({
   );
 
   return (
-    <div className="border-b border-[#1f261e] bg-[#010501]">
+    <div className="border-b border-[#1f261e] bg-[#010501] status-bar">
       {/* Desktop Status Bar */}
       <div className="hidden lg:block">
         <div className="2xl:container mx-auto px-4 sm:px-6 md:px-8 lg:px-10 py-3 sm:py-3.5 md:py-1">

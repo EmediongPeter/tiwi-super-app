@@ -390,3 +390,108 @@ body {
 .mobile-menu-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #2a3229;
 }
+
+/* Custom scrollbar styling for orderbook section */
+.orderbook-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #1f261e #0b0f0a;
+}
+
+.orderbook-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  display: block !important;
+}
+
+.orderbook-scrollbar::-webkit-scrollbar-track {
+  background: #0b0f0a;
+  border-radius: 4px;
+}
+
+.orderbook-scrollbar::-webkit-scrollbar-thumb {
+  background: #1f261e;
+  border-radius: 4px;
+  border: 1px solid #0b0f0a;
+}
+
+.orderbook-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2a3229;
+  border-color: #1f261e;
+}
+
+.orderbook-scrollbar::-webkit-scrollbar-thumb:active {
+  background: #3a4239;
+}
+
+/* Main application scrollbar styling */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: #1f261e #010501;
+}
+
+html::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html::-webkit-scrollbar-track {
+  background: #010501;
+}
+
+html::-webkit-scrollbar-thumb {
+  background: #1f261e;
+  border-radius: 6px;
+  border: 2px solid #010501;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: #2a3229;
+  border-color: #0b0f0a;
+}
+
+html::-webkit-scrollbar-thumb:active {
+  background: #3a4239;
+}
+
+html::-webkit-scrollbar-corner {
+  background: #010501;
+}
+
+/* Range input styling for percentage slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-track {
+  background: transparent;
+  height: 4px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #b1f128;
+  border: 2px solid #156200;
+  border-radius: 50%;
+  cursor: pointer;
+  margin-top: -6px;
+}
+
+input[type="range"]::-moz-range-track {
+  background: transparent;
+  height: 4px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #b1f128;
+  border: 2px solid #156200;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
