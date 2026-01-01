@@ -111,6 +111,7 @@ function transformToken(backendToken: NormalizedToken): Token {
     logo: cleanImageUrl(backendToken.logoURI || ''),
     chain,
     chainId: backendToken.chainId,
+    decimals: backendToken.decimals, // Required: from token data (enriched by TokenService from blockchain)
     price: backendToken.priceUSD,
     priceChange24h: backendToken.priceChange24h,
     volume24h: backendToken.volume24h,

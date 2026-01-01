@@ -14,6 +14,7 @@ import { LiFiProvider } from '@/lib/backend/providers/lifi';
 import type { NormalizedToken, ChainDTO, FetchTokensParams } from '@/lib/backend/types/backend-tokens';
 import { MOCK_TOKENS } from '@/lib/backend/data/mock-tokens';
 import { getFeaturedTokens, getFeaturedTokensForChains } from '@/lib/backend/data/featured-tokens';
+import { DexScreenerProvider } from '@/lib/backend/providers/dexscreener';
 
 // Initialize providers (must be called before using aggregation service)
 import '@/lib/backend/providers/init';
@@ -52,36 +53,66 @@ export class TokenService {
       ];
 
       // Filter to only chains that LiFi supports
+      // But also include chains that might be supported by other providers (DexScreener)
       const supportedChainIds = majorChainIds.filter(id => {
         const chain = getCanonicalChain(id);
-        return chain && this.lifiProvider.getChainId(chain);
+        if (!chain) {
+          console.warn(`[TokenService] Chain ${id} not found in canonical chains`);
+          return false;
+        }
+        // Check if LiFi supports it, OR if it's an EVM chain (DexScreener can handle it)
+        const lifiChainId = this.lifiProvider.getChainId(chain);
+        const isEVM = chain.type === 'EVM';
+        const isSupported = lifiChainId !== null || isEVM;
+        
+        if (!isSupported) {
+          console.warn(`[TokenService] Chain ${id} (${chain.name}) not supported by LiFi and not EVM`);
+        }
+        
+        return isSupported;
       });
 
+      console.log(`[TokenService] getAllTokens - supportedChainIds:`, supportedChainIds);
+
       if (supportedChainIds.length === 0) {
+        console.warn('[TokenService] No chains supported, returning mock tokens');
         return MOCK_TOKENS.slice(0, limit);
       }
 
       const featuredTokens = getFeaturedTokensForChains(supportedChainIds);
-      const featuredAddresses = new Set(featuredTokens.map(t => `${t.chainId}:${t.address.toLowerCase()}`));
+      console.log(`[TokenService] getAllTokens - featuredTokens count:`, featuredTokens.length);
+      
+      // Enrich featured tokens with real prices from DexScreener
+      const enrichedFeaturedTokens = await this.enrichFeaturedTokens(featuredTokens);
+      const featuredAddresses = new Set(enrichedFeaturedTokens.map(t => `${t.chainId}:${t.address.toLowerCase()}`));
 
       // Fetch tokens from aggregation service
       // This will trigger balanced mixing (BNB prioritized, max 3 per chain, 6 for BNB)
+      console.log(`[TokenService] getAllTokens - calling aggregationService.searchTokens with chainIds:`, supportedChainIds);
       const tokens = await this.aggregationService.searchTokens({
         chainIds: supportedChainIds,
         limit: limit,
       });
+      console.log(`[TokenService] getAllTokens - aggregationService returned ${tokens.length} tokens`);
       
       // Remove featured tokens from regular results (to avoid duplicates)
       const regularTokens = tokens.filter(t => 
         !featuredAddresses.has(`${t.chainId}:${t.address.toLowerCase()}`)
       );
+      console.log(`[TokenService] getAllTokens - regularTokens count (after removing featured):`, regularTokens.length);
       
       // Combine: featured tokens first, then regular tokens
       // Featured tokens (like TWC) will appear at the top
-      const allTokens = [...featuredTokens, ...regularTokens].slice(0, limit);
+      const allTokens = [...enrichedFeaturedTokens, ...regularTokens].slice(0, limit);
+      console.log(`[TokenService] getAllTokens - final allTokens count:`, allTokens.length);
 
       // Return real tokens if available, otherwise fallback to mock data
-      return allTokens.length > 0 ? allTokens : MOCK_TOKENS.slice(0, limit);
+      if (allTokens.length === 0) {
+        console.warn('[TokenService] No tokens found from aggregation service, returning mock tokens');
+        return MOCK_TOKENS.slice(0, limit);
+      }
+      
+      return allTokens;
     } catch (error: any) {
       console.error('[TokenService] Error fetching all tokens:', error);
       // Fallback to mock data on error
@@ -316,6 +347,153 @@ export class TokenService {
         chainBadge: getChainBadge(chain),
       };
     });
+  }
+
+  /**
+   * Enrich featured tokens with live data from DexScreener
+   * 
+   * Strategy:
+   * 1. Check cache first (5 min TTL)
+   * 2. Try synchronous fetch with 500ms timeout
+   * 3. If timeout/fails, return with existing data and enrich in background
+   * 4. Cache results for next request
+   * 
+   * This ensures fast API responses while keeping prices fresh.
+   */
+  private async enrichFeaturedTokens(tokens: NormalizedToken[]): Promise<NormalizedToken[]> {
+    if (tokens.length === 0) return tokens;
+    
+    const { getCache } = await import('@/lib/backend/utils/cache');
+    const cache = getCache();
+    const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+    const SYNC_TIMEOUT = 500; // 500ms timeout for synchronous fetch
+    
+    const dexProvider = new DexScreenerProvider();
+    
+    // Enrich each featured token
+    const enriched = await Promise.all(
+      tokens.map(async (token) => {
+        const cacheKey = `featured-token:${token.chainId}:${token.address.toLowerCase()}`;
+        
+        // 1. Check cache first
+        const cached = cache.get<NormalizedToken>(cacheKey);
+        if (cached) {
+          // Merge cached data with token (prefer cached live data)
+          return {
+            ...token,
+            priceUSD: cached.priceUSD || token.priceUSD,
+            logoURI: cached.logoURI || token.logoURI,
+            liquidity: cached.liquidity || token.liquidity,
+            volume24h: cached.volume24h || token.volume24h,
+            priceChange24h: cached.priceChange24h || token.priceChange24h,
+            marketCap: cached.marketCap || token.marketCap,
+            decimals: token.decimals, // Keep original decimals
+          };
+        }
+        
+        // 2. Try synchronous fetch with timeout
+        try {
+          const fetchPromise = this.fetchTokenFromDexScreener(dexProvider, token);
+          const timeoutPromise = new Promise<null>((resolve) => 
+            setTimeout(() => resolve(null), SYNC_TIMEOUT)
+          );
+          
+          const dexToken = await Promise.race([fetchPromise, timeoutPromise]);
+          
+          if (dexToken) {
+            // Successfully fetched - merge and cache
+            const enrichedToken = {
+              ...token,
+              priceUSD: dexToken.priceUSD || token.priceUSD,
+              logoURI: dexToken.logoURI || token.logoURI,
+              liquidity: dexToken.liquidity || token.liquidity,
+              volume24h: dexToken.volume24h || token.volume24h,
+              priceChange24h: dexToken.priceChange24h || token.priceChange24h,
+              marketCap: dexToken.marketCap || token.marketCap,
+              decimals: token.decimals,
+            };
+            
+            // Cache the enriched data
+            cache.set(cacheKey, enrichedToken, CACHE_TTL);
+            return enrichedToken;
+          }
+        } catch (error) {
+          // Silently fail - will enrich in background
+        }
+        
+        // 3. Timeout or error - return with existing data and enrich in background
+        this.enrichTokenInBackground(dexProvider, token, cacheKey, CACHE_TTL);
+        
+        // Return original token (with hardcoded data if available)
+        return token;
+      })
+    );
+    
+    return enriched;
+  }
+  
+  /**
+   * Fetch token data from DexScreener (helper method)
+   */
+  private async fetchTokenFromDexScreener(
+    dexProvider: DexScreenerProvider,
+    token: NormalizedToken
+  ): Promise<NormalizedToken | null> {
+    const canonicalChain = getCanonicalChain(token.chainId);
+    if (!canonicalChain) return null;
+    
+    // Fetch token data from DexScreener by address
+    const providerTokens = await dexProvider.fetchTokens({
+      chainIds: [token.chainId],
+      search: token.address,
+      limit: 10,
+    });
+    
+    // Find matching token
+    for (const providerToken of providerTokens) {
+      const normalized = dexProvider.normalizeToken(providerToken, canonicalChain);
+      if (normalized.address.toLowerCase() === token.address.toLowerCase()) {
+        return normalized;
+      }
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Enrich token in background (non-blocking)
+   */
+  private enrichTokenInBackground(
+    dexProvider: DexScreenerProvider,
+    token: NormalizedToken,
+    cacheKey: string,
+    cacheTtl: number
+  ): void {
+    // Fire and forget - don't await
+    this.fetchTokenFromDexScreener(dexProvider, token)
+      .then(async (dexToken) => {
+        if (dexToken) {
+          const { getCache } = await import('@/lib/backend/utils/cache');
+          const cache = getCache();
+          
+          // Cache enriched data for next request
+          const enrichedToken = {
+            ...token,
+            priceUSD: dexToken.priceUSD || token.priceUSD,
+            logoURI: dexToken.logoURI || token.logoURI,
+            liquidity: dexToken.liquidity || token.liquidity,
+            volume24h: dexToken.volume24h || token.volume24h,
+            priceChange24h: dexToken.priceChange24h || token.priceChange24h,
+            marketCap: dexToken.marketCap || token.marketCap,
+            decimals: token.decimals,
+          };
+          
+          cache.set(cacheKey, enrichedToken, cacheTtl);
+        }
+      })
+      .catch((error) => {
+        // Silently fail - will retry on next request
+      });
   }
 }
 

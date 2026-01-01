@@ -69,7 +69,7 @@ function getWalletTransactionsQueryKey(
 ): readonly unknown[] {
   return ['wallet-transactions', walletAddress?.toLowerCase(), limit] as const;
 }
-
+/**REMOVE SLASH FROM ENDPOINT */
 /**
  * Hook to fetch wallet transaction history using TanStack Query's infinite query
  * 

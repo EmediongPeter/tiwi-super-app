@@ -7,14 +7,45 @@
 /**
  * Sanitize decimal input - removes non-numeric characters except decimal point
  * Ensures only one decimal point and valid number format
+ * Handles edge cases:
+ * - Leading zeros (e.g., "01" → "01", "0.1" → "0.1")
+ * - Decimal point at start (e.g., ".1" → "0.1")
+ * - Multiple decimal points (keeps only the first)
+ * - Empty input → ""
  * @param raw - Raw input string
  * @returns Sanitized decimal string
  */
 export function sanitizeDecimal(raw: string): string {
+  // Remove all non-numeric characters except decimal point
   const cleaned = raw.replace(/[^\d.]/g, "");
-  const [intPart, ...rest] = cleaned.split(".");
-  const decimalPart = rest.join("");
-  return decimalPart ? `${intPart || "0"}.${decimalPart}` : intPart;
+  
+  // Handle empty input
+  if (!cleaned || cleaned === "") {
+    return "";
+  }
+  
+  // Check if input ends with "." (user is still typing decimal)
+  const endsWithDecimal = cleaned.endsWith(".");
+  
+  // Split by decimal point (keep only first occurrence)
+  const parts = cleaned.split(".");
+  const intPart = parts[0] || "";
+  const decimalPart = parts.slice(1).join(""); // Join all parts after first decimal point
+  
+  // If there's a decimal part, combine them
+  if (decimalPart) {
+    // If integer part is empty (e.g., ".1"), add "0"
+    return intPart === "" ? `0.${decimalPart}` : `${intPart}.${decimalPart}`;
+  }
+  
+  // No decimal part yet, but user typed "." - preserve it
+  if (endsWithDecimal) {
+    // If integer part is empty (just "."), convert to "0."
+    return intPart === "" ? "0." : `${intPart}.`;
+  }
+  
+  // No decimal part and no trailing "." - return integer part as-is (allows "01", "001", etc.)
+  return intPart;
 }
 
 /**

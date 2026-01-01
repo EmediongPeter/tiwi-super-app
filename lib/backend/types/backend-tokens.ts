@@ -50,7 +50,7 @@ export interface NormalizedToken {
   address: string;
   symbol: string;
   name: string;
-  decimals: number;
+  decimals: number | undefined;  // undefined means unknown, will be fetched from blockchain
   logoURI: string;
   priceUSD: string;
   providers: string[];        // Which providers have this token (e.g., ['dexscreener', 'lifi'])
@@ -108,7 +108,7 @@ export interface ProviderToken {
   address: string;
   symbol: string;
   name: string;
-  decimals: number;
+  decimals: number | undefined;  // undefined means provider doesn't provide decimals
   logoURI?: string;
   priceUSD?: string;
   chainId?: string | number;  // Provider's chain identifier (for chain detection)

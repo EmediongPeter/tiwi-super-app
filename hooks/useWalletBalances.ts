@@ -11,6 +11,8 @@ import type { WalletBalanceResponse } from '@/lib/backend/types/wallet';
 interface UseWalletBalancesReturn {
   balances: WalletBalanceResponse['balances'];
   totalUSD: string;
+  dailyChange?: number;
+  dailyChangeUSD?: string;
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
@@ -73,6 +75,8 @@ export function useWalletBalances(
   return {
     balances: data?.balances || [],
     totalUSD: data?.totalUSD || '0.00',
+    dailyChange: data?.dailyChange,
+    dailyChangeUSD: data?.dailyChangeUSD,
     isLoading,
     error: error ? (error instanceof Error ? error.message : 'Failed to fetch wallet balances') : null,
     refetch: () => {

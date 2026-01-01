@@ -126,7 +126,7 @@ export class DexScreenerProvider extends BaseTokenProvider {
       address: token.address,
       symbol: token.symbol,
       name: token.name,
-      decimals: token.decimals ?? 18, // Default to 18 if not provided
+      decimals: token.decimals, // DexScreener doesn't provide decimals, leave as undefined for enrichment
       logoURI: token.logoURI || '',
       priceUSD: token.priceUSD || '0',
       providers: ['dexscreener'],
@@ -230,18 +230,18 @@ export class DexScreenerProvider extends BaseTokenProvider {
             seenTokens.add(key);
             
             tokens.push({
-              chainId: canonicalChain.id,
               address: token.address,
               symbol: token.symbol,
               name: token.name,
-              decimals: 18, // DexScreener doesn't provide decimals, default to 18
+              decimals: undefined, // DexScreener doesn't provide decimals, will be enriched from blockchain
               logoURI: logo, // Extract from pair info
               priceUSD: price || '0',
-              liquidity: liquidity?.usd,
+              chainId: canonicalChain.id, // Store for normalization
               volume24h: volume?.h24,
-              priceChange24h: priceChange?.h24, // 24h price change percentage
-              marketCap: fdv, // Use FDV as market cap approximation
-            });
+              liquidity: liquidity?.usd,
+              marketCap: fdv,
+              priceChange24h: priceChange?.h24,
+            } as ProviderToken);
           }
         }
       }
@@ -308,7 +308,7 @@ export class DexScreenerProvider extends BaseTokenProvider {
               address: token.address,
               symbol: token.symbol,
               name: token.name,
-              decimals: 18,
+              decimals: undefined, // DexScreener doesn't provide decimals, will be enriched from blockchain
               logoURI: '',
               priceUSD: price || '0',
               liquidity: liquidity?.usd,

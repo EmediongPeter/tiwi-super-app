@@ -117,7 +117,7 @@ export class LiFiAdapter extends BaseRouter {
           order: this.mapOrderPreference(params.order),
           slippage: params.slippage || 0.5,
         } as any);
-        console.log("🚀 ~ LiFiAdapter ~ getRoute ~ getQuote:", quote)
+        console.log("🚀 ~ [Get QUOTE FROM LIFI] ~LiFiAdapter ~ getRoute ~ getQuote:", quote)
         
         // Convert quote (LiFiStep) to RouteExtended format
         // A quote is essentially a single-step route
@@ -143,7 +143,7 @@ export class LiFiAdapter extends BaseRouter {
           fromAmount: params.fromAmount,
           fromAddress: params.recipient,
         });
-        console.log("🚀 ~ LiFiAdapter ~ getRoute ~ routesResult:", routesResult)
+        console.log("🚀 ~[Get ROUTES FROM LIFI] ~ LiFiAdapter ~ getRoute ~ routesResult:", routesResult.routes[0].steps)
         
         if (routesResult.routes && routesResult.routes.length > 0) {
           // Use first route (best route)
@@ -250,6 +250,22 @@ export class LiFiAdapter extends BaseRouter {
     let totalProtocolFeeUSD = 0;
     let gasEstimate = '0';
     
+    // Extract protocol fees from all steps (including LIFI fixed fee from first step)
+    // LIFI fixed fee is typically in steps[0].estimate.feeCosts[0].amountUSD
+    for (const step of lifiRoute.steps) {
+      const stepEstimate = step.estimate;
+      if (stepEstimate) {
+        // Extract protocol fees (including LIFI fixed fee)
+        const feeCosts = stepEstimate.feeCosts || [];
+        for (const fee of feeCosts) {
+          const feeUSD = parseFloat((fee as any).amountUSD || '0');
+          if (feeUSD > 0) {
+            totalProtocolFeeUSD += feeUSD;
+          }
+        }
+      }
+    }
+    
     // If route-level gasCostUSD not available, calculate from steps
     if (!routeGasCostUSD || totalGasUSD === 0) {
       for (const step of lifiRoute.steps) {
@@ -258,25 +274,22 @@ export class LiFiAdapter extends BaseRouter {
           // Gas costs
           const gasCosts = stepEstimate.gasCosts || [];
           for (const cost of gasCosts) {
-            const costEstimate = cost.estimate as any;
-            const costUSD = parseFloat(costEstimate?.usd || '0');
+            // Try multiple possible fields for gas USD value
+            const costUSD = parseFloat(
+              (cost as any).amountUSD || 
+              (cost.estimate as any)?.usd || 
+              '0'
+            );
             totalGasUSD += costUSD;
-            // Use first gas cost for gas estimate
+            // Use first gas cost for gas estimate (native token amount)
             if (gasEstimate === '0' && cost.amount) {
               gasEstimate = cost.amount;
             }
           }
-          
-          // Protocol fees
-          const feeCosts = stepEstimate.feeCosts || [];
-          for (const fee of feeCosts) {
-            const feeUSD = parseFloat((fee as any).amountUSD || '0');
-            totalProtocolFeeUSD += feeUSD;
-          }
         }
       }
     } else {
-      // Route-level gasCostUSD available, but still need to extract gas estimate and protocol fees from steps
+      // Route-level gasCostUSD available, but still need to extract gas estimate from steps
       for (const step of lifiRoute.steps) {
         const stepEstimate = step.estimate;
         if (stepEstimate) {
@@ -287,13 +300,6 @@ export class LiFiAdapter extends BaseRouter {
               gasEstimate = cost.amount;
               break;
             }
-          }
-          
-          // Protocol fees
-          const feeCosts = stepEstimate.feeCosts || [];
-          for (const fee of feeCosts) {
-            const feeUSD = parseFloat((fee as any).amountUSD || '0');
-            totalProtocolFeeUSD += feeUSD;
           }
         }
       }

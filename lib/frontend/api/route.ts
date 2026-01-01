@@ -16,19 +16,20 @@ export interface FetchRouteParams {
     chainId: number;
     address: string;
     symbol?: string;
-    decimals?: number;
+    decimals?: number;       // From token data (undefined means unknown, will be fetched)
   };
   toToken: {
     chainId: number;
     address: string;
     symbol?: string;
-    decimals?: number;
+    decimals?: number;       // From token data (undefined means unknown, will be fetched)
   };
   fromAmount: string;
   slippage?: number;
   slippageMode?: 'fixed' | 'auto';
   recipient?: string;
   order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST';
+  liquidityUSD?: number;                // Token pair liquidity in USD (from token data)
 }
 
 export interface RouteAPIResponse {

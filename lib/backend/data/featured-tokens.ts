@@ -20,7 +20,7 @@ export const FEATURED_TOKENS: Record<number, NormalizedToken[]> = {
       address: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596',
       symbol: 'TWC',
       name: 'TIWI CAT',
-      decimals: 18,
+      decimals: 9,
       // Use DexScreener image + price so token row has correct logo & price
       logoURI: 'https://cdn.dexscreener.com/cms/images/c135d9cc87d8db4c1e74788c546ed3c7c4498a5da693cbefdc30e749cbea4843?width=800&height=800&quality=90',
       priceUSD: '0.0000000004160',

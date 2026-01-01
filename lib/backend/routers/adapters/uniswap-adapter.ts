@@ -11,6 +11,7 @@ import { BaseRouter } from '../base';
 import { toHumanReadable } from '../transformers/amount-transformer';
 import { QUOTE_EXPIRATION_SECONDS } from '../constants';
 import type { RouterParams, RouterRoute, RouteStep } from '../types';
+import { getGasEstimationService } from '@/lib/backend/services/gas-estimation-service';
 
 // Uniswap V2 Router addresses (Uniswap on Ethereum, SushiSwap on other chains)
 const UNISWAP_V2_ROUTER: Record<number, Address> = {
@@ -156,12 +157,33 @@ export class UniswapAdapter extends BaseRouter {
       
       const amountOut = amounts[amounts.length - 1];
       
-      // Get token decimals (default to 18 if not provided)
-      const fromDecimals = 18; // Will be provided by RouteService
-      const toDecimals = 18;
+      // Use provided decimals from RouterParams (passed from RouteService)
+      // These come from token data (enriched by TokenService), no contract call needed
+      const fromDecimals = params.fromDecimals;
+      const toDecimals = params.toDecimals;
       
       // Calculate price impact (simplified: assume 0.3% fee for V2)
       const priceImpact = this.calculatePriceImpact(amountIn, amountOut, path.length);
+      
+      // Estimate gas cost (non-blocking - don't fail route if estimation fails)
+      let gasEstimate = '0';
+      let gasUSD = '0';
+      try {
+        const gasService = getGasEstimationService();
+        const gasResult = await gasService.estimateSwapGas({
+          chainId: fromChainId,
+          routerAddress,
+          fromToken: getAddress(params.fromToken),
+          toToken: getAddress(params.toToken),
+          amountIn,
+          path,
+        });
+        gasEstimate = gasResult.gasEstimate;
+        gasUSD = gasResult.gasUSD;
+      } catch (error) {
+        console.warn('[UniswapAdapter] Gas estimation failed, using fallback:', error);
+        // Continue with '0' values (will be handled in normalizeRoute)
+      }
       
       // Normalize to RouterRoute format
       const normalizedRoute = this.normalizeRoute(
@@ -175,7 +197,9 @@ export class UniswapAdapter extends BaseRouter {
         toDecimals,
         path,
         priceImpact,
-        params.slippage || 0.5
+        params.slippage || 0.5,
+        gasEstimate,
+        gasUSD
       );
       console.log("🚀 ~ UniswapAdapter ~ getRoute ~ normalizedRoute:", normalizedRoute)
       return normalizedRoute;
@@ -258,7 +282,9 @@ export class UniswapAdapter extends BaseRouter {
     toDecimals: number,
     path: Address[],
     priceImpact: number,
-    slippage: number
+    slippage: number,
+    gasEstimate: string = '0',
+    gasUSD: string = '0'
   ): RouterRoute {
     // Convert amounts to human-readable
     const fromAmountHuman = toHumanReadable(fromAmount, fromDecimals);
@@ -312,8 +338,8 @@ export class UniswapAdapter extends BaseRouter {
       slippage: slippage.toFixed(2),
       fees: {
         protocol: '0', // V2 has no protocol fee (only LP fee)
-        gas: '0', // Gas estimate not available from quote
-        gasUSD: '0',
+        gas: gasEstimate, // Gas estimate from eth_estimateGas
+        gasUSD: gasUSD, // Gas cost in USD
         tiwiProtocolFeeUSD: undefined, // Will be enriched by RouteService
         total: '0', // Will be enriched by RouteService
       },

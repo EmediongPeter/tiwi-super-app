@@ -19,9 +19,10 @@ import { useSwapStore } from "@/lib/frontend/store/swap-store";
 import { useTokenPricePrefetch } from "@/hooks/useTokenPricePrefetch";
 import type { Token } from "@/lib/frontend/types/tokens";
 import { MOCK_TOKENS } from "@/data/mock-tokens";
-import ErrorToast from "@/components/ui/error-toast";
+import ErrorToast, { type ErrorToastAction } from "@/components/ui/error-toast";
 import { parseRouteError } from "@/lib/shared/utils/error-messages";
 import { useTokenBalance } from "@/hooks/useTokenBalance";
+import { useSettingsStore } from "@/lib/frontend/store/settings-store";
 
 // Default tokens (ensure chainId/address/logo for routing + display)
 const DEFAULT_FROM_TOKEN: Token = {
@@ -36,6 +37,7 @@ const DEFAULT_FROM_TOKEN: Token = {
     "/assets/logos/twc-token.svg",
   chainLogo: "/assets/icons/chains/bsc.svg",
   chainBadge: "bsc",
+  decimals: 9
 };
 
 const DEFAULT_TO_TOKEN: Token = {
@@ -48,6 +50,7 @@ const DEFAULT_TO_TOKEN: Token = {
   logo: "/assets/icons/tokens/tether.svg",
   chainLogo: "/assets/icons/chains/bsc.svg",
   chainBadge: "bsc",
+  decimals: 6
 };
 
 export default function SwapPage() {
@@ -118,11 +121,21 @@ export default function SwapPage() {
   
   // Error toast state
   const [isErrorToastOpen, setIsErrorToastOpen] = useState(false);
-  const [errorInfo, setErrorInfo] = useState<{ title: string; message: string; nextSteps: string[] } | null>(null);
+  const [errorInfo, setErrorInfo] = useState<{ 
+    title: string; 
+    message: string; 
+    nextSteps?: string[];
+    actions?: ErrorToastAction[];
+  } | null>(null);
   
   // Get quote error and route from store
-  const quoteError = useSwapStore((state) => state.quoteError);
   const route = useSwapStore((state) => state.route);
+  console.log("🚀 ~ SwapPage ~ route:", route)
+  const quoteError = useSwapStore((state) => state.quoteError);
+  
+  // Get settings store for slippage actions
+  const setSlippageMode = useSettingsStore((state) => state.setSlippageMode);
+  const setSlippageTolerance = useSettingsStore((state) => state.setSlippageTolerance);
   
   // Get currency preference
   const currency = useCurrencyStore((state) => state.currency);
@@ -135,12 +148,30 @@ export default function SwapPage() {
   useEffect(() => {
     if (quoteError) {
       const parsed = parseRouteError(quoteError);
-      setErrorInfo({ title: parsed.title, message: parsed.message, nextSteps: parsed.nextSteps || [] });
+      
+      // Convert RouteErrorAction[] to ErrorToastAction[]
+      const toastActions: ErrorToastAction[] | undefined = parsed.actions?.map((action) => ({
+        label: action.label,
+        onClick: () => {
+          // Switch to fixed mode and set the suggested slippage tolerance
+          setSlippageMode('fixed');
+          setSlippageTolerance(action.slippageTolerance);
+          console.log(`[SwapPage] Updated slippage tolerance to ${action.slippageTolerance}%`);
+        },
+        variant: 'primary' as const,
+      }));
+      
+      setErrorInfo({ 
+        title: parsed.title, 
+        message: parsed.message, 
+        nextSteps: parsed.nextSteps,
+        actions: toastActions,
+      });
       setIsErrorToastOpen(true);
     } else {
       setIsErrorToastOpen(false);
     }
-  }, [quoteError]);
+  }, [quoteError, setSlippageMode, setSlippageTolerance]);
 
   
 
@@ -381,6 +412,7 @@ export default function SwapPage() {
           title={errorInfo.title}
           message={errorInfo.message}
           nextSteps={errorInfo.nextSteps}
+          actions={errorInfo.actions}
           open={isErrorToastOpen}
           onOpenChange={setIsErrorToastOpen}
           duration={10000} // 10 seconds for routing errors

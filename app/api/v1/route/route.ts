@@ -25,6 +25,7 @@ interface RouteRequestQuery {
   slippageMode?: 'fixed' | 'auto'; // Slippage mode
   recipient?: string;             // Recipient address (optional)
   order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST'; // Route preference
+  liquidityUSD?: string;          // Token pair liquidity in USD (from frontend)
 }
 
 interface RouteRequestBody {
@@ -32,19 +33,20 @@ interface RouteRequestBody {
     chainId: number;
     address: string;
     symbol?: string;
-    decimals?: number;
+    decimals?: number | undefined;  // undefined means unknown, will be fetched
   };
   toToken: {
     chainId: number;
     address: string;
     symbol?: string;
-    decimals?: number;
+    decimals?: number | undefined;  // undefined means unknown, will be fetched
   };
   fromAmount: string;
   slippage?: number;
   slippageMode?: 'fixed' | 'auto';
   recipient?: string;
   order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST';
+  liquidityUSD?: number;                // Token pair liquidity in USD (from frontend)
 }
 
 // ============================================================================
@@ -89,22 +91,26 @@ export async function GET(req: NextRequest) {
     const slippageMode = searchParams.get('slippageMode') as 'fixed' | 'auto' | null;
     const recipient = searchParams.get('recipient');
     const order = searchParams.get('order') as 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST' | null;
+    const liquidityUSD = searchParams.get('liquidityUSD');
     
     // Build route request
     const routeRequest: RouteRequest = {
       fromToken: {
         chainId: parseInt(fromChainId, 10),
         address: fromToken,
+        decimals: undefined, // Will be fetched if not provided
       },
       toToken: {
         chainId: parseInt(toChainId, 10),
         address: toToken,
+        decimals: undefined, // Will be fetched if not provided
       },
       fromAmount,
       slippage: slippage ? parseFloat(slippage) : undefined,
       slippageMode: slippageMode || 'fixed',
       recipient: recipient || undefined,
       order: order || 'RECOMMENDED',
+      liquidityUSD: liquidityUSD ? parseFloat(liquidityUSD) : undefined, // Pass liquidity from query params (if provided)
     };
     
     // Validate chain IDs
@@ -168,24 +174,26 @@ export async function POST(req: NextRequest) {
     }
     
     // Build route request
+    // Decimals can be undefined (will be fetched from blockchain if needed)
     const routeRequest: RouteRequest = {
       fromToken: {
         chainId: body.fromToken.chainId,
         address: body.fromToken.address,
         symbol: body.fromToken.symbol,
-        decimals: body.fromToken.decimals,
+        decimals: body.fromToken.decimals, // Required: from token data
       },
       toToken: {
         chainId: body.toToken.chainId,
         address: body.toToken.address,
         symbol: body.toToken.symbol,
-        decimals: body.toToken.decimals,
+        decimals: body.toToken.decimals, // Required: from token data
       },
       fromAmount: body.fromAmount,
       slippage: body.slippage,
       slippageMode: body.slippageMode || 'fixed',
       recipient: body.recipient,
       order: body.order || 'RECOMMENDED',
+      liquidityUSD: body.liquidityUSD, // Pass liquidity from frontend
     };
     
     // Handle request
@@ -246,8 +254,10 @@ async function handleRouteRequest(
     }
     
     // Return error response
+    // IMPORTANT: Don't return empty route object - return null or omit route field
+    // Frontend checks for route.router, so empty object passes validation incorrectly
     const errorResponse: RouteAPIResponse = {
-      route: {} as RouteResponse['route'], // Empty route object for error case
+      route: null as any, // Explicitly null to fail validation
       timestamp: Date.now(),
       expiresAt: Date.now(),
       error: error?.message || 'Failed to fetch route',

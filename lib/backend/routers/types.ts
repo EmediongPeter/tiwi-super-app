@@ -17,8 +17,10 @@ export interface RouterParams {
   fromChainId: number | string;        // Provider-specific chain ID
   fromToken: string;                   // Provider-specific token identifier
   fromAmount: string;                  // Amount in smallest unit
+  fromDecimals: number;                // Token decimals (from request or fetched)
   toChainId: number | string;
   toToken: string;
+  toDecimals: number;                  // Token decimals (from request or fetched)
   recipient?: string;                  // Provider-specific address format
   slippage?: number;                   // Provider-specific slippage format
   order?: string;                      // Provider-specific order preference
@@ -111,13 +113,13 @@ export interface RouteRequest {
     chainId: number;                   // Canonical chain ID
     address: string;                     // Token address
     symbol?: string;                    // Optional: for validation
-    decimals?: number;                  // Optional: if known
+    decimals: number | undefined;       // From token data (undefined means unknown, will be fetched)
   };
   toToken: {
     chainId: number;
     address: string;
     symbol?: string;
-    decimals?: number;
+    decimals: number | undefined;       // From token data (undefined means unknown, will be fetched)
   };
   
   // Amount
@@ -128,6 +130,7 @@ export interface RouteRequest {
   slippageMode?: 'fixed' | 'auto';     // Fixed slippage or auto-adjust (default: 'fixed')
   recipient?: string;                   // Recipient address (optional, for cross-chain)
   order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST';  // Route preference (default: 'RECOMMENDED')
+  liquidityUSD?: number;                // Token pair liquidity in USD (from frontend, optional - used for auto slippage)
 }
 
 // ============================================================================

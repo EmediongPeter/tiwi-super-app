@@ -101,7 +101,19 @@ export default function TransactionHistory({
             <div className="flex gap-2 lg:gap-1.5 xl:gap-1.5 2xl:gap-2 items-center relative shrink-0 w-[142px] lg:w-[103px] xl:w-[116px] 2xl:w-[142px]">
               <div className="flex flex-1 flex-col gap-1 lg:gap-0.5 xl:gap-0.5 2xl:gap-1 items-start justify-center min-h-0 min-w-0 relative shrink-0">
                 <div className="flex flex-col font-medium justify-center leading-[0] relative shrink-0 text-lg lg:text-sm xl:text-base 2xl:text-lg text-right text-white whitespace-nowrap">
-                  <p className="leading-5 lg:leading-[14px] xl:leading-4 2xl:leading-5">{transaction.type}</p>
+                  <p className="leading-5 lg:leading-[14px] xl:leading-4 2xl:leading-5">
+                    {transaction.type}
+                    {transaction.metadata?.dexName && (
+                      <span className="text-[#8a929a] text-sm lg:text-xs xl:text-xs 2xl:text-sm ml-1">
+                        ({transaction.metadata.dexName})
+                      </span>
+                    )}
+                    {transaction.metadata?.protocol && !transaction.metadata?.dexName && (
+                      <span className="text-[#8a929a] text-sm lg:text-xs xl:text-xs 2xl:text-sm ml-1">
+                        ({transaction.metadata.protocol})
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <div className="flex gap-0.5 lg:gap-0 xl:gap-0 2xl:gap-0.5 items-start relative shrink-0 w-full">
                   <div className="flex flex-col font-medium justify-center leading-[0] relative shrink-0 text-base lg:text-xs xl:text-sm 2xl:text-base text-right text-[#8a929a] whitespace-nowrap">

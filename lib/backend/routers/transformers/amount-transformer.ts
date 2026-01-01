@@ -43,12 +43,27 @@ export function toHumanReadable(amount: string, decimals: number): string {
     return '0';
   }
   
-  // Pad amount to have at least 'decimals' digits
-  const padded = amount.padStart(decimals + 1, '0');
+  // Remove leading zeros
+  const trimmedAmount = amount.replace(/^0+/, '') || '0';
+  console.log("🚀 ~ toHumanReadable ~ trimmedAmount:", trimmedAmount, {length: trimmedAmount.length})
   
-  // Split into integer and decimal parts
-  const integerPart = padded.slice(0, -decimals);
-  const decimalPart = padded.slice(-decimals);
+  // If amount has fewer digits than decimals, pad with zeros
+  if (trimmedAmount.length <= decimals) {
+    const padded = trimmedAmount.padStart(decimals, '0');
+    const integerPart = '0';
+    const decimalPart = padded;
+    const trimmedDecimal = decimalPart.replace(/0+$/, '');
+    if (trimmedDecimal) {
+      return `${integerPart}.${trimmedDecimal}`;
+    }
+    return '0';
+  }
+  
+  // Amount has more digits than decimals
+  // Split: integer part = everything except last 'decimals' digits
+  //        decimal part = last 'decimals' digits
+  const integerPart = trimmedAmount.slice(0, -decimals);
+  const decimalPart = trimmedAmount.slice(-decimals);
   
   // Remove trailing zeros from decimal part
   const trimmedDecimal = decimalPart.replace(/0+$/, '');

@@ -4,10 +4,16 @@
  * Provides user-friendly error messages and next steps for routing errors.
  */
 
+export interface RouteErrorAction {
+  label: string;
+  slippageTolerance: number;
+}
+
 export interface RouteErrorInfo {
   title: string;
   message: string;
   nextSteps?: string[];
+  actions?: RouteErrorAction[];
 }
 
 /**
@@ -33,11 +39,61 @@ export function parseRouteError(error: Error | string): RouteErrorInfo {
     };
   }
 
+  // Slippage-related errors (most common)
+  if (
+    lowerMessage.includes('slippage') ||
+    lowerMessage.includes('insufficient_output') ||
+    lowerMessage.includes('amount_out_min') ||
+    lowerMessage.includes('execution reverted') ||
+    lowerMessage.includes('slippage tolerance')
+  ) {
+    return {
+      title: 'Swap failed',
+      message: 'Swap failed due to slippage. Consider increasing slippage tolerance or try another pair.',
+      actions: [
+        { label: 'Increase to 1%', slippageTolerance: 1 },
+        { label: 'Increase to 3%', slippageTolerance: 3 },
+        { label: 'Increase to 5%', slippageTolerance: 5 },
+      ],
+      nextSteps: [
+        'Try increasing slippage tolerance',
+        'Try swapping a smaller amount',
+        'Try a different token pair',
+      ],
+    };
+  }
+
+  // Auto slippage errors
+  if (lowerMessage.includes('auto slippage') || lowerMessage.includes('no route found after')) {
+    return {
+      title: 'Swap route not found',
+      message: 'Could not find a route even with increased slippage tolerance. This pair may have very low liquidity.',
+      actions: [
+        { label: 'Try 5% slippage', slippageTolerance: 5 },
+        { label: 'Try 10% slippage', slippageTolerance: 10 },
+      ],
+      nextSteps: [
+        'Try using fixed slippage mode with a higher tolerance (e.g., 5-10%)',
+        'Try swapping a smaller amount',
+        'Try a different token pair',
+      ],
+    };
+  }
+
   // Insufficient liquidity
   if (lowerMessage.includes('insufficient liquidity') || lowerMessage.includes('low liquidity')) {
     return {
       title: 'Low liquidity',
       message: 'Not enough liquidity for this swap.',
+      actions: [
+        { label: 'Try 3% slippage', slippageTolerance: 3 },
+        { label: 'Try 5% slippage', slippageTolerance: 5 },
+      ],
+      nextSteps: [
+        'Try swapping a smaller amount',
+        'Try using fixed slippage mode with higher tolerance',
+        'Try a different token pair',
+      ],
     };
   }
 

@@ -8,6 +8,7 @@
 import { getRouterRegistry } from '@/lib/backend/routers/registry';
 import { getTokenService } from '@/lib/backend/services/token-service';
 import { getTokenPrice } from '@/lib/backend/providers/price-provider';
+import { getAutoSlippageService } from '@/lib/backend/services/auto-slippage-service';
 import { ChainTransformer, toSmallestUnit, transformTokenAddress, transformSlippage } from '@/lib/backend/routers/transformers';
 import { selectBestRoute, sortRoutesByScore } from '@/lib/backend/routers/scoring';
 import { 
@@ -32,25 +33,82 @@ export class RouteService {
   
   /**
    * Get best route for a swap
+   * 
+   * If slippageMode is 'auto', uses AutoSlippageService to:
+   * - Calculate initial slippage from liquidity
+   * - Try multiple slippage values (max 3 attempts)
+   * - Select best route from successful attempts
+   * 
+   * If slippageMode is 'fixed', uses user's specified slippage.
    */
   async getRoute(request: RouteRequest): Promise<RouteResponse> {
     // 1. Validate request
     this.validateRequest(request);
+
+    // 2. Handle auto slippage mode
+    if (request.slippageMode === 'auto') {
+      return this.getRouteWithAutoSlippage(request);
+    }
+
+    // 3. Continue with fixed slippage logic (existing implementation)
+    return this.getRouteWithFixedSlippage(request);
+  }
+
+  /**
+   * Get route with auto slippage
+   * Delegates to AutoSlippageService which handles:
+   * - Liquidity fetching
+   * - Initial slippage calculation
+   * - Multi-attempt route fetching
+   * - Best route selection
+   */
+  private async getRouteWithAutoSlippage(request: RouteRequest): Promise<RouteResponse> {
+    try {
+      const autoSlippageService = getAutoSlippageService();
+      const result = await autoSlippageService.getRouteWithAutoSlippage(request);
+
+      // Update route with applied slippage
+      const routeWithAppliedSlippage: RouterRoute = {
+        ...result.route,
+        slippage: result.appliedSlippage.toFixed(2), // Update to applied slippage
+      };
+
+      // Calculate expiration timestamp
+      const expiresAt = Date.now() + (QUOTE_EXPIRATION_SECONDS * 1000);
+
+      return {
+        route: routeWithAppliedSlippage,
+        alternatives: undefined, // Auto slippage doesn't return alternatives
+        timestamp: Date.now(),
+        expiresAt,
+      };
+    } catch (error: any) {
+      // If auto slippage fails, provide helpful error message
+      const errorMessage = error.message || 'Auto slippage failed';
+      throw new Error(
+        `${errorMessage}. Consider using fixed slippage mode with higher tolerance.`
+      );
+    }
+  }
+
+  /**
+   * Get route with fixed slippage (existing implementation)
+   */
+  private async getRouteWithFixedSlippage(request: RouteRequest): Promise<RouteResponse> {
+    // 1. Get token decimals (use provided decimals, fetch from blockchain if undefined)
+    // Frontend provides decimals from token data (enriched by TokenService)
+    // If undefined, fetch from blockchain contract
+    const fromDecimals = request.fromToken.decimals !== undefined 
+      ? request.fromToken.decimals 
+      : await this.getTokenDecimals(request.fromToken.chainId, request.fromToken.address);
+    const toDecimals = request.toToken.decimals !== undefined
+      ? request.toToken.decimals
+      : await this.getTokenDecimals(request.toToken.chainId, request.toToken.address);
     
-    // 2. Get token decimals (needed for amount transformation)
-    const fromDecimals = await this.getTokenDecimals(
-      request.fromToken.chainId,
-      request.fromToken.address
-    );
-    const toDecimals = await this.getTokenDecimals(
-      request.toToken.chainId,
-      request.toToken.address
-    );
-    
-    // 3. Transform amount to smallest unit
+    // 2. Transform amount to smallest unit
     const fromAmountSmallest = toSmallestUnit(request.fromAmount, fromDecimals);
     
-    // 4. Get eligible routers
+    // 3. Get eligible routers
     const eligibleRouters = await this.routerRegistry.getEligibleRouters(
       request.fromToken.chainId,
       request.toToken.chainId
@@ -60,7 +118,7 @@ export class RouteService {
       throw new Error('No routers support this chain combination');
     }
     
-    // 5. Try routers in parallel (faster, better quotes)
+    // 4. Try routers in parallel (faster, better quotes)
     const routes: RouterRoute[] = [];
     const errors: RouterError[] = [];
     
@@ -115,7 +173,7 @@ export class RouteService {
       }
     }
     
-    // 6. Select best route
+    // 5. Select best route
     const bestRoute = selectBestRoute(routes);
     
     if (!bestRoute) {
@@ -146,7 +204,7 @@ export class RouteService {
       throw new Error(errorMessage);
     }
     
-    // 7. Enrich routes with USD values and Tiwi fees (for routes that don't have them)
+    // 6. Enrich routes with USD values and Tiwi fees (for routes that don't have them)
     const enrichedBestRoute = await this.enrichRouteWithUSD(bestRoute, request);
     const enrichedAlternatives = await Promise.all(
       routes
@@ -154,13 +212,13 @@ export class RouteService {
         .map(route => this.enrichRouteWithUSD(route, request))
     );
     
-    // 8. Sort alternatives
+    // 7. Sort alternatives
     const alternatives = sortRoutesByScore(enrichedAlternatives);
     
-    // 9. Calculate expiration timestamp
+    // 8. Calculate expiration timestamp
     const expiresAt = Date.now() + (QUOTE_EXPIRATION_SECONDS * 1000);
     
-    // 10. Return response
+    // 9. Return response
     return {
       route: enrichedBestRoute,
       alternatives: alternatives.length > 0 ? alternatives : undefined,
@@ -218,8 +276,10 @@ export class RouteService {
       fromChainId,
       fromToken,
       fromAmount: fromAmountSmallest,
+      fromDecimals,
       toChainId,
       toToken,
+      toDecimals,
       recipient: request.recipient,
       slippage,
       order,
@@ -244,24 +304,38 @@ export class RouteService {
   }
   
   /**
-   * Get token decimals
+   * Get token decimals (on-demand fetching)
+   * 
+   * Flow:
+   * 1. Check if decimals provided in request (use if available)
+   * 2. Try token service cache (may have been fetched before)
+   * 3. Fetch from blockchain contract (on-demand)
+   * 4. Default to 18 only as last resort
+   * 
+   * This is called only when decimals are actually needed (e.g., for routing),
+   * avoiding unnecessary contract calls during token fetching.
    */
   private async getTokenDecimals(chainId: number, address: string): Promise<number> {
     try {
-      // Try to get from token service
+      // Method 1: Try token service cache (may have been fetched in previous request)
       const tokens = await this.tokenService.getTokensByChain(chainId, 100);
       const token = tokens.find(t => t.address.toLowerCase() === address.toLowerCase());
       
-      if (token && token.decimals) {
+      if (token && token.decimals !== undefined) {
+        // Use cached decimals if available
         return token.decimals;
       }
       
-      // Default decimals based on chain type
-      // Most EVM tokens use 18, USDC/USDT use 6
-      // For now, default to 18 (can be enhanced with chain-specific defaults)
-      return 18;
+      // Method 2: Fetch directly from blockchain (on-demand)
+      // This is the primary method when decimals are undefined
+      const { getTokenDecimalsFetcher } = await import('@/lib/backend/utils/token-decimals-fetcher');
+      const decimalsFetcher = getTokenDecimalsFetcher();
+      const decimals = await decimalsFetcher.getTokenDecimals(address, chainId);
+      
+      return decimals;
     } catch (error) {
       console.warn(`[RouteService] Error fetching token decimals for ${chainId}:${address}, using default 18`);
+      // Last resort: default to 18
       return 18;
     }
   }
@@ -351,21 +425,45 @@ export class RouteService {
     route: RouterRoute,
     request: RouteRequest
   ): Promise<RouterRoute> {
+    console.log("🚀 ~ RouteService ~ enrichRouteWithUSD ~ route:", route)
     const TIWI_PROTOCOL_FEE_RATE = 0.0025; // 0.25%
-    
+
+    // Identify route provider for logging
+    console.log(`[enrichRouteWithUSD] Route provider: ${route}`);
+
     // If route already has USD values (e.g., from LiFi), just add Tiwi fee
     if (route.fromToken.amountUSD && route.toToken.amountUSD) {
+      console.log(
+        "🚀 ~ RouteService ~ enrichRouteWithUSD ~ route.fromToken.amountUSD: [ROUTE ALREADY HAS USD VALUES]",
+        route.fromToken.amountUSD
+      );
+      console.log(`[enrichRouteWithUSD] USD values already present for provider "${route.router}": fromToken.amountUSD=${route.fromToken.amountUSD}, toToken.amountUSD=${route.toToken.amountUSD}`);
+
       const fromAmountUSDNum = parseFloat(route.fromToken.amountUSD);
-      const tiwiProtocolFeeUSD = fromAmountUSDNum > 0 
-        ? (fromAmountUSDNum * TIWI_PROTOCOL_FEE_RATE).toFixed(2)
-        : '0.00';
-      
-      // Calculate total fees (gas + protocol + Tiwi)
-      const gasUSDNum = parseFloat(route.fees.gasUSD || '0');
-      const protocolUSDNum = parseFloat(route.fees.protocol || '0');
+      console.log(`[enrichRouteWithUSD] fromAmountUSDNum: ${fromAmountUSDNum}`);
+
+      const tiwiProtocolFeeUSD =
+        fromAmountUSDNum > 0
+          ? (fromAmountUSDNum * TIWI_PROTOCOL_FEE_RATE).toFixed(2)
+          : "0.00";
+      console.log(`[enrichRouteWithUSD] Tiwi protocol fee calculated as ${TIWI_PROTOCOL_FEE_RATE * 100}% of fromAmountUSDNum = ${tiwiProtocolFeeUSD} (source: calculated in code)`);
+
+      // Fee sources
+      const gasUSDRaw = route.fees.gasUSD;
+      const protocolUSDRaw = route.fees.protocol;
+      const gasUSDNum = parseFloat(gasUSDRaw || "0");
+      const protocolUSDNum = parseFloat(protocolUSDRaw || "0");
       const tiwiFeeNum = parseFloat(tiwiProtocolFeeUSD);
       const totalFeesUSD = (gasUSDNum + protocolUSDNum + tiwiFeeNum).toFixed(2);
-      
+
+      console.log(
+        `[enrichRouteWithUSD] Fee breakdown for provider "${route.router}":\n` +
+        `  - gasUSD (from route): ${gasUSDRaw} -> ${gasUSDNum}\n` +
+        `  - protocol (from route): ${protocolUSDRaw} -> ${protocolUSDNum}\n` +
+        `  - tiwiProtocolFeeUSD (calculated): ${tiwiProtocolFeeUSD} -> ${tiwiFeeNum}\n` +
+        `  - total fees: ${gasUSDNum} + ${protocolUSDNum} + ${tiwiFeeNum} = ${totalFeesUSD}`
+      );
+
       return {
         ...route,
         fees: {
@@ -375,41 +473,83 @@ export class RouteService {
         },
       };
     }
-    
+
     // Route doesn't have USD values - calculate them from token prices
     try {
       // Fetch token prices in parallel
+      console.log(
+        "🚀 ~ RouteService ~ enrichRouteWithUSD ~ route.fromToken.amountUSD: [ROUTE DOESN'T HAVE USD VALUES]",
+        route.fromToken.amountUSD
+      );
+      console.log(`[enrichRouteWithUSD] Will fetch USD prices for provider "${route.router}" (probably uniswap/pancakeswap, no prices on route)`);
+
       const [fromTokenPrice, toTokenPrice] = await Promise.all([
-        getTokenPrice(request.fromToken.address, request.fromToken.chainId, request.fromToken.symbol),
-        getTokenPrice(request.toToken.address, request.toToken.chainId, request.toToken.symbol),
+        getTokenPrice(
+          request.fromToken.address,
+          request.fromToken.chainId,
+          request.fromToken.symbol
+        ),
+        getTokenPrice(
+          request.toToken.address,
+          request.toToken.chainId,
+          request.toToken.symbol
+        ),
       ]);
-      
+
+      console.log(`[enrichRouteWithUSD] Price quotes fetched: fromTokenPrice=`, fromTokenPrice, `, toTokenPrice=`, toTokenPrice);
+
       // Calculate USD values
-      const fromAmountNum = parseFloat(route.fromToken.amount);
-      const toAmountNum = parseFloat(route.toToken.amount);
-      
+      const fromAmountNum = parseFloat(route.fromToken.amount || "0");
+      const toAmountNum = parseFloat(route.toToken.amount || "0");
       const fromPriceUSD = fromTokenPrice ? parseFloat(fromTokenPrice.priceUSD) : 0;
       const toPriceUSD = toTokenPrice ? parseFloat(toTokenPrice.priceUSD) : 0;
+
+      console.log(`[enrichRouteWithUSD] From token amount: ${route.fromToken.amount} as number: ${fromAmountNum}; USD price: ${fromPriceUSD}`);
+      console.log(`[enrichRouteWithUSD] To token amount: ${route.toToken.amount} as number: ${toAmountNum}; USD price: ${toPriceUSD}`);
+
+      // Calculate USD values - ensure we have valid prices
+      const fromAmountUSD =
+        fromAmountNum > 0 && fromPriceUSD > 0
+          ? (fromAmountNum * fromPriceUSD).toFixed(2)
+          : "0.00";
+      const toAmountUSD =
+        toAmountNum > 0 && toPriceUSD > 0
+          ? (toAmountNum * toPriceUSD).toFixed(2)
+          : "0.00";
       
-      const fromAmountUSD = fromAmountNum > 0 && fromPriceUSD > 0
-        ? (fromAmountNum * fromPriceUSD).toFixed(2)
-        : undefined;
-      const toAmountUSD = toAmountNum > 0 && toPriceUSD > 0
-        ? (toAmountNum * toPriceUSD).toFixed(2)
-        : undefined;
-      
+      // Log warning if USD calculation resulted in 0.00
+      if (toAmountUSD === "0.00" && toAmountNum > 0) {
+        console.warn(`[enrichRouteWithUSD] WARNING: toAmountUSD is 0.00 but toAmountNum=${toAmountNum}. toPriceUSD=${toPriceUSD}. This might indicate a price fetch issue.`);
+      }
+
+      console.log(
+        `[enrichRouteWithUSD] Computed USD values: fromAmountUSD=${fromAmountUSD}, toAmountUSD=${toAmountUSD} (calculated = YES, not from route for route.router "${route.router}")`
+      );
+
       // Calculate Tiwi protocol fee
       const fromAmountUSDNum = fromAmountUSD ? parseFloat(fromAmountUSD) : 0;
-      const tiwiProtocolFeeUSD = fromAmountUSDNum > 0 
-        ? (fromAmountUSDNum * TIWI_PROTOCOL_FEE_RATE).toFixed(2)
-        : '0.00';
-      
-      // Calculate total fees (gas + protocol + Tiwi)
-      const gasUSDNum = parseFloat(route.fees.gasUSD || '0');
-      const protocolUSDNum = parseFloat(route.fees.protocol || '0');
+      const tiwiProtocolFeeUSD =
+        fromAmountUSDNum > 0
+          ? (fromAmountUSDNum * TIWI_PROTOCOL_FEE_RATE).toFixed(2)
+          : "0.00";
+      console.log(`[enrichRouteWithUSD] Tiwi protocol fee (calculated): fromAmountUSDNum=${fromAmountUSDNum} * TIWI_PROTOCOL_FEE_RATE=${TIWI_PROTOCOL_FEE_RATE} = ${tiwiProtocolFeeUSD}`);
+
+      // Gas/protocol fees
+      const gasUSDRaw = route.fees.gasUSD;
+      const protocolUSDRaw = route.fees.protocol;
+      const gasUSDNum = parseFloat(gasUSDRaw || "0");
+      const protocolUSDNum = parseFloat(protocolUSDRaw || "0");
       const tiwiFeeNum = parseFloat(tiwiProtocolFeeUSD);
       const totalFeesUSD = (gasUSDNum + protocolUSDNum + tiwiFeeNum).toFixed(2);
-      
+
+      console.log(
+        `[enrichRouteWithUSD] Fee breakdown for route.router "${route.router}":\n` +
+        `  - gasUSD (from route): ${gasUSDRaw} -> ${gasUSDNum}\n` +
+        `  - protocol (from route): ${protocolUSDRaw} -> ${protocolUSDNum}\n` +
+        `  - tiwiProtocolFeeUSD (calculated): ${tiwiProtocolFeeUSD} -> ${tiwiFeeNum}\n` +
+        `  - total fees: ${gasUSDNum} + ${protocolUSDNum} + ${tiwiFeeNum} = ${totalFeesUSD}`
+      );
+
       return {
         ...route,
         fromToken: {
@@ -429,6 +569,7 @@ export class RouteService {
     } catch (error) {
       // If price fetching fails, return route as-is (without USD values)
       console.warn('[RouteService] Failed to enrich route with USD values:', error);
+      console.warn(`[enrichRouteWithUSD] Could not compute USD values for provider "${route.router}" - price API failed. Returning original route.`);
       return route;
     }
   }

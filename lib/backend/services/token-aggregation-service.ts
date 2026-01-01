@@ -12,11 +12,12 @@
  */
 
 import { getProviderRegistry } from '@/lib/backend/providers/registry';
-import { getCanonicalChainByProviderId } from '@/lib/backend/registry/chains';
+import { getCanonicalChainByProviderId, getCanonicalChain } from '@/lib/backend/registry/chains';
 import { resolveChain } from '@/lib/backend/registry/chain-resolver';
 import { calculateSimilarity } from '@/lib/shared/utils/search';
 import { mixTokensWithPriority } from '@/lib/backend/utils/token-mixer';
 import { getTokenEnrichmentService } from './token-enrichment-service';
+// Note: TokenDecimalsFetcher removed - decimals are now fetched on-demand in RouteService
 import type { NormalizedToken, FetchTokensParams } from '@/lib/backend/types/backend-tokens';
 import type { BaseTokenProvider } from '@/lib/backend/providers/base';
 
@@ -43,6 +44,8 @@ export class TokenAggregationService {
   async searchTokens(params: FetchTokensParams): Promise<NormalizedToken[]> {
     const { chainIds, search: query, limit = 30 } = params;
     
+    console.log(`[TokenAggregationService] searchTokens called with:`, { chainIds, query, limit });
+    
     // Determine which chains to search
     const chainsToSearch = chainIds && chainIds.length > 0 
       ? chainIds 
@@ -51,8 +54,11 @@ export class TokenAggregationService {
     if (chainsToSearch.length === 0) {
       // No chains specified: search all supported chains
       // For now, return empty (will be handled by TokenService)
+      console.warn('[TokenAggregationService] No chains specified, returning empty array');
       return [];
     }
+    
+    console.log(`[TokenAggregationService] Searching ${chainsToSearch.length} chains:`, chainsToSearch);
     
     // Detect if this is an "all networks" scenario (multiple chains, no search query)
     const isAllNetworksRequest = !query && chainsToSearch.length > 1;
@@ -74,16 +80,25 @@ export class TokenAggregationService {
       allResults.push(...primaryResults);
     } else {
       // No query: use primary providers first (for popular tokens)
+      console.log(`[TokenAggregationService] No query, fetching from primary providers for ${chainsToSearch.length} chains`);
       const primaryResults = await this.fetchFromPrimaryProviders(chainsToSearch, query, fetchLimit);
+      console.log(`[TokenAggregationService] Primary providers returned ${primaryResults.length} tokens`);
       allResults.push(...primaryResults);
       
       // Step 2: Fetch from DexScreener as supplement (for additional tokens)
       const dexResults = await this.fetchFromDexScreener(chainsToSearch, query, fetchLimit);
+      console.log(`[TokenAggregationService] DexScreener returned ${dexResults.length} tokens`);
       allResults.push(...dexResults);
     }
     
+    console.log(`[TokenAggregationService] Total results before normalization: ${allResults.length}`);
+    
     // Step 3: Normalize and deduplicate
     const normalized = this.normalizeAndDeduplicate(allResults);
+    console.log(`[TokenAggregationService] After normalization: ${normalized.length} tokens`);
+    
+    // Step 3.5: Decimals enrichment removed - fetch on-demand when needed (e.g., routing)
+    // This avoids enriching 500+ tokens when only 30 are returned
     
     // Step 4: Apply similarity scoring (if query provided)
     const scored = query 
@@ -114,7 +129,7 @@ export class TokenAggregationService {
         limit,
         56, // BNB Chain priority
         3,  // Max 3 tokens per chain
-        6   // Max 6 tokens for BNB Chain
+        3   // Max 6 tokens for BNB Chain
       );
     } else {
       // Single chain or search query: just limit
@@ -126,6 +141,7 @@ export class TokenAggregationService {
     this.enrichRouterFormatsInBackground(finalTokens);
     
     // Step 8: Return immediately (fast response)
+    // Note: Decimals are NOT enriched here - fetched on-demand when needed (e.g., routing)
     return finalTokens;
   }
 
@@ -214,7 +230,6 @@ export class TokenAggregationService {
   ): Promise<NormalizedToken[]> {
     try {
       const providerTokens = await provider.fetchTokens(params);
-      // console.log("🚀 ~ TokenAggregationService ~ fetchFromProvider ~ providerTokens:", providerTokens)
       const normalized: NormalizedToken[] = [];
       
       for (const providerToken of providerTokens) {
@@ -311,6 +326,15 @@ export class TokenAggregationService {
     
     return Array.from(seen.values());
   }
+
+  /**
+   * NOTE: Decimals enrichment removed from here
+   * 
+   * Decimals are now fetched on-demand when needed (e.g., in RouteService when routing).
+   * This avoids enriching 500+ tokens when only 30 are returned.
+   * 
+   * If you need to enrich decimals for specific tokens, use TokenDecimalsFetcher directly.
+   */
 
   /**
    * Apply similarity scoring to tokens

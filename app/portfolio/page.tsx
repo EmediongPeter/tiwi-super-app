@@ -1,8 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 
 import Image from "next/image";
+import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { usePortfolioBalance } from "@/hooks/usePortfolioBalance";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
+import { useWalletNFTs } from "@/hooks/useWalletNFTs";
+import { useNFTActivity } from "@/hooks/useNFTActivity";
+import { mapWalletTokensToAssets } from "@/lib/shared/utils/portfolio-formatting";
+import NFTGrid from "@/components/nft/nft-grid";
+import NFTDetailCard from "@/components/nft/nft-detail-card";
+import PortfolioActivities from "@/components/portfolio/portfolio-activities";
+import type { NFT } from "@/lib/backend/types/nft";
+import Skeleton from "@/components/ui/skeleton";
 import {
   IoEyeOutline,
   IoChevronDown,
@@ -75,78 +86,8 @@ const assets = [
     trend: "bullish",
   },
 ];
-const nfts = [
-  { id: 1, name: "Cartoon-bird", floor: "6.10 ETH", image: "/nft1.svg" },
-  { id: 2, name: "Alien Amphibian", floor: "0 ETH", image: "/nft2.svg" },
-  { id: 3, name: "Cyber Guy", floor: "1.2 ETH", image: "/nft3.svg" },
-  { id: 4, name: "Pixel Punk", floor: "0.8 ETH", image: "/nft4.svg" },
-  { id: 5, name: "Cat", floor: "3.2 ETH", image: "/nft5.svg" },
-  { id: 6, name: "Sorcerer", floor: "0.8 ETH", image: "/nft6.svg" },
-];
-const transactions = [
-  { type: "sent", date: "Jan 4, 2024", amount: "0.017 ETH", usd: "$725.00" },
-  { type: "sent", date: "Jan 4, 2024", amount: "0.017 ETH", usd: "$725.00" },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-  {
-    type: "received",
-    date: "Jan 4, 2024",
-    amount: "0.017 ETH",
-    usd: "$725.00",
-  },
-];
+// Mock NFTs removed - using real data from useWalletNFTs hook
+// Mock transactions removed - using real data from PortfolioActivities component
 
 // ==========================================
 //  DESKTOP VIEW COMPONENT
@@ -170,6 +111,55 @@ function WalletPageDesktop() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
 
+  // Get connected wallet address
+  const { connectedAddress } = useWalletConnection();
+  
+  // Fetch portfolio balance and daily change
+  const { 
+    data: balanceData, 
+    isLoading: balanceLoading, 
+    error: balanceError 
+  } = usePortfolioBalance(connectedAddress);
+  
+  // Fetch wallet token balances
+  const { 
+    balances: walletTokens, 
+    isLoading: tokensLoading, 
+    error: tokensError 
+  } = useWalletBalances(connectedAddress);
+
+  // Fetch wallet NFTs
+  const { 
+    nfts, 
+    isLoading: nftsLoading, 
+    error: nftsError 
+  } = useWalletNFTs(connectedAddress);
+
+  // Fetch NFT activity when an NFT is selected
+  const { 
+    activities, 
+    isLoading: activitiesLoading 
+  } = useNFTActivity(
+    connectedAddress,
+    selectedNft?.contractAddress || null,
+    selectedNft?.tokenId || null,
+    selectedNft?.chainId || null
+  );
+
+  // Map wallet tokens to portfolio assets format
+  const assets = useMemo(() => {
+    if (!walletTokens || walletTokens.length === 0) return [];
+    return mapWalletTokensToAssets(walletTokens, {
+      includeZeroBalances: false,
+      sortBy: 'value',
+    });
+  }, [walletTokens]);
+
+  // Use real balance data or fallback to mock for development
+  const displayBalance = balanceData?.totalUSD || "0.00";
+  const dailyChangeText = balanceData?.dailyChangeFormatted;
+  const dailyChangeColor = balanceData?.dailyChangeColor || '#3FEA9B';
+
   const handleCopy = async () => {
     if (!inputRef.current) return;
 
@@ -191,12 +181,34 @@ function WalletPageDesktop() {
               <p className="text-xs text-[#B5B5B5]">Total Balance</p>
               <IoEyeOutline color="B5B5B5" size={10} />
             </span>
-            <h1 className="mt-1 text-3xl font-bold text-[#E6ECE9]">
-              ${balance}
-            </h1>
-            <p className="mt-1 text-sm text-[#3FEA9B]">
-              +$61.69 (+2.15%) <span className="text-[#9DA4AE]">today</span>
-            </p>
+            {balanceLoading ? (
+              <div className="mt-1 space-y-2">
+                <Skeleton className="h-9 w-32" />
+                <Skeleton className="h-5 w-40" />
+              </div>
+            ) : balanceError ? (
+              <>
+                <h1 className="mt-1 text-3xl font-bold text-[#E6ECE9]">$0.00</h1>
+                <p className="mt-1 text-sm text-[#FF4444]">
+                  Error loading balance
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="mt-1 text-3xl font-bold text-[#E6ECE9]">
+                  ${displayBalance}
+                </h1>
+                {dailyChangeText ? (
+                  <p className="mt-1 text-sm" style={{ color: dailyChangeColor }}>
+                    {dailyChangeText} <span className="text-[#9DA4AE]">today</span>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-[#9DA4AE]">
+                    No change data available
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {/* Tabs */}
@@ -255,8 +267,50 @@ function WalletPageDesktop() {
           <div className="overflow-y-auto flex-1">
             {/* Asset List */}
             {activeLeftTab === "assets" && (
-              <ul className="space-y-3">
-                {assets.map((asset, i) => (
+              <>
+                {tokensLoading ? (
+                  <ul className="space-y-3">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <li
+                        key={i}
+                        className="flex items-center justify-between rounded-xl bg-[#0E1310] px-2 py-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Skeleton className="h-5 w-5 rounded-full" />
+                          <div className="space-y-1">
+                            <Skeleton className="h-4 w-16" />
+                            <Skeleton className="h-3 w-24" />
+                          </div>
+                        </div>
+                        <Skeleton className="h-7 w-20" />
+                        <div className="text-right space-y-1">
+                          <Skeleton className="h-4 w-16" />
+                          <Skeleton className="h-3 w-20" />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : tokensError ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <p className="text-sm text-[#FF4444] mb-2">
+                      Error loading assets
+                    </p>
+                    <p className="text-xs text-[#8A929A]">
+                      {tokensError}
+                    </p>
+                  </div>
+                ) : assets.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <p className="text-sm text-[#8A929A] mb-2">
+                      No assets found
+                    </p>
+                    <p className="text-xs text-[#6E7873]">
+                      Start by swapping tokens to build your portfolio
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {assets.map((asset, i) => (
                   <li
                     key={i}
                     className="flex items-center justify-between rounded-xl bg-[#0E1310] px-2 py-3 hover:bg-[#141A16]"
@@ -297,50 +351,20 @@ function WalletPageDesktop() {
                       <p className="text-xs text-[#8A929A]">{asset.value}</p>
                     </div>
                   </li>
-                ))}
-              </ul>
+                    ))}
+                  </ul>
+                )}
+              </>
             )}
 
             {/* NFT GRID */}
             {activeLeftTab === "nft" && (
-              <div className="grid grid-cols-2 gap-3">
-                {nfts.map((nft) => (
-                  <button
-                    key={nft.id}
-                    onClick={() => setSelectedNft(nft)}
-                    className={`relative group aspect-square w-full rounded-2xl overflow-hidden transition-all duration-300
-                      ${
-                        selectedNft?.id === nft.id
-                          ? ""
-                          : "hover:ring-1 hover:ring-[#ffffff30]"
-                      }`}
-                  >
-                    <Image
-                      src={nft.image}
-                      alt={nft.name}
-                      width={500}
-                      height={500}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-
-                    {/* GLASS CARD OVERLAY */}
-                    <div className="absolute bottom-1 left-2 right-2 flex items-center justify-between rounded-xl border border-white/20 bg-black/20 backdrop-blur-md px-3 py-2 text-left shadow-lg">
-                      <div>
-                        <p className="text-xs font-semibold text-white drop-shadow-md">
-                          {nft.name}
-                        </p>
-                        <p className="text-[10px] font-medium text-[#E0E0E0] drop-shadow-md">
-                          Floor: {nft.floor}
-                        </p>
-                      </div>
-
-                      <div className="text-white/80">
-                        <TbArrowBarToRight />
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <NFTGrid
+                nfts={nfts}
+                isLoading={nftsLoading}
+                onNFTSelect={setSelectedNft}
+                selectedNFT={selectedNft}
+              />
             )}
           </div>
 
@@ -472,101 +496,12 @@ function WalletPageDesktop() {
           {/* NFT TAB RIGHT PANEL DISPLAY */}
           {activeLeftTab === "nft" && (
             <div className="">
-              {!selectedNft ? (
-                <div className="mt-40 flex h-full items-center justify-center text-base text-[#6E7873]">
-                  Select an NFT to view details
-                </div>
-              ) : (
-                <div className="">
-                  <Image
-                    src={selectedNft.image}
-                    alt={selectedNft.name}
-                    width={500}
-                    height={300}
-                    className="w-full h-48 object-contain rounded-3xl mb-6"
-                  />
-
-                  <div>
-                    <div className="flex justify-between items-center">
-                      <span>
-                        <p className="flex items-center gap-2 text-base font-medium text-white">
-                          {selectedNft.name} <HiOutlineBadgeCheck size={14} />
-                        </p>
-                        <p className="text-sm text-[#FFF]">
-                          By {selectedNft.name}_deployer
-                        </p>
-                      </span>
-                      <CiStar />
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-y-6 w-full mt-4">
-                      <div className="text-left">
-                        <p className="text-white font-medium text-sm">
-                          1.2M ETH
-                        </p>
-                        <p className="text-[#B5B5B5] text-[10px]">
-                          Total volume
-                        </p>
-                      </div>
-
-                      <div className="flex justify-center">
-                        <div className="flex flex-col">
-                          <p className="text-white font-medium text-sm">
-                            6.10 ETH
-                          </p>
-                          <p className="text-[#B5B5B5] text-[10px]">
-                            Floor price
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-white font-medium text-sm">3.05%</p>
-                        <p className="text-[#B5B5B5] text-[10px]">Listed</p>
-                      </div>
-
-                      <div className="text-left">
-                        <p className="text-white font-medium text-sm">5,320</p>
-                        <p className="text-[#B5B5B5] text-[10px]">Owners</p>
-                      </div>
-
-                      <div className="flex justify-center">
-                        <div className="flex flex-col">
-                          <p className="text-white font-medium text-sm">
-                            Ethereum
-                          </p>
-                          <p className="text-[#B5B5B5] text-[10px]">Chain</p>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-white font-medium text-sm">
-                          April 2025
-                        </p>
-                        <p className="text-[#B5B5B5] text-[10px]">
-                          Creation date
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-sm uppercase mt-4">Recent activites</p>
-                  <div className="mt-4 flex justify-between">
-                    <span>
-                      <p className="text-white font-medium text-sm">Recieved</p>
-                      <p className="text-[10px] text-[#8A929A]">Jan 4, 2024</p>
-                    </span>
-
-                    <span>
-                      <p className="text-[#498F00] font-medium text-sm">
-                        {selectedNft.name}
-                      </p>
-                      <p className="text-[10px] text-right text-[#8A929A]">
-                        $725.00
-                      </p>
-                    </span>
-                  </div>
-                </div>
-              )}
+              <NFTDetailCard
+                nft={selectedNft}
+                activities={activities}
+                activitiesLoading={activitiesLoading}
+                onBack={() => setSelectedNft(null)}
+              />
             </div>
           )}
 
@@ -1048,44 +983,9 @@ function WalletPageDesktop() {
 
               {/* Activities tab content */}
               {activeTab === "activities" && (
-                <>
-                  {/* div below to be displayed when no activity has been recorded */}
-                  {/* <div className="flex flex-col items-center justify-center space-y-4">
-               <IoFolderOpenOutline size={200} className="mt-10" />
-               <p className="font-medium text-lg">No Activity Yet</p>
-             </div> */}
-
-                  <div className="h-125.5 w-full overflow-y-auto rounded-2xl px-4">
-                    {transactions.map((tx, index) => (
-                      <div
-                        key={index}
-                        className="flex w-full items-center justify-between border-b border-[#1B1B1B] py-2 last:border-b-0"
-                      >
-                        {/* LEFT */}
-                        <div>
-                          <p className="text-sm font-medium text-[#FFFFFF] capitalize">
-                            {tx.type}
-                          </p>
-                          <p className="text-xs text-[#B5B5B5]">{tx.date}</p>
-                        </div>
-
-                        {/* RIGHT */}
-                        <div className="text-right">
-                          <p
-                            className={`text-sm font-medium ${
-                              tx.type === "received"
-                                ? "text-[#498F00]"
-                                : "text-[#FFFFFF]"
-                            }`}
-                          >
-                            {tx.amount}
-                          </p>
-                          <p className="text-xs text-[#B5B5B5]">{tx.usd}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
+                <div className="h-125.5 w-full overflow-y-auto rounded-2xl px-4">
+                  <PortfolioActivities />
+                </div>
               )}
             </>
           )}
@@ -1116,6 +1016,55 @@ function WalletPageMobile() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
+
+  // Get connected wallet address
+  const { connectedAddress } = useWalletConnection();
+  
+  // Fetch portfolio balance and daily change
+  const { 
+    data: balanceData, 
+    isLoading: balanceLoading, 
+    error: balanceError 
+  } = usePortfolioBalance(connectedAddress);
+  
+  // Fetch wallet token balances
+  const { 
+    balances: walletTokens, 
+    isLoading: tokensLoading, 
+    error: tokensError 
+  } = useWalletBalances(connectedAddress);
+
+  // Fetch wallet NFTs
+  const { 
+    nfts, 
+    isLoading: nftsLoading, 
+    error: nftsError 
+  } = useWalletNFTs(connectedAddress);
+
+  // Fetch NFT activity when an NFT is selected
+  const { 
+    activities, 
+    isLoading: activitiesLoading 
+  } = useNFTActivity(
+    connectedAddress,
+    selectedNft?.contractAddress || null,
+    selectedNft?.tokenId || null,
+    selectedNft?.chainId || null
+  );
+
+  // Map wallet tokens to portfolio assets format
+  const assets = useMemo(() => {
+    if (!walletTokens || walletTokens.length === 0) return [];
+    return mapWalletTokensToAssets(walletTokens, {
+      includeZeroBalances: false,
+      sortBy: 'value',
+    });
+  }, [walletTokens]);
+
+  // Use real balance data or fallback to mock for development
+  const displayBalance = balanceData?.totalUSD || "0.00";
+  const dailyChangeText = balanceData?.dailyChangeFormatted;
+  const dailyChangeColor = balanceData?.dailyChangeColor || '#B1F128';
 
   const handleCopy = async () => {
     if (!inputRef.current) return;
@@ -1160,92 +1109,12 @@ function WalletPageMobile() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-linear-to-r from-transparent via-[#B1F128] to-transparent opacity-50" />
 
         {selectedNft ? (
-          /* ================= NFT DETAIL VIEW ================= */
-          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            {/* Image Banner */}
-            <div className="relative w-full aspect-2/1 mb-6">
-              <Image
-                src={selectedNft.image}
-                alt={selectedNft.name}
-                fill
-                className="object-cover rounded-3xl"
-              />
-            </div>
-
-            {/* Title Header */}
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-lg font-bold text-white">
-                    {selectedNft.name}
-                  </h2>
-                  <HiOutlineBadgeCheck className="text-white" size={18} />
-                </div>
-                <p className="text-xs text-[#8A929A]">
-                  By {selectedNft.name}_deployer
-                </p>
-              </div>
-              <CiStar size={24} className="text-[#8A929A] mt-1" />
-            </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-y-6 w-full mb-8">
-              {/* Row 1 */}
-              <div className="text-left">
-                <p className="text-white font-medium text-sm">1.2M ETH</p>
-                <p className="text-[#B5B5B5] text-[10px]">Total volume</p>
-              </div>
-              <div className="flex justify-center">
-                <div className="flex flex-col items-center">
-                  <p className="text-white font-medium text-sm">6.10 ETH</p>
-                  <p className="text-[#B5B5B5] text-[10px]">Floor price</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-white font-medium text-sm">3.05%</p>
-                <p className="text-[#B5B5B5] text-[10px]">Listed</p>
-              </div>
-
-              {/* Row 2 */}
-              <div className="text-left">
-                <p className="text-white font-medium text-sm">5,320</p>
-                <p className="text-[#B5B5B5] text-[10px]">Owners</p>
-              </div>
-              <div className="flex justify-center">
-                <div className="flex flex-col items-center">
-                  <p className="text-white font-medium text-sm">Ethereum</p>
-                  <p className="text-[#B5B5B5] text-[10px]">Chain</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-white font-medium text-sm">April 2025</p>
-                <p className="text-[#B5B5B5] text-[10px]">Creation date</p>
-              </div>
-            </div>
-
-            {/* Recent Activities */}
-            <div>
-              <h3 className="text-xs font-semibold text-[#8A929A] uppercase mb-4 tracking-wide">
-                Recent Activities
-              </h3>
-
-              {/* Single Activity Item */}
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-white font-medium text-sm mb-0.5">
-                    Received
-                  </p>
-                  <p className="text-[10px] text-[#8A929A]">Jan 4, 2024</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[#B1F128] font-medium text-sm mb-0.5">
-                    {selectedNft.name}
-                  </p>
-                  <p className="text-[10px] text-[#8A929A]">$725.00</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <NFTDetailCard
+            nft={selectedNft}
+            activities={activities}
+            activitiesLoading={activitiesLoading}
+            onBack={() => setSelectedNft(null)}
+          />
         ) : (
           /* ================= DASHBOARD VIEW ================= */
           <>
@@ -1255,10 +1124,32 @@ function WalletPageMobile() {
                 <span className="text-[#8A929A] text-xs">Total Balance</span>
                 <IoEyeOutline className="text-[#8A929A] text-xs" />
               </div>
-              <h1 className="text-3xl font-bold text-white mb-1">${balance}</h1>
-              <p className="text-[#B1F128] text-sm flex items-center gap-1">
-                +$61.69 (+2.51%) <span className="text-[#8A929A]">today</span>
-              </p>
+              {balanceLoading ? (
+                <div className="space-y-2 mb-1">
+                  <Skeleton className="h-9 w-32" />
+                  <Skeleton className="h-5 w-40" />
+                </div>
+              ) : balanceError ? (
+                <>
+                  <h1 className="text-3xl font-bold text-white mb-1">$0.00</h1>
+                  <p className="text-[#FF4444] text-sm">
+                    Error loading balance
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-3xl font-bold text-white mb-1">${displayBalance}</h1>
+                  {dailyChangeText ? (
+                    <p className="text-sm flex items-center gap-1" style={{ color: dailyChangeColor }}>
+                      {dailyChangeText} <span className="text-[#8A929A]">today</span>
+                    </p>
+                  ) : (
+                    <p className="text-[#8A929A] text-sm">
+                      No change data available
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -1359,82 +1250,98 @@ function WalletPageMobile() {
                 </div>
 
                 {activeAssetFilter === "assets" ? (
-                  <div className="space-y-3">
-                    {assets.map((asset, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between p-3 rounded-2xl bg-[#0F120F] border border-[#1A1F1A]"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Image
-                            src={asset.icon}
-                            alt={asset.symbol}
-                            width={32}
-                            height={32}
-                          />
-                          <div>
-                            <p className="text-sm font-bold text-white">
-                              {asset.symbol}
-                            </p>
-                            <p className="text-[10px] text-[#8A929A]">
-                              {asset.name}
-                            </p>
+                  <>
+                    {tokensLoading ? (
+                      <div className="space-y-3">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between p-3 rounded-2xl bg-[#0F120F] border border-[#1A1F1A]"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Skeleton className="h-10 w-10 rounded-full" />
+                              <div className="space-y-1">
+                                <Skeleton className="h-4 w-20" />
+                                <Skeleton className="h-3 w-32" />
+                              </div>
+                            </div>
+                            <Skeleton className="h-5 w-16" />
+                            <div className="text-right space-y-1">
+                              <Skeleton className="h-4 w-16" />
+                              <Skeleton className="h-3 w-20" />
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <Image
-                            src={asset.trend === "bullish" ? bullish : bearish}
-                            alt="trend"
-                            width={60}
-                            height={20}
-                          />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-white">
-                            {asset.amount}
-                          </p>
-                          <p className="text-[10px] text-[#8A929A]">
-                            {asset.value}
-                          </p>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {nfts.map((nft) => (
-                      /* NFT Button with onClick handler */
-                      <button
-                        key={nft.id}
-                        onClick={() => setSelectedNft(nft)}
-                        className="bg-[#0F120F] rounded-2xl p-2 border border-[#1A1F1A] relative group text-left w-full"
-                      >
-                        <Image
-                          src={nft.image}
-                          alt={nft.name}
-                          width={150}
-                          height={150}
-                          className="w-full aspect-square rounded-xl object-cover mb-2"
-                        />
-
-                        {/* Glass Overlay from previous request */}
-                        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between rounded-xl border border-white/20 bg-black/20 backdrop-blur-md px-2 py-1.5 shadow-lg">
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-white truncate">
-                              {nft.name}
-                            </p>
-                            <p className="text-[8px] text-[#E0E0E0]">
-                              Floor: {nft.floor}
-                            </p>
+                    ) : tokensError ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <p className="text-sm text-[#FF4444] mb-2">
+                          Error loading assets
+                        </p>
+                        <p className="text-xs text-[#8A929A]">
+                          {tokensError}
+                        </p>
+                      </div>
+                    ) : assets.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <p className="text-sm text-[#8A929A] mb-2">
+                          No assets found
+                        </p>
+                        <p className="text-xs text-[#6E7873]">
+                          Start by swapping tokens to build your portfolio
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {assets.map((asset, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between p-3 rounded-2xl bg-[#0F120F] border border-[#1A1F1A]"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Image
+                                src={asset.icon}
+                                alt={asset.symbol}
+                                width={32}
+                                height={32}
+                              />
+                              <div>
+                                <p className="text-sm font-bold text-white">
+                                  {asset.symbol}
+                                </p>
+                                <p className="text-[10px] text-[#8A929A]">
+                                  {asset.name}
+                                </p>
+                              </div>
+                            </div>
+                            <div>
+                              <Image
+                                src={asset.trend === "bullish" ? bullish : bearish}
+                                alt="trend"
+                                width={60}
+                                height={20}
+                              />
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-white">
+                                {asset.amount}
+                              </p>
+                              <p className="text-[10px] text-[#8A929A]">
+                                {asset.value}
+                              </p>
+                            </div>
                           </div>
-                          <TbArrowBarToRight
-                            className="text-white shrink-0"
-                            size={12}
-                          />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <NFTGrid
+                    nfts={nfts}
+                    isLoading={nftsLoading}
+                    onNFTSelect={setSelectedNft}
+                    selectedNFT={selectedNft}
+                  />
                 )}
 
                 {/* FILTER DROPDOWN OVERLAY */}

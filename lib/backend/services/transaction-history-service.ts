@@ -8,6 +8,15 @@
 import { getCache, CACHE_TTL } from '@/lib/backend/utils/cache';
 import type { Transaction, TransactionHistoryResponse, TransactionType } from '@/lib/backend/types/wallet';
 import { SOLANA_CHAIN_ID } from '@/lib/backend/providers/moralis';
+import {
+  getWalletHistory,
+  getEVMWalletTransactions,
+  getSolanaTransactions,
+  getAddressType,
+  isValidEVMAddress,
+  isValidSolanaAddress,
+} from '@/lib/backend/providers/moralis-rest-client';
+import { TransactionParser } from './transaction-parser';
 
 // ============================================================================
 // Transaction History Service Class
@@ -15,6 +24,7 @@ import { SOLANA_CHAIN_ID } from '@/lib/backend/providers/moralis';
 
 export class TransactionHistoryService {
   private cache = getCache();
+  private parser = new TransactionParser();
 
   /**
    * Get transaction history for a wallet
@@ -57,17 +67,37 @@ export class TransactionHistoryService {
       return cached;
     }
 
-    // TODO: Implement actual transaction fetching from Moralis/blockchain
-    // For now, return mock data structure
-    // This will be implemented in the next phase with Moralis transaction API
+    // Try to use new wallet history endpoint first (for EVM addresses)
+    const addressType = getAddressType(address);
+    let transactions: Transaction[] = [];
     
-    // Placeholder: Fetch transactions from Moralis
-    const transactions = await this.fetchTransactionsFromMoralis(
-      address,
-      chainsToFetch,
-      types,
-      limit + offset // Fetch more to determine hasMore
-    );
+    if (addressType === 'evm') {
+      // Use new wallet history endpoint for EVM addresses
+      try {
+        transactions = await this.fetchWalletHistory(
+          address,
+          chainsToFetch.filter(id => id !== SOLANA_CHAIN_ID), // Exclude Solana
+          limit + offset
+        );
+      } catch (error) {
+        console.error('[TransactionHistoryService] Error fetching wallet history, falling back to legacy method:', error);
+        // Fallback to legacy method
+        transactions = await this.fetchTransactionsFromMoralis(
+          address,
+          chainsToFetch,
+          types,
+          limit + offset
+        );
+      }
+    } else {
+      // For Solana addresses, use legacy method
+      transactions = await this.fetchTransactionsFromMoralis(
+        address,
+        chainsToFetch,
+        types,
+        limit + offset
+      );
+    }
 
     // Apply pagination
     const paginatedTransactions = transactions.slice(offset, offset + limit);
@@ -91,7 +121,33 @@ export class TransactionHistoryService {
   }
 
   /**
-   * Fetch transactions from Moralis API
+   * Fetch wallet history using new Moralis endpoint
+   * This is the preferred method for EVM addresses
+   */
+  private async fetchWalletHistory(
+    address: string,
+    chainIds: number[],
+    limit: number
+  ): Promise<Transaction[]> {
+    try {
+      // Fetch wallet history from Moralis
+      const historyResponse = await getWalletHistory(address, chainIds, {
+        limit: Math.min(limit, 100), // Moralis max is 100
+      });
+
+      // Parse and categorize transactions
+      const transactions = this.parser.parseWalletHistory(historyResponse, address);
+
+      return transactions;
+    } catch (error) {
+      console.error('[TransactionHistoryService] Error fetching wallet history:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch transactions from Moralis API (Legacy method)
+   * Used as fallback or for Solana addresses
    */
   private async fetchTransactionsFromMoralis(
     address: string,
@@ -101,12 +157,9 @@ export class TransactionHistoryService {
   ): Promise<Transaction[]> {
     const allTransactions: Transaction[] = [];
     
-    // Ensure Moralis is initialized
-    const { initializeMoralis } = await import('@/lib/backend/utils/moralis-init');
-    await initializeMoralis();
+    // Determine address type once
+    const addressType = getAddressType(address);
     
-    const { SOLANA_CHAIN_ID } = await import('@/lib/backend/providers/moralis');
-    const Moralis = (await import('moralis')).default;
     const CHAIN_ID_TO_MORALIS: Record<number, string> = {
       1: '0x1',
       10: '0xa',
@@ -134,13 +187,21 @@ export class TransactionHistoryService {
         
         const fetchPromise = (async () => {
           if (chainId === SOLANA_CHAIN_ID) {
-            return await this.fetchSolanaTransactions(address, limit);
-          } else {
-            const moralisChain = CHAIN_ID_TO_MORALIS[chainId];
-            if (!moralisChain) {
-              return [];
+            // Only fetch Solana if address is actually a Solana address
+            if (addressType === 'solana') {
+              return await this.fetchSolanaTransactions(address, limit);
             }
-            return await this.fetchEVMTransactions(address, moralisChain, chainId, limit);
+            return [];
+          } else {
+            // Only fetch EVM if address is actually an EVM address
+            if (addressType === 'evm') {
+              const moralisChain = CHAIN_ID_TO_MORALIS[chainId];
+              if (!moralisChain) {
+                return [];
+              }
+              return await this.fetchEVMTransactions(address, moralisChain, chainId, limit);
+            }
+            return [];
           }
         })();
         
@@ -169,7 +230,7 @@ export class TransactionHistoryService {
   }
 
   /**
-   * Fetch EVM transactions from Moralis
+   * Fetch EVM transactions from Moralis REST API
    */
   private async fetchEVMTransactions(
     address: string,
@@ -178,19 +239,20 @@ export class TransactionHistoryService {
     limit: number
   ): Promise<Transaction[]> {
     try {
-      // Moralis is already initialized by the provider
-      const Moralis = (await import('moralis')).default;
+      // Validate EVM address
+      if (!isValidEVMAddress(address)) {
+        return [];
+      }
       
-      const response = await Moralis.EvmApi.transaction.getWalletTransactions({
-        address,
-        chain: moralisChain,
-        limit,
-      });
+      const response = await getEVMWalletTransactions(address, chainId, moralisChain, limit);
       
       const transactions: Transaction[] = [];
       
-      if (response.raw && Array.isArray(response.raw)) {
-        for (const tx of response.raw) {
+      // Moralis REST API returns array directly or in result field
+      const txList = Array.isArray(response) ? response : (response.result || []);
+      
+      if (Array.isArray(txList)) {
+        for (const tx of txList) {
           try {
             // Determine transaction type
             const txType = this.determineTransactionType(tx, address);
@@ -241,26 +303,24 @@ export class TransactionHistoryService {
   }
 
   /**
-   * Fetch Solana transactions from Moralis
+   * Fetch Solana transactions from Moralis REST API
    */
   private async fetchSolanaTransactions(
     address: string,
     limit: number
   ): Promise<Transaction[]> {
     try {
-      // Moralis is already initialized by the provider
-      const Moralis = (await import('moralis')).default;
+      // Validate Solana address
+      if (!isValidSolanaAddress(address)) {
+        return [];
+      }
       
-      const response = await Moralis.SolApi.transaction.getTransactions({
-        address,
-        network: 'mainnet',
-        limit,
-      });
+      const response = await getSolanaTransactions(address, limit);
       
       const transactions: Transaction[] = [];
       
-      const result = response.result || response;
-      const txList = Array.isArray(result) ? result : (Array.isArray((result as any).data) ? (result as any).data : []);
+      // Moralis REST API returns array directly or in result field
+      const txList = Array.isArray(response) ? response : (response.result || []);
       
       if (txList && Array.isArray(txList)) {
         for (const tx of txList) {

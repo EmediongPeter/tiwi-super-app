@@ -11,6 +11,7 @@ export interface Token {
   chain: string;
   chainId?: number;          // Canonical chain ID from backend
   chainLogo?: string;        // Derived from chain list (logoURI)
+  decimals: number | undefined;  // Token decimals (undefined means unknown, will be fetched)
   balance?: string;
   usdValue?: string;
   price?: string;

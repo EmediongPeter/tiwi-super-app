@@ -1,20 +1,25 @@
 /**
  * Moralis Provider
  * 
- * Handles wallet balance fetching for EVM and Solana chains using Moralis API.
- * Provides unified interface for native and token balances.
+ * Handles wallet balance fetching for EVM and Solana chains using Moralis REST API.
+ * Provides unified interface for native and token balances with provider-level caching.
  */
 
-import Moralis from 'moralis';
 import type { WalletToken } from '@/lib/backend/types/wallet';
+import {
+  getEVMNativeBalance as getEVMNativeBalanceAPI,
+  getEVMTokenBalances as getEVMTokenBalancesAPI,
+  getWalletTokensWithPrices as getWalletTokensWithPricesAPI,
+  getSolanaNativeBalance as getSolanaNativeBalanceAPI,
+  getSolanaTokenBalances as getSolanaTokenBalancesAPI,
+  getAddressType,
+  isValidEVMAddress,
+  isValidSolanaAddress,
+} from './moralis-rest-client';
 
 // ============================================================================
 // Configuration
 // ============================================================================
-
-// Moralis API key - should be set in environment variables
-// Fallback to the key from tiwi-test for development
-const MORALIS_API_KEY = process.env.MORALIS_API_KEY || process.env.NEXT_PUBLIC_MORALIS_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImI3YzM4YjA2LTUwMjQtNDcxNC1iOTZhLTZiNzljNGQxZTE4NiIsIm9yZ0lkIjoiNDg1MjE2IiwidXNlcklkIjoiNDk5MTk1IiwidHlwZUlkIjoiOTI3ZGNlNzQtYmZkZi00Yjc3LWJlZTUtZTBmNTNlNDAzMTAwIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NjUyNjAyMjQsImV4cCI6NDkyMTAyMDIyNH0._OVkoNmyqPF5xmJSwOfuifJUjOKpeVVJYayAmG992D8';
 
 // Map canonical chain IDs to Moralis chain hex strings
 const CHAIN_ID_TO_MORALIS: Record<number, string> = {
@@ -73,12 +78,6 @@ const KNOWN_SYMBOL_DECIMALS: Record<string, number> = {
   'USDT': 6,
   'USDC': 6,
 };
-
-// ============================================================================
-// Initialization
-// ============================================================================
-
-import { initializeMoralis } from '@/lib/backend/utils/moralis-init';
 
 // ============================================================================
 // Helper Functions
@@ -142,20 +141,22 @@ export async function getEVMNativeBalance(
   chainId: number
 ): Promise<WalletToken | null> {
   try {
-    await initializeMoralis();
-    
+    // Validate EVM address
+    if (!isValidEVMAddress(address)) {
+      console.warn(`[MoralisProvider] Invalid EVM address: ${address}`);
+      return null;
+    }
+
     const moralisChain = CHAIN_ID_TO_MORALIS[chainId];
     if (!moralisChain) {
       console.warn(`[MoralisProvider] Chain ${chainId} not supported by Moralis`);
       return null;
     }
     
-    const response = await Moralis.EvmApi.balance.getNativeBalance({
-      address,
-      chain: moralisChain,
-    });
+    const response = await getEVMNativeBalanceAPI(address, chainId, moralisChain);
     
-    const balance = response.raw.balance || '0';
+    // Moralis REST API returns: { balance: string }
+    const balance = response.balance || '0';
     const balanceBigInt = BigInt(balance);
     
     if (balanceBigInt === BigInt(0)) {
@@ -181,7 +182,7 @@ export async function getEVMNativeBalance(
       balanceFormatted,
       chainId,
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[MoralisProvider] Error fetching native balance for chain ${chainId}:`, error);
     return null;
   }
@@ -195,26 +196,28 @@ export async function getEVMTokenBalances(
   chainId: number
 ): Promise<WalletToken[]> {
   try {
-    await initializeMoralis();
-    
+    // Validate EVM address
+    if (!isValidEVMAddress(address)) {
+      console.warn(`[MoralisProvider] Invalid EVM address: ${address}`);
+      return [];
+    }
+
     const moralisChain = CHAIN_ID_TO_MORALIS[chainId];
     if (!moralisChain) {
       console.warn(`[MoralisProvider] Chain ${chainId} not supported by Moralis`);
       return [];
     }
     
-    const response = await Moralis.EvmApi.token.getWalletTokenBalances({
-      address,
-      chain: moralisChain,
-    });
+    const response = await getEVMTokenBalancesAPI(address, chainId, moralisChain);
     
-    if (!response.raw || !Array.isArray(response.raw)) {
+    // Moralis REST API returns array of tokens
+    if (!Array.isArray(response)) {
       return [];
     }
     
     const tokens: WalletToken[] = [];
     
-    for (const tokenData of response.raw) {
+    for (const tokenData of response) {
       try {
         const rawBalance = tokenData.balance || '0';
         const balanceBigInt = BigInt(rawBalance);
@@ -234,7 +237,6 @@ export async function getEVMTokenBalances(
         const decimals = getTokenDecimals(tokenData, chainId);
         const balanceFormatted = formatBalance(rawBalance, decimals);
         
-        
         tokens.push({
           address: tokenData.token_address,
           symbol: tokenData.symbol || 'UNKNOWN',
@@ -252,7 +254,7 @@ export async function getEVMTokenBalances(
     }
     
     return tokens;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[MoralisProvider] Error fetching token balances for chain ${chainId}:`, error);
     return [];
   }
@@ -260,27 +262,129 @@ export async function getEVMTokenBalances(
 
 /**
  * Get all tokens (native + ERC-20) for EVM chain
+ * 
+ * OPTIMIZED: Uses /wallets/{address}/tokens endpoint which returns:
+ * - Native token + all ERC20 tokens in ONE call (50% fewer API calls)
+ * - USD prices included (usd_price, usd_value)
+ * - 24h price change included (usd_price_24hr_percent_change)
+ * - Portfolio percentage included (portfolio_percentage)
  */
 export async function getEVMWalletTokens(
   address: string,
   chainId: number
 ): Promise<WalletToken[]> {
-  const tokens: WalletToken[] = [];
-  
-  // Fetch native and ERC-20 tokens in parallel
-  const [nativeToken, erc20Tokens] = await Promise.all([
-    getEVMNativeBalance(address, chainId),
-    getEVMTokenBalances(address, chainId),
-  ]);
-  
-  if (nativeToken) {
-    tokens.push(nativeToken);
+  try {
+    // Validate EVM address
+    if (!isValidEVMAddress(address)) {
+      console.warn(`[MoralisProvider] Invalid EVM address: ${address}`);
+      return [];
+    }
+
+    // Use optimized endpoint: /wallets/{address}/tokens
+    // This returns native + ERC20 tokens with prices in one call
+    const response = await getWalletTokensWithPricesAPI(address, chainId);
+    
+    // Moralis /wallets/{address}/tokens returns: { result: Token[], cursor: string, page: string, page_size: string }
+    const tokenDataArray = response.result || response;
+    
+    if (!Array.isArray(tokenDataArray)) {
+      console.warn('[MoralisProvider] Invalid response format from /wallets/{address}/tokens');
+      return [];
+    }
+    
+    const tokens: WalletToken[] = [];
+    
+    for (const tokenData of tokenDataArray) {
+      try {
+        const rawBalance = tokenData.balance || '0';
+        const balanceBigInt = BigInt(rawBalance);
+        
+        // Skip zero balances
+        if (balanceBigInt === BigInt(0)) {
+          continue;
+        }
+        
+        // Filter out spam tokens
+        if (tokenData.possible_spam === true) {
+          continue;
+        }
+        
+        // Determine if this is the native token
+        const isNative = tokenData.native_token === true || 
+                        tokenData.token_address === '' ||
+                        tokenData.token_address === null ||
+                        tokenData.token_address === undefined;
+        
+        // Get token address (native tokens have empty address)
+        const tokenAddress = isNative 
+          ? (chainId === 137 
+              ? '0x0000000000000000000000000000000000001010'  // Polygon native
+              : '0x0000000000000000000000000000000000000000')  // Other chains
+          : tokenData.token_address;
+        
+        // Get decimals
+        const decimals = getTokenDecimals(tokenData, chainId);
+        const balanceFormatted = formatBalance(rawBalance, decimals);
+        
+        // Extract USD values from response (already included!)
+        const usdPrice = tokenData.usd_price ? String(tokenData.usd_price) : undefined;
+        const usdValue = tokenData.usd_value ? String(tokenData.usd_value) : undefined;
+        const priceChange24h = tokenData.usd_price_24hr_percent_change 
+          ? String(tokenData.usd_price_24hr_percent_change) 
+          : undefined;
+        const portfolioPercentage = tokenData.portfolio_percentage 
+          ? String(tokenData.portfolio_percentage) 
+          : undefined;
+        
+        // Get symbol and name
+        const symbol = isNative 
+          ? (NATIVE_SYMBOLS[chainId] || 'NATIVE')
+          : (tokenData.symbol || 'UNKNOWN');
+        const name = isNative
+          ? `${symbol} (Native)`
+          : (tokenData.name || 'Unknown Token');
+        
+        tokens.push({
+          address: tokenAddress,
+          symbol,
+          name,
+          decimals,
+          balance: rawBalance.toString(),
+          balanceFormatted,
+          chainId,
+          logoURI: tokenData.logo || tokenData.thumbnail,
+          priceUSD: usdPrice,
+          usdValue: usdValue,
+          priceChange24h: priceChange24h,
+          portfolioPercentage: portfolioPercentage,
+          verified: tokenData.verified_contract === true,
+        });
+      } catch (tokenError) {
+        console.warn('[MoralisProvider] Error processing token:', tokenError);
+        continue;
+      }
+    }
+    
+    return tokens;
+  } catch (error: any) {
+    console.error(`[MoralisProvider] Error fetching wallet tokens for chain ${chainId}:`, error);
+    
+    // Don't fallback to old endpoints - they use wrong format and cause 404 errors
+    // Instead, log the error and return empty array (graceful degradation)
+    // The /wallets/{address}/tokens endpoint should work for all supported chains
+    if (error.status === 404) {
+      console.warn(`[MoralisProvider] Chain ${chainId} may not be supported by Moralis /wallets/ endpoint. Check CHAIN_NAME_MAP.`);
+    }
+    
+    return [];
   }
-  
-  tokens.push(...erc20Tokens);
-  
-  return tokens;
 }
+
+/**
+ * @deprecated This fallback method is no longer used.
+ * All chains should use /wallets/{address}/tokens endpoint with chain names.
+ * The old endpoints (/{address}/erc20) use hex format and cause 404 errors.
+ */
 
 // ============================================================================
 // Solana Balance Fetching
@@ -293,39 +397,31 @@ export async function getSolanaNativeBalance(
   address: string
 ): Promise<WalletToken | null> {
   try {
-    await initializeMoralis();
+    // Validate Solana address - don't fetch if it's an EVM address
+    const addressType = getAddressType(address);
+    if (addressType !== 'solana') {
+      // Silently return null if it's an EVM address (not an error)
+      if (addressType === 'evm') {
+        return null;
+      }
+      console.warn(`[MoralisProvider] Invalid Solana address: ${address}`);
+      return null;
+    }
     
-    const response = await Moralis.SolApi.account.getBalance({
-      address,
-      network: 'mainnet',
-    });
+    const response = await getSolanaNativeBalanceAPI(address);
     
-    const result = response.result || response;
-    const responseData = result as any;
-    
-    // Extract balance from various possible response structures
+    // Moralis Solana API returns: { lamports: string | number }
     let lamports = '0';
     
-    if (responseData.lamports !== undefined && responseData.lamports !== null) {
-      lamports = responseData.lamports.toString();
+    if (response.lamports !== undefined && response.lamports !== null) {
+      lamports = response.lamports.toString();
       // Fix: Check if incorrectly multiplied by 10^9
       const lamportsNum = BigInt(lamports);
       if (lamportsNum > BigInt(10 ** 15)) {
         lamports = (lamportsNum / BigInt(10 ** 9)).toString();
       }
-    } else if (responseData.nativeBalance?.lamports !== undefined) {
-      lamports = responseData.nativeBalance.lamports.toString();
-      const lamportsNum = BigInt(lamports);
-      if (lamportsNum > BigInt(10 ** 15)) {
-        lamports = (lamportsNum / BigInt(10 ** 9)).toString();
-      }
-    } else if (responseData.sol !== undefined) {
-      const solAmount = typeof responseData.sol === 'string' 
-        ? parseFloat(responseData.sol) 
-        : Number(responseData.sol);
-      lamports = (BigInt(Math.floor(solAmount * 1e9))).toString();
-    } else if (responseData.balance !== undefined) {
-      const balance = responseData.balance;
+    } else if (response.balance !== undefined) {
+      const balance = response.balance;
       const balanceStr = balance.toString();
       const balanceNum = typeof balance === 'string' ? parseFloat(balance) : Number(balance);
       
@@ -358,7 +454,11 @@ export async function getSolanaNativeBalance(
       balanceFormatted,
       chainId: SOLANA_CHAIN_ID,
     };
-  } catch (error) {
+  } catch (error: any) {
+    // Don't log error if it's just an invalid address type
+    if (error.message?.includes('Invalid Solana address')) {
+      return null;
+    }
     console.error('[MoralisProvider] Error fetching Solana native balance:', error);
     return null;
   }
@@ -371,8 +471,17 @@ export async function getSolanaTokenBalances(
   address: string
 ): Promise<WalletToken[]> {
   try {
-    await initializeMoralis();
-    
+    // Validate Solana address - don't fetch if it's an EVM address
+    const addressType = getAddressType(address);
+    if (addressType !== 'solana') {
+      // Silently return empty array if it's an EVM address (not an error)
+      if (addressType === 'evm') {
+        return [];
+      }
+      console.warn(`[MoralisProvider] Invalid Solana address: ${address}`);
+      return [];
+    }
+
     const tokens: WalletToken[] = [];
     
     // Get native SOL balance
@@ -383,89 +492,31 @@ export async function getSolanaTokenBalances(
     
     // Get SPL token balances
     try {
-      const response = await Moralis.SolApi.account.getSPL({
-        address,
-        network: 'mainnet',
-      });
+      const response = await getSolanaTokenBalancesAPI(address);
       
-      const result = response.result || response;
-      const splTokens = Array.isArray(result) 
-        ? result 
-        : (Array.isArray((result as any).data) ? (result as any).data : []);
-      
-      if (splTokens && Array.isArray(splTokens)) {
-        for (const token of splTokens) {
+      // Moralis Solana API returns array of tokens
+      if (Array.isArray(response)) {
+        for (const tokenData of response) {
           try {
-            const tokenData = token as any;
+            const mint = tokenData.mint || tokenData.token_address;
+            const balance = tokenData.balance || tokenData.amount || '0';
+            const balanceBigInt = BigInt(balance);
             
-            // Extract amount and decimals
-            let rawAmount = '0';
-            let tokenDecimals = 9;
-            
-            if (tokenData.decimals !== undefined && tokenData.decimals !== null) {
-              tokenDecimals = Number(tokenData.decimals);
-            }
-            
-            if (tokenData.amount) {
-              if (tokenData.amount.lamports !== undefined) {
-                rawAmount = tokenData.amount.lamports.toString();
-              } else if ((tokenData.amount as any).raw !== undefined) {
-                rawAmount = (tokenData.amount as any).raw.toString();
-              } else if (typeof tokenData.amount === 'string') {
-                const amountStr = tokenData.amount;
-                const amountNum = parseFloat(amountStr);
-                if (amountStr.includes('.') || (amountNum > 0 && amountNum < 1000)) {
-                  rawAmount = (BigInt(Math.floor(amountNum * (10 ** tokenDecimals)))).toString();
-                } else {
-                  rawAmount = amountStr;
-                }
-              } else if (typeof tokenData.amount === 'number') {
-                const amountNum = tokenData.amount;
-                if (amountNum > 0 && amountNum < 1000) {
-                  rawAmount = (BigInt(Math.floor(amountNum * (10 ** tokenDecimals)))).toString();
-                } else {
-                  rawAmount = amountNum.toString();
-                }
-              }
-            }
-            
-            const balanceBigInt = BigInt(rawAmount || '0');
             if (balanceBigInt === BigInt(0)) {
               continue;
             }
             
-            // Extract mint address
-            let mintAddress = '';
-            if (tokenData.mint) {
-              if (typeof tokenData.mint === 'string') {
-                mintAddress = tokenData.mint;
-              } else if (tokenData.mint.address) {
-                mintAddress = tokenData.mint.address;
-              } else if (tokenData.mint.toString) {
-                mintAddress = tokenData.mint.toString();
-              }
-            }
-            
-            // Known Solana token decimals
-            const knownSolanaDecimals: Record<string, number> = {
-              'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 6, // USDT
-              'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 6, // USDC
-            };
-            
-            const mintAddressLower = mintAddress.toLowerCase();
-            if (knownSolanaDecimals[mintAddressLower]) {
-              tokenDecimals = knownSolanaDecimals[mintAddressLower];
-            }
-            
-            tokenDecimals = Math.max(0, Math.min(18, Math.floor(tokenDecimals)));
-            const balanceFormatted = formatBalance(rawAmount, tokenDecimals);
+            const decimals = tokenData.decimals !== undefined 
+              ? Number(tokenData.decimals) 
+              : 9;
+            const balanceFormatted = formatBalance(balance, decimals);
             
             tokens.push({
-              address: mintAddress,
+              address: mint,
               symbol: tokenData.symbol || 'UNKNOWN',
               name: tokenData.name || 'Unknown Token',
-              decimals: tokenDecimals,
-              balance: rawAmount,
+              decimals,
+              balance: balance.toString(),
               balanceFormatted,
               chainId: SOLANA_CHAIN_ID,
               logoURI: tokenData.logo || tokenData.thumbnail,
@@ -476,23 +527,31 @@ export async function getSolanaTokenBalances(
           }
         }
       }
-    } catch (splError) {
-      console.error('[MoralisProvider] Error fetching Solana SPL tokens:', splError);
+    } catch (splError: any) {
+      // Don't log error if it's just an invalid address type
+      if (!splError.message?.includes('Invalid Solana address')) {
+        console.warn('[MoralisProvider] Error fetching SPL tokens:', splError);
+      }
     }
     
     return tokens;
-  } catch (error) {
+  } catch (error: any) {
+    // Don't log error if it's just an invalid address type
+    if (error.message?.includes('Invalid Solana address')) {
+      return [];
+    }
     console.error('[MoralisProvider] Error fetching Solana token balances:', error);
     return [];
   }
 }
 
 // ============================================================================
-// Multi-Chain Support
+// Unified Wallet Token Fetching
 // ============================================================================
 
 /**
- * Get wallet tokens across multiple chains
+ * Get wallet tokens for a specific chain
+ * Automatically determines if address is EVM or Solana and fetches accordingly
  */
 export async function getWalletTokens(
   address: string,
@@ -500,13 +559,26 @@ export async function getWalletTokens(
 ): Promise<WalletToken[]> {
   const allTokens: WalletToken[] = [];
   
-  // Fetch tokens for all chains in parallel
+  // Determine address type once
+  const addressType = getAddressType(address);
+  
+  // Fetch tokens for each chain in parallel
   const fetchPromises = chainIds.map(async (chainId) => {
     try {
       if (chainId === SOLANA_CHAIN_ID) {
-        return await getSolanaTokenBalances(address);
+        // Only fetch Solana if address is actually a Solana address
+        if (addressType === 'solana') {
+          return await getSolanaTokenBalances(address);
+        }
+        // Skip Solana for EVM addresses
+        return [];
       } else {
-        return await getEVMWalletTokens(address, chainId);
+        // Only fetch EVM if address is actually an EVM address
+        if (addressType === 'evm') {
+          return await getEVMWalletTokens(address, chainId);
+        }
+        // Skip EVM for Solana addresses
+        return [];
       }
     } catch (error) {
       console.error(`[MoralisProvider] Error fetching tokens for chain ${chainId}:`, error);
@@ -523,4 +595,3 @@ export async function getWalletTokens(
   
   return allTokens;
 }
-

@@ -147,10 +147,12 @@ export const useSwapStore = create<SwapState>((set) => ({
   },
   
   setQuoteError: (error) => {
-    set({ quoteError: error, route: null }); // Clear route on error
+    set({ quoteError: error }); // ✅ Clear route on error (set to null, not fake object)
   },
 
   setRoute: (route) => {
+    
+  console.log('[SwapStore] setRoute called with:', route);
     set({ route });
   },
   

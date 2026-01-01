@@ -1,16 +1,23 @@
 /**
  * Error Toast Component
  *
- * Minimal, left-aligned error toast with optional next steps.
+ * Minimal, left-aligned error toast with optional next steps and action buttons.
  */
 
 import { useEffect } from 'react';
 import Image from 'next/image';
 
+export interface ErrorToastAction {
+  label: string;
+  onClick: () => void;
+  variant?: 'primary' | 'secondary';
+}
+
 interface ErrorToastProps {
   title: string;
   message: string;
   nextSteps?: string[];
+  actions?: ErrorToastAction[];
   open: boolean;
   onOpenChange?: (open: boolean) => void;
   duration?: number; // Auto-dismiss duration in ms (0 = no auto-dismiss)
@@ -20,6 +27,7 @@ export default function ErrorToast({
   title,
   message,
   nextSteps,
+  actions,
   open,
   onOpenChange,
   duration = 6000, // Shorter default (6s)
@@ -101,6 +109,31 @@ export default function ErrorToast({
             </button>
           )}
         </div>
+
+        {/* Action Buttons */}
+        {actions && actions.length > 0 && (
+          <div className="flex flex-wrap gap-2 pl-9">
+            {actions.map((action, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  action.onClick();
+                  // Optionally close toast after action
+                  if (onOpenChange) {
+                    setTimeout(() => onOpenChange(false), 300);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  action.variant === 'primary'
+                    ? 'bg-[#b1f128] text-[#0b0f0a] hover:bg-[#d4ff4d]'
+                    : 'bg-[#1f261e] text-[#b1f128] border border-[#b1f128]/30 hover:bg-[#2a3328]'
+                }`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Next Steps */}
         {nextSteps && nextSteps.length > 0 && (

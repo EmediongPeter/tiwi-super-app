@@ -15,6 +15,7 @@ export default function SwapDetailsCard({
   isExpanded,
 }: SwapDetailsCardProps) {
   const route = useSwapStore((state) => state.route);
+  console.log("🚀 ~ SwapDetailsCard ~ route:", route)
   const isQuoteLoading = useSwapStore((state) => state.isQuoteLoading);
   const currency = useCurrencyStore((state) => state.currency);
   const slippageMode = useSettingsStore((state) => state.slippageMode);
@@ -29,8 +30,10 @@ export default function SwapDetailsCard({
       if (route) {
         // Gas fee - use actual value from route, or "0" if not available
         const gasUSD = route.fees?.gasUSD;
+        console.log("🚀 ~ updateFormattedValues ~ gasUSD:", gasUSD)
         if (gasUSD && gasUSD !== '0' && gasUSD !== '0.00') {
           const formatted = await convertAndFormatUSD(gasUSD, currency);
+          console.log("🚀 ~ updateFormattedValues ~ formatted:gasUSD", formatted)
           setGasFeeFormatted(formatted);
         } else {
           // Show "0" if gas fee is not available or is zero
@@ -39,8 +42,10 @@ export default function SwapDetailsCard({
         
         // Tiwi protocol fee - use actual value from route
         const tiwiFeeUSD = route.fees?.tiwiProtocolFeeUSD;
+        console.log("🚀 ~ updateFormattedValues ~ tiwiFeeUSD:", tiwiFeeUSD)
         if (tiwiFeeUSD && tiwiFeeUSD !== '0' && tiwiFeeUSD !== '0.00') {
           const formatted = await convertAndFormatUSD(tiwiFeeUSD, currency);
+          console.log("🚀 ~ updateFormattedValues ~ formatted:tiwiFeeUSD", formatted)
           setTiwiFeeFormatted(formatted);
         } else {
           // Show "0" if TIWI fee is not available or is zero
@@ -67,15 +72,43 @@ export default function SwapDetailsCard({
   };
   
   // Get actual aggregator/router/provider name from route
-  // For LiFi: Extract from raw response or steps (could be Gluex, OKX, etc.)
-  // For other routers: Show router name (PancakeSwap, Uniswap)
+  // Priority: steps.protocol > LiFi raw response > router name
   const getSourceLabel = (): string => {
-    if (!route) return "—";
+    if (!route) {
+      console.warn('[SwapDetailsCard] Route is null, cannot determine source');
+      return "—";
+    }
     
-    // Try to extract aggregator from LiFi raw response
+    // Priority 1: Check steps for protocol name (works for all routers)
+    if (route.steps && route.steps.length > 0) {
+      // Find first swap step with protocol info
+      const swapStep = route.steps.find(step => step.type === 'swap' && step.protocol);
+      if (swapStep?.protocol) {
+        console.log('[SwapDetailsCard] Source from steps.protocol:', swapStep.protocol);
+        return swapStep.protocol; // e.g., "Uniswap V3", "PancakeSwap V2"
+      }
+      
+      // If multiple steps, show all protocols (for cross-chain)
+      const protocols = route.steps
+        .filter(step => step.protocol)
+        .map(step => step.protocol)
+        .filter((p): p is string => !!p);
+      
+      if (protocols.length > 1) {
+        const sourceLabel = protocols.join(' → ');
+        console.log('[SwapDetailsCard] Source from multiple steps:', sourceLabel);
+        return sourceLabel; // e.g., "Uniswap V3 → Stargate"
+      } else if (protocols.length === 1) {
+        console.log('[SwapDetailsCard] Source from single step:', protocols[0]);
+        return protocols[0];
+      }
+    }
+    
+    // Priority 2: Try to extract aggregator from LiFi raw response
     if (route.router === 'lifi' && route.raw) {
       // Check raw LiFi route for aggregator information
       const rawRoute = route.raw as any;
+      console.log("🚀 ~ getSourceLabel ~ rawRoute:", rawRoute)
       
       // LiFi may have aggregator info in different places
       // Check steps for toolDetails or includedSteps
@@ -121,6 +154,7 @@ export default function SwapDetailsCard({
     }
     
     // Fixed mode: show the actual slippage that was applied (from route)
+    console.log("🚀 ~ getSlippageDisplay ~ route:", route)
     if (route?.slippage) {
       return `${parseFloat(route.slippage).toFixed(2)}%`;
     }
