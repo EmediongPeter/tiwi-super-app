@@ -35,7 +35,7 @@ export default function StakingPoolsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   return (
-    <AdminLayout pageTitle="Admin - Staking Pools" activeNavItem="staking-pools">
+    <AdminLayout activeNavItem="staking-pools">
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
         {/* Header Section */}
         <div className="mb-6 lg:mb-8">

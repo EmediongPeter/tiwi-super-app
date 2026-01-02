@@ -69,7 +69,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <AdminLayout pageTitle="Admin - Notifications" activeNavItem="notifications">
+    <AdminLayout activeNavItem="notifications">
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
         {/* User Notifications Section */}
         <div className="mb-6 lg:mb-8">
@@ -299,5 +299,6 @@ export default function NotificationsPage() {
     </AdminLayout>
   );
 }
+
 
 

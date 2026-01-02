@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, ReactNode } from "react";
+import { useState, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -22,30 +22,15 @@ import { TbCoins } from "react-icons/tb";
 
 interface AdminLayoutProps {
   children: ReactNode;
-  pageTitle: string;
   activeNavItem?: string;
 }
 
 export default function AdminLayout({
   children,
-  pageTitle,
   activeNavItem,
 }: AdminLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [currentTime, setCurrentTime] = useState("09:40");
   const pathname = usePathname();
-
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      const hours = now.getHours().toString().padStart(2, "0");
-      const minutes = now.getMinutes().toString().padStart(2, "0");
-      setCurrentTime(`${hours}:${minutes}`);
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   const navItems = [
     { icon: IoHomeOutline, label: "Dashboard", href: "/admin", key: "dashboard" },
@@ -70,16 +55,22 @@ export default function AdminLayout({
       >
         {/* Logo */}
         <div className="p-6 flex items-center justify-center">
-          <div className="h-10 w-10 relative">
-            <Image
-              src="/assets/logos/tiwi-logo.svg"
-              alt="TIWI Logo"
-              width={40}
-              height={40}
-              className="object-contain w-full h-full"
-            />
-          </div>
+        <div className="h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 relative">
+              <Image
+                src="/assets/logos/tiwi-logo.svg"
+                alt="TIWI Logo"
+                width={40}
+                height={40}
+                className="object-contain w-full h-full"
+              />
+            </div>
+            <div className="text-white font-bold text-sm sm:text-base leading-tight">
+              <p className="m-0">TIWI</p>
+              <p className="m-0">Protocol</p>
+            </div>
         </div>
+
+        
 
         {/* Navigation */}
         <nav className="flex-1 px-4 space-y-1">
@@ -156,9 +147,8 @@ export default function AdminLayout({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile Header with Time */}
-        <div className="lg:hidden bg-[#010501] px-4 py-2 flex items-center justify-between border-b border-[#1f261e]">
-          <div className="text-white font-medium text-sm">{currentTime}</div>
+        {/* Mobile Header */}
+        <div className="lg:hidden bg-[#010501] px-4 py-2 flex items-center justify-end border-b border-[#1f261e]">
           <div className="flex items-center gap-2">
             <div className="w-1 h-1 bg-white rounded-full"></div>
             <div className="w-1 h-1 bg-white rounded-full"></div>
@@ -167,29 +157,24 @@ export default function AdminLayout({
         </div>
 
         {/* Desktop Header */}
-        <header className="bg-[#0b0f0a] border-b border-[#1f261e] px-4 lg:px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl lg:text-2xl font-semibold text-white">{pageTitle}</h1>
-          <div className="flex items-center gap-3 lg:gap-4">
-            {/* Search */}
-            <div className="relative hidden lg:block">
-              <IoSearchOutline className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#7c7c7c]" />
-              <input
-                type="text"
-                placeholder="Search Dashboard..."
-                className="bg-[#121712] border border-[#1f261e] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] w-64"
-              />
-            </div>
-            {/* User Profile */}
-            <button className="flex items-center gap-2 px-3 py-2 bg-[#121712] border border-[#1f261e] rounded-lg hover:bg-[#1a1f1a] transition-colors">
-              <div className="flex flex-col items-end">
-                <span className="text-white text-xs font-medium">0x95...3545</span>
-                <span className="text-[#b5b5b5] text-xs">Admin</span>
-              </div>
-              <IoChevronDownOutline className="w-4 h-4 lg:w-5 lg:h-5 text-[#b1f128]" />
-            </button>
-            {/* Time - Desktop only */}
-            <div className="text-white font-medium hidden lg:block">{currentTime}</div>
+        <header className="bg-[#0b0f0a] border-b border-[#1f261e] px-4 lg:px-6 py-4 flex items-center gap-3 lg:gap-4">
+          {/* Search */}
+          <div className="relative hidden lg:block flex-1">
+            <IoSearchOutline className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#7c7c7c]" />
+            <input
+              type="text"
+              placeholder="Search Dashboard..."
+              className="bg-[#121712] border border-[#1f261e] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] w-full"
+            />
           </div>
+          {/* User Profile */}
+          <button className="flex items-center gap-2 px-3 py-2 bg-[#121712] border border-[#1f261e] rounded-lg hover:bg-[#1a1f1a] transition-colors">
+            <div className="flex flex-col items-end">
+              <span className="text-white text-xs font-medium">0x95...3545</span>
+              <span className="text-[#b5b5b5] text-xs">Admin</span>
+            </div>
+            <IoChevronDownOutline className="w-4 h-4 lg:w-5 lg:h-5 text-[#b1f128]" />
+          </button>
         </header>
 
         {/* Page Content */}

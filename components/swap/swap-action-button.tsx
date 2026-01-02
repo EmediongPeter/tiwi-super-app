@@ -7,6 +7,7 @@ interface SwapActionButtonProps {
   isConnected: boolean;
   onSwapClick?: () => void;
   onConnectClick?: () => void;
+  isExecutingTransfer?: boolean;
 }
 
 export default function SwapActionButton({
@@ -14,6 +15,7 @@ export default function SwapActionButton({
   isConnected,
   onSwapClick,
   onConnectClick,
+  isExecutingTransfer = false,
 }: SwapActionButtonProps) {
   const isLimit = activeTab === "limit";
 
@@ -22,9 +24,10 @@ export default function SwapActionButton({
       {!isLimit && isConnected && (
         <Button
           onClick={onSwapClick}
+          disabled={isExecutingTransfer}
           className="w-full relative z-10 text-sm sm:text-base py-2.5 sm:py-3 lg:py-3"
         >
-          Swap
+          {isExecutingTransfer ? "Transferring..." : "Swap"}
         </Button>
       )}
       {!isLimit && !isConnected && (

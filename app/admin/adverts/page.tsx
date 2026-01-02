@@ -30,7 +30,7 @@ export default function AdvertsPage() {
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
 
   return (
-    <AdminLayout pageTitle="Admin - Adverts & Promotions" activeNavItem="create-adverts">
+    <AdminLayout activeNavItem="create-adverts">
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
         {/* Header */}
         <div className="mb-6 lg:mb-8">

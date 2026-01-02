@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import TradingChart from "@/components/swap/trading-chart";
 import SwapCard from "@/components/swap/swap-card";
 import SwapBackgroundElements from "@/components/swap/swap-background-elements";
@@ -222,9 +222,211 @@ export default function SwapPage() {
     }
   };
 
-  const handleSwapClick = () => {
+  // Recipient wallet state for wallet-to-wallet transfers
+  // Default to primary wallet address if available
+  const [recipientAddress, setRecipientAddress] = useState<string | null>(connectedAddress);
+  const [isExecutingTransfer, setIsExecutingTransfer] = useState(false);
+  const [transferStatus, setTransferStatus] = useState<string>("");
+  const prevConnectedAddressRef = useRef<string | null>(connectedAddress);
+  const userChangedRecipientRef = useRef(false);
+
+  // Update recipient address to primary wallet when primary wallet connects or changes
+  // Only auto-update if user hasn't manually changed it
+  useEffect(() => {
+    const prevAddress = prevConnectedAddressRef.current;
+    
+    // If user hasn't manually changed recipient, auto-update to primary wallet
+    if (!userChangedRecipientRef.current) {
+      if (connectedAddress) {
+        setRecipientAddress(connectedAddress);
+      } else {
+        setRecipientAddress(null);
+      }
+    } else {
+      // User has manually changed recipient
+      // Only update if the recipient was set to the previous primary wallet address
+      if (prevAddress && recipientAddress && recipientAddress.toLowerCase() === prevAddress.toLowerCase()) {
+        // Recipient was set to old primary wallet, update to new one
+        if (connectedAddress) {
+          setRecipientAddress(connectedAddress);
+        } else {
+          setRecipientAddress(null);
+        }
+      }
+    }
+    
+    // Update ref for next comparison
+    prevConnectedAddressRef.current = connectedAddress;
+  }, [connectedAddress, recipientAddress]);
+
+  // Track when user manually changes recipient
+  const handleRecipientChange = (address: string | null) => {
+    // If user sets recipient back to primary wallet, reset the flag
+    if (address && connectedAddress && address.toLowerCase() === connectedAddress.toLowerCase()) {
+      userChangedRecipientRef.current = false;
+    } else {
+      userChangedRecipientRef.current = true;
+    }
+    setRecipientAddress(address);
+  };
+
+  const handleSwapClick = async () => {
+    // Check if this is a wallet-to-wallet transfer (same token, same chain, different recipient)
+    const isSameToken = fromToken && toToken && 
+      fromToken.address.toLowerCase() === toToken.address.toLowerCase();
+    const isSameChain = fromToken?.chainId === toToken?.chainId;
+    const hasRecipient = recipientAddress && recipientAddress.toLowerCase() !== connectedAddress?.toLowerCase();
+    
+    // Check if it's a wallet-to-wallet transfer
+    if (isSameToken && isSameChain && hasRecipient && connectedAddress) {
+      await executeWalletToWalletTransfer();
+      return;
+    }
+    
     // TODO: Implement swap functionality
     console.log("Swap clicked");
+  };
+
+  const executeWalletToWalletTransfer = async () => {
+    if (!fromToken || !toToken || !fromAmount || !recipientAddress || !connectedAddress) {
+      return;
+    }
+
+    setIsExecutingTransfer(true);
+    setTransferStatus("Preparing transfer...");
+
+    try {
+      const chainId = fromToken.chainId;
+      const isSolana = chainId === 7565164; // Solana chain ID
+
+      if (isSolana) {
+        // Solana transfer
+        await executeSolanaTransfer();
+      } else {
+        // EVM transfer
+        await executeEVMTransfer();
+      }
+    } catch (error: any) {
+      console.error("Error executing transfer:", error);
+      setTransferStatus(`Error: ${error.message || "Transfer failed"}`);
+    } finally {
+      setIsExecutingTransfer(false);
+    }
+  };
+
+  const executeSolanaTransfer = async () => {
+    if (!fromToken || !fromAmount || !recipientAddress) return;
+    
+    if (fromToken.decimals === undefined) {
+      throw new Error("Token decimals not available");
+    }
+
+    setTransferStatus("Preparing Solana transfer...");
+
+    const { getSolanaWallet } = await import("@/lib/wallet/utils/solana");
+    const { transferSOL, transferSPLToken, toSmallestUnit, NATIVE_SOL_MINT } = await import("@/lib/wallet/utils/transfer");
+
+    const solanaWallet = await getSolanaWallet();
+    if (!solanaWallet || !solanaWallet.isConnected || !solanaWallet.publicKey) {
+      throw new Error("Please connect your Solana wallet first");
+    }
+
+    const amountForTransfer = BigInt(toSmallestUnit(fromAmount, fromToken.decimals));
+    const isNativeSOL = fromToken.address === NATIVE_SOL_MINT || 
+                       fromToken.address.toLowerCase() === NATIVE_SOL_MINT.toLowerCase();
+
+    if (isNativeSOL) {
+      setTransferStatus("Sending SOL...");
+      const signature = await transferSOL(solanaWallet, recipientAddress, amountForTransfer);
+      setTransferStatus(`Transfer successful! Signature: ${signature}`);
+    } else {
+      setTransferStatus("Sending SPL token...");
+      const signature = await transferSPLToken(solanaWallet, fromToken.address, recipientAddress, amountForTransfer);
+      setTransferStatus(`Transfer successful! Signature: ${signature}`);
+    }
+  };
+
+  const executeEVMTransfer = async () => {
+    if (!fromToken || !fromAmount || !recipientAddress || !connectedAddress) return;
+    
+    if (fromToken.chainId === undefined) {
+      throw new Error("Token chain ID not available");
+    }
+    
+    if (fromToken.decimals === undefined) {
+      throw new Error("Token decimals not available");
+    }
+
+    setTransferStatus("Preparing EVM transfer...");
+
+    // Get wallet client - this will need to be implemented based on your wallet connection setup
+    // For now, we'll use a placeholder that needs to be connected to your actual wallet system
+    const { createWalletClient, custom } = await import("viem");
+    const { mainnet, arbitrum, optimism, polygon, base, bsc } = await import("viem/chains");
+    
+    const chainMap: Record<number, any> = {
+      1: mainnet,
+      42161: arbitrum,
+      10: optimism,
+      137: polygon,
+      8453: base,
+      56: bsc,
+    };
+
+    const chain = chainMap[fromToken.chainId];
+    if (!chain) {
+      throw new Error(`Unsupported chain: ${fromToken.chainId}`);
+    }
+
+    // Get provider from window (MetaMask, etc.)
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      throw new Error("No Ethereum wallet found. Please install MetaMask or another wallet.");
+    }
+
+    const provider = (window as any).ethereum;
+    const walletClient = createWalletClient({
+      chain,
+      transport: custom(provider),
+      account: connectedAddress as `0x${string}`,
+    });
+
+    const { transferNativeToken, transferERC20Token, isNativeToken, toSmallestUnit, getPublicClient } = await import("@/lib/wallet/utils/transfer");
+    
+    const amountForTransfer = BigInt(toSmallestUnit(fromAmount, fromToken.decimals));
+
+    if (isNativeToken(fromToken.address)) {
+      setTransferStatus("Sending native token...");
+      const hash = await transferNativeToken(walletClient, recipientAddress, amountForTransfer);
+      
+      setTransferStatus("Waiting for confirmation...");
+      const publicClient = getPublicClient(fromToken.chainId);
+      const receipt = await publicClient.waitForTransactionReceipt({ 
+        hash: hash as `0x${string}`,
+        timeout: 60000,
+      });
+      
+      if (receipt.status === "reverted") {
+        throw new Error("Transfer reverted");
+      }
+      
+      setTransferStatus(`Transfer successful! Hash: ${hash}`);
+    } else {
+      setTransferStatus("Preparing ERC20 transfer...");
+      const hash = await transferERC20Token(walletClient, fromToken.address, recipientAddress, amountForTransfer);
+      
+      setTransferStatus("Waiting for confirmation...");
+      const publicClient = getPublicClient(fromToken.chainId);
+      const receipt = await publicClient.waitForTransactionReceipt({ 
+        hash: hash as `0x${string}`,
+        timeout: 60000,
+      });
+      
+      if (receipt.status === "reverted") {
+        throw new Error("Transfer reverted");
+      }
+      
+      setTransferStatus(`Transfer successful! Hash: ${hash}`);
+    }
   };
 
   const handleConnectClick = () => {
@@ -348,12 +550,16 @@ export default function SwapPage() {
                 chain: fromToken.chain,
                 icon: fromToken.logo,
                 chainBadge: fromToken.chainLogo,
+                chainId: fromToken.chainId,
+                address: fromToken.address,
               } : undefined}
               toToken={toToken ? {
                 symbol: toToken.symbol,
                 chain: toToken.chain,
                 icon: toToken.logo,
                 chainBadge: toToken.chainLogo,
+                chainId: toToken.chainId,
+                address: toToken.address,
               } : undefined}
               fromBalance={fromTokenBalance.balanceFormatted || "0.00"}
               fromBalanceLoading={fromTokenBalance.isLoading}
@@ -366,6 +572,9 @@ export default function SwapPage() {
               limitPrice={limitPrice}
               limitPriceUsd={limitPriceUsd}
               expires={expires}
+              recipientAddress={recipientAddress}
+              onRecipientChange={handleRecipientChange}
+              connectedAddress={connectedAddress}
               onTabChange={handleTabChange}
               onFromTokenSelect={handleFromTokenSelect}
               onToTokenSelect={handleToTokenSelect}
@@ -376,6 +585,8 @@ export default function SwapPage() {
               onSwapClick={handleSwapClick}
               onConnectClick={handleConnectClick}
               isConnected={!!connectedAddress}
+              isExecutingTransfer={isExecutingTransfer}
+              transferStatus={transferStatus}
             />
           </div>
         </div>
@@ -404,6 +615,9 @@ export default function SwapPage() {
         onOpenChange={setIsTokenModalOpen}
         onTokenSelect={handleTokenSelect}
         selectedToken={tokenModalType === "from" ? fromToken : toToken}
+        connectedAddress={connectedAddress}
+        recipientAddress={recipientAddress}
+        tokenModalType={tokenModalType}
       />
 
       {/* Error Toast */}

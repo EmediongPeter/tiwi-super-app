@@ -32,7 +32,7 @@ export default function PoolDetailsPage({
   };
 
   return (
-    <AdminLayout pageTitle="Admin - Pool Details" activeNavItem="staking-pools">
+    <AdminLayout activeNavItem="staking-pools">
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
         {/* Header */}
         <div className="mb-6 lg:mb-8">
