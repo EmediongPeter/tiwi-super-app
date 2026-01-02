@@ -105,7 +105,7 @@ export default function TokensPage() {
   const [isSpotlightModalOpen, setIsSpotlightModalOpen] = useState(false);
 
   return (
-    <AdminLayout pageTitle="Admin - Add Tokens">
+    <AdminLayout>
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
         {/* Token Management Section */}
         <div className="mb-6 lg:mb-8">

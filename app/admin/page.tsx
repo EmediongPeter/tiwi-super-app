@@ -51,7 +51,7 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <AdminLayout pageTitle="Admin - Dashboard" activeNavItem="dashboard">
+    <AdminLayout activeNavItem="dashboard">
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           {/* Dashboard Overview */}
           <div className="mb-6 lg:mb-8">

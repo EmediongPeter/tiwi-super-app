@@ -5,7 +5,7 @@ import { IoWaterOutline, IoTimeOutline } from "react-icons/io5";
 
 export default function LiquidityPoolsComingSoonPage() {
   return (
-    <AdminLayout pageTitle="Admin - Liquidity Pools" activeNavItem="liquidity-pools">
+    <AdminLayout activeNavItem="liquidity-pools">
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
         <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
           <div className="text-center max-w-md mx-auto px-4">
@@ -60,5 +60,6 @@ export default function LiquidityPoolsComingSoonPage() {
     </AdminLayout>
   );
 }
+
 
 

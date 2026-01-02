@@ -7,6 +7,7 @@ import SwapTabs from "./swap-tabs";
 import LimitOrderFields from "./limit-order-fields";
 import SwapDetailsCard from "./swap-details-card";
 import SwapActionButton from "./swap-action-button";
+import RecipientWalletSelector from "./recipient-wallet-selector";
 import Skeleton from "@/components/ui/skeleton";
 import { parseNumber } from "@/lib/shared/utils/number";
 import { useSwapStore } from "@/lib/frontend/store/swap-store";
@@ -16,6 +17,8 @@ interface Token {
   chain: string;
   icon: string;
   chainBadge?: string;
+  chainId?: number;
+  address?: string;
 }
 
 interface SwapCardProps {
@@ -33,6 +36,9 @@ interface SwapCardProps {
   limitPrice?: string;
   limitPriceUsd?: string;
   expires?: "never" | "24h" | "7d" | "custom";
+  recipientAddress?: string | null;
+  onRecipientChange?: (address: string | null) => void;
+  connectedAddress?: string | null;
   onTabChange?: (tab: "swap" | "limit") => void;
   onFromTokenSelect?: () => void;
   onToTokenSelect?: () => void;
@@ -44,6 +50,8 @@ interface SwapCardProps {
   onSwapClick?: () => void;
   onConnectClick?: () => void;
   isConnected?: boolean;
+  isExecutingTransfer?: boolean;
+  transferStatus?: string;
 }
 
 export default function SwapCard({
@@ -61,6 +69,9 @@ export default function SwapCard({
   limitPrice = "",
   limitPriceUsd = "$0",
   expires = "never",
+  recipientAddress = null,
+  onRecipientChange,
+  connectedAddress = null,
   onTabChange,
   onFromTokenSelect,
   onToTokenSelect,
@@ -72,6 +83,8 @@ export default function SwapCard({
   onSwapClick,
   onConnectClick,
   isConnected = false,
+  isExecutingTransfer = false,
+  transferStatus = "",
 }: SwapCardProps) {
   const isLimit = activeTab === "limit";
 
@@ -154,17 +167,29 @@ export default function SwapCard({
                 <Skeleton className="h-4 w-24" />
               </div>
             ) : (
-              <TokenInput
-                type="to"
-                token={toToken}
-                balance={toBalance}
-                balanceLoading={toBalanceLoading}
-                amount={toAmount}
-                usdValue={toUsdValue}
-                onTokenSelect={onToTokenSelect}
-                onAmountChange={onToAmountChange}
-                readOnlyAmount
-              />
+              <div className="space-y-2">
+                {/* Recipient Wallet Selector - Always visible in To section header */}
+                <div className="flex items-center justify-end px-2 -mb-1">
+                  <RecipientWalletSelector
+                    connectedAddress={connectedAddress}
+                    recipientAddress={recipientAddress}
+                    onRecipientChange={onRecipientChange || (() => {})}
+                    chainId={toToken?.chainId}
+                    chainType={toToken?.chainId === 7565164 ? "Solana" : toToken?.chainId ? "EVM" : undefined}
+                  />
+                </div>
+                <TokenInput
+                  type="to"
+                  token={toToken}
+                  balance={toBalance}
+                  balanceLoading={toBalanceLoading}
+                  amount={toAmount}
+                  usdValue={toUsdValue}
+                  onTokenSelect={onToTokenSelect}
+                  onAmountChange={onToAmountChange}
+                  readOnlyAmount
+                />
+              </div>
             )}
           </div>
 
@@ -206,12 +231,20 @@ export default function SwapCard({
             />
           </button>
 
+          {/* Transfer Status */}
+          {transferStatus && (
+            <div className="p-4 bg-[#0b0f0a] border border-[#1f261e] rounded-lg mt-3">
+              <p className="text-sm text-[#b5b5b5]">{transferStatus}</p>
+            </div>
+          )}
+
           {/* Primary CTA Button */}
           <SwapActionButton
             activeTab={activeTab}
             isConnected={isConnected}
             onSwapClick={onSwapClick}
             onConnectClick={onConnectClick}
+            isExecutingTransfer={isExecutingTransfer}
           />
         </div>
 
