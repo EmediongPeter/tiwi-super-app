@@ -260,7 +260,7 @@ export default function SettingsPage() {
   const chainIconsList = chainIcons;
 
   return (
-    <div className="min-h-screen bg-[#010501] text-white font-manrope">
+    <div className="min-h-screen bg-transparent text-white font-manrope">
       {/* Mobile View */}
       <div className="md:hidden">
         <MobileSettingsView
@@ -300,7 +300,7 @@ export default function SettingsPage() {
       <div className="hidden md:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
-          <div className="mb-6">
+          {/* <div className="mb-6">
             <h1 className="text-2xl font-bold text-white">
             {currentView === "main"
               ? "Settings/Account Details"
@@ -361,7 +361,7 @@ export default function SettingsPage() {
               ? "Disconnect Wallet"
               : "Settings"}
           </h1>
-          </div>
+          </div> */}
 
           <DesktopSettingsView
             currentView={currentView}
@@ -373,7 +373,7 @@ export default function SettingsPage() {
 
             {/* Edit Wallet Name View */}
             {currentView === "edit-wallet-name" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -414,7 +414,7 @@ export default function SettingsPage() {
 
             {/* Export Private Key Warning */}
             {currentView === "export-private-key-warning" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -472,7 +472,7 @@ export default function SettingsPage() {
 
             {/* Export Private Key Revealed */}
             {currentView === "export-private-key-revealed" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -525,7 +525,7 @@ export default function SettingsPage() {
 
             {/* Export Recovery Phrase Warning */}
             {currentView === "export-recovery-phrase-warning" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -580,7 +580,7 @@ export default function SettingsPage() {
 
             {/* Export Recovery Phrase Click to Reveal */}
             {currentView === "export-recovery-phrase-click" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -615,7 +615,7 @@ export default function SettingsPage() {
 
             {/* Export Recovery Phrase Revealed */}
             {currentView === "export-recovery-phrase-revealed" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -687,7 +687,7 @@ export default function SettingsPage() {
 
             {/* Security Sub-menu */}
             {currentView === "security" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -719,7 +719,7 @@ export default function SettingsPage() {
 
             {/* Change PIN */}
             {currentView === "change-pin" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -791,7 +791,7 @@ export default function SettingsPage() {
 
             {/* Fraud Alerts */}
             {currentView === "fraud-alerts" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -860,7 +860,7 @@ export default function SettingsPage() {
 
             {/* Whitelist Addresses */}
             {currentView === "whitelist-addresses" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -927,7 +927,7 @@ export default function SettingsPage() {
 
             {/* Connected Devices */}
             {currentView === "connected-devices" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1010,7 +1010,7 @@ export default function SettingsPage() {
 
             {/* Terminate Device Confirmation */}
             {currentView === "terminate-device" && deviceToTerminate && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1067,7 +1067,7 @@ export default function SettingsPage() {
 
             {/* Language & Region */}
             {currentView === "language-region" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1268,7 +1268,7 @@ export default function SettingsPage() {
 
             {/* Notifications Main View */}
             {currentView === "notifications" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1394,7 +1394,7 @@ export default function SettingsPage() {
 
             {/* Transactions Notifications */}
             {currentView === "transactions-notifications" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1439,7 +1439,7 @@ export default function SettingsPage() {
 
             {/* Rewards & Earnings */}
             {currentView === "rewards-earnings" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1483,7 +1483,7 @@ export default function SettingsPage() {
 
             {/* Governance */}
             {currentView === "governance" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1526,7 +1526,7 @@ export default function SettingsPage() {
 
             {/* News & Announcements */}
             {currentView === "news-announcements" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1569,7 +1569,7 @@ export default function SettingsPage() {
 
             {/* System Alerts */}
             {currentView === "system-alerts" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1613,7 +1613,7 @@ export default function SettingsPage() {
 
             {/* App Updates & Cache */}
             {currentView === "app-updates-cache" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1688,7 +1688,7 @@ export default function SettingsPage() {
 
             {/* Support Main View */}
             {currentView === "support" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1726,7 +1726,7 @@ export default function SettingsPage() {
 
             {/* Live Status */}
             {currentView === "live-status" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1773,7 +1773,7 @@ export default function SettingsPage() {
 
             {/* FAQs */}
             {currentView === "faqs" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1829,7 +1829,7 @@ export default function SettingsPage() {
 
             {/* Tutorials */}
             {currentView === "tutorials" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1884,7 +1884,7 @@ export default function SettingsPage() {
 
             {/* Report Bug */}
             {currentView === "report-bug" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -1979,7 +1979,7 @@ export default function SettingsPage() {
 
             {/* Contact Support */}
             {currentView === "contact-support" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -2017,7 +2017,7 @@ export default function SettingsPage() {
 
             {/* Add New Wallet */}
             {currentView === "add-new-wallet" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -2056,7 +2056,7 @@ export default function SettingsPage() {
 
             {/* Import Wallet */}
             {currentView === "import-wallet" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}
@@ -2116,7 +2116,7 @@ export default function SettingsPage() {
 
             {/* Disconnect Wallet */}
             {currentView === "disconnect-wallet" && (
-              <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto">
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
                   <button
                     onClick={handleGoBack}

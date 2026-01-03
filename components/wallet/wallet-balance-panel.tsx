@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
+import { Eye, EyeOff } from "lucide-react";
 import ViewPortfolioButton from "./view-portfolio-button";
 import RewardClaimCard from "./reward-claim-card";
 import TransactionHistory from "./transaction-history";
@@ -192,16 +193,14 @@ export default function WalletBalancePanel({
                 </p>
                 <button
                   onClick={toggleBalanceVisibility}
-                  className="relative shrink-0 size-6 lg:size-4 xl:size-5 2xl:size-6 cursor-pointer hover:opacity-80 transition-opacity"
+                  className="relative shrink-0 size-6 lg:size-4 xl:size-5 2xl:size-6 cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
                   aria-label="Toggle balance visibility"
                 >
-                  <Image
-                    src="/assets/icons/wallet/view.svg"
-                    alt="View"
-                    width={24}
-                    height={24}
-                    className="w-full h-full object-contain"
-                  />
+                  {isBalanceVisible ? (
+                    <Eye className="text-[#b5b5b5] w-full h-full" />
+                  ) : (
+                    <EyeOff className="text-[#b5b5b5] w-full h-full" />
+                  )}
                 </button>
               </div>
               <div className="flex items-center justify-center relative shrink-0">

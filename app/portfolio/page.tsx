@@ -31,11 +31,11 @@ import {
   TransactionListSkeleton,
 } from "@/components/portfolio/skeletons/portfolio-skeletons";
 import {
-  IoEyeOutline,
   IoChevronDown,
   IoArrowBack,
   IoClose,
 } from "react-icons/io5";
+import { Eye, EyeOff } from "lucide-react";
 import { RiSendPlaneLine } from "react-icons/ri";
 import { HiDownload } from "react-icons/hi";
 import { MdHistory } from "react-icons/md";
@@ -442,7 +442,11 @@ function WalletPageDesktop() {
                 className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
                 aria-label="Toggle balance visibility"
               >
-                <IoEyeOutline color="#B5B5B5" size={16} />
+                {isBalanceVisible ? (
+                  <Eye size={16} className="text-[#B5B5B5]" />
+                ) : (
+                  <EyeOff size={16} className="text-[#B5B5B5]" />
+                )}
               </button>
             </span>
             {balanceLoading ? (
@@ -466,7 +470,7 @@ function WalletPageDesktop() {
                 {dailyChangeText ? (
                   <p className="mt-1 text-sm" style={{ color: dailyChangeColor }}>
                     {isBalanceVisible ? dailyChangeText : "****"} <span className="text-[#9DA4AE]">today</span>
-                  </p>
+            </p>
                 ) : (
                   <p className="mt-1 text-sm text-[#9DA4AE]">
                     No change data available
@@ -577,7 +581,7 @@ function WalletPageDesktop() {
                             ? "bg-[#1F261E] border border-[#B1F128]/30" 
                             : "bg-[#0E1310] hover:bg-[#141A16]"
                         }`}
-                      >
+                  >
                         {/* Column 1: Logo */}
                         <div className="shrink-0 flex items-center justify-start">
                       <Image
@@ -586,7 +590,7 @@ function WalletPageDesktop() {
                         width={20}
                         height={20}
                             className="opacity-90 rounded-full"
-                          />
+                      />
                         </div>
 
                         {/* Column 2: Symbol and Name (Fixed width to keep chart aligned) */}
@@ -638,7 +642,7 @@ function WalletPageDesktop() {
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <p className="text-sm text-[#FF4444] mb-2">
                       Error loading NFTs
-                    </p>
+                        </p>
                     <p className="text-xs text-[#8A929A]">
                       {nftsError}
                         </p>
@@ -1398,7 +1402,7 @@ function WalletPageDesktop() {
                     <div className="flex flex-col space-y-4">
                       <p className="pt-4 text-xs break-all text-[#B5B5B5]">
                             {connectedAddress || 'Not connected'}
-                          </p>
+                      </p>
                           <button 
                             onClick={() => {
                               if (connectedAddress) {
@@ -1770,7 +1774,11 @@ function WalletPageMobile() {
                   className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
                   aria-label="Toggle balance visibility"
                 >
-                  <IoEyeOutline className="text-[#8A929A]" size={16} />
+                  {isBalanceVisible ? (
+                    <Eye size={16} className="text-[#8A929A]" />
+                  ) : (
+                    <EyeOff size={16} className="text-[#8A929A]" />
+                  )}
                 </button>
               </div>
               {balanceLoading ? (
@@ -1794,7 +1802,7 @@ function WalletPageMobile() {
                   {dailyChangeText ? (
                     <p className="text-sm flex items-center gap-1" style={{ color: dailyChangeColor }}>
                       {isBalanceVisible ? dailyChangeText : "****"} <span className="text-[#8A929A]">today</span>
-                    </p>
+              </p>
                   ) : (
                     <p className="text-[#8A929A] text-sm">
                       No change data available
@@ -1952,7 +1960,7 @@ function WalletPageMobile() {
                             width={32}
                             height={32}
                                 className="rounded-full"
-                              />
+                          />
                             </div>
 
                             {/* Column 2: Symbol and Name (Fixed width to keep chart aligned) */}
@@ -2004,7 +2012,7 @@ function WalletPageMobile() {
                       <div className="flex flex-col items-center justify-center py-8 text-center">
                         <p className="text-sm text-[#FF4444] mb-2">
                           Error loading NFTs
-                        </p>
+                            </p>
                         <p className="text-xs text-[#8A929A]">
                           {nftsError}
                             </p>
@@ -2017,7 +2025,7 @@ function WalletPageMobile() {
                         <p className="text-xs text-[#6E7873]">
                           Start collecting NFTs to see them here
                         </p>
-                      </div>
+                        </div>
                     ) : (
                       <NFTGrid
                         nfts={nfts}

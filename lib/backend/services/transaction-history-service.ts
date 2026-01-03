@@ -101,15 +101,21 @@ export class TransactionHistoryService {
       );
     }
 
+    // Filter to only Tiwi Protocol transactions if enabled
+    let filteredTransactions = transactions;
+    if (this.shouldFilterTiwiTransactions()) {
+      filteredTransactions = this.filterTiwiProtocolTransactions(transactions);
+    }
+
     // Apply pagination
-    const paginatedTransactions = transactions.slice(offset, offset + limit);
-    const hasMore = transactions.length > offset + limit;
+    const paginatedTransactions = filteredTransactions.slice(offset, offset + limit);
+    const hasMore = filteredTransactions.length > offset + limit;
 
     // Build response
     const response: TransactionHistoryResponse = {
       address,
       transactions: paginatedTransactions,
-      total: transactions.length, // This would be actual total from API
+      total: filteredTransactions.length, // This would be actual total from API
       limit,
       offset,
       hasMore,
@@ -543,6 +549,83 @@ export class TransactionHistoryService {
       'Stake11111111111111111111111111111111111112', // Native staking
     ];
     return stakingPrograms.includes(programId);
+  }
+
+  /**
+   * Check if Tiwi transaction filtering should be enabled
+   */
+  private shouldFilterTiwiTransactions(): boolean {
+    try {
+      const { TIWI_TRANSACTION_FILTER_ENABLED } = require('@/lib/backend/config/tiwi-protocol-config');
+      return TIWI_TRANSACTION_FILTER_ENABLED === true;
+    } catch {
+      // If config doesn't exist or can't be loaded, default to false (show all transactions)
+      return false;
+    }
+  }
+
+  /**
+   * Filter transactions to only include Tiwi Protocol transactions
+   */
+  private filterTiwiProtocolTransactions(transactions: Transaction[]): Transaction[] {
+    try {
+      const {
+        isTiwiProtocolContract,
+        isTiwiProtocolName,
+        isTiwiDEXName,
+        TIWI_FILTER_MODE,
+      } = require('@/lib/backend/config/tiwi-protocol-config');
+
+      return transactions.filter(tx => {
+        const chainId = tx.chainId;
+        if (!chainId) {
+          // If chainId is unknown, check metadata only
+          if (TIWI_FILTER_MODE === 'strict') {
+            return false; // Strict mode requires chainId
+          }
+          // For metadata/both modes, check metadata
+          return (
+            isTiwiProtocolName(tx.metadata?.protocol) ||
+            isTiwiDEXName(tx.metadata?.dexName)
+          );
+        }
+
+        // Check contract addresses
+        const fromIsTiwi = tx.from ? isTiwiProtocolContract(tx.from, chainId) : false;
+        const toIsTiwi = tx.to ? isTiwiProtocolContract(tx.to, chainId) : false;
+        const tokenAddressIsTiwi = tx.tokenAddress ? isTiwiProtocolContract(tx.tokenAddress, chainId) : false;
+
+        // Check metadata
+        const protocolIsTiwi = isTiwiProtocolName(tx.metadata?.protocol);
+        const dexIsTiwi = isTiwiDEXName(tx.metadata?.dexName);
+
+        // Apply filter mode
+        switch (TIWI_FILTER_MODE) {
+          case 'strict':
+            // Only transactions that interact with Tiwi contracts
+            return fromIsTiwi || toIsTiwi || tokenAddressIsTiwi;
+          
+          case 'metadata':
+            // Only transactions with Tiwi protocol metadata
+            return protocolIsTiwi || dexIsTiwi;
+          
+          case 'both':
+          default:
+            // Transactions that match contract addresses OR metadata
+            return (
+              fromIsTiwi ||
+              toIsTiwi ||
+              tokenAddressIsTiwi ||
+              protocolIsTiwi ||
+              dexIsTiwi
+            );
+        }
+      });
+    } catch (error) {
+      console.error('[TransactionHistoryService] Error filtering Tiwi transactions:', error);
+      // If filtering fails, return all transactions (fail-safe)
+      return transactions;
+    }
   }
 
   /**

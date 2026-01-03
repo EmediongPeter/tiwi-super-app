@@ -58,9 +58,9 @@ export default function GlobalBackground() {
       {/* Base Layer - Dark Background (handled by layout, but ensuring it's here) */}
       <div className="absolute inset-0 bg-[#010501]" />
 
-      {/* Central Glow Vector - CENTERED as per Figma: left-[calc(50%-0.62px)] */}
+      {/* Central Glow Vector - CENTERED as per Figma: left-[calc(50%-0.62px)] - Hidden on mobile */}
       <div
-        className="absolute left-1/2"
+        className="hidden md:block absolute left-1/2"
         style={{
           left: `calc(50% - ${0.62 * scale}px)`,
           top: `calc(50% + ${150 * scale}px)`,

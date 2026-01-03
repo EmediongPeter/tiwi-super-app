@@ -6,7 +6,7 @@ import { getWalletById } from "@/lib/wallet/detection/detector";
 import type { WalletType } from "@/components/wallet/connect-wallet-modal";
 import type { WalletProvider } from "@/lib/wallet/detection/types";
 import type { WalletConnectWallet } from "@/lib/wallet/services/wallet-explorer-service";
-import type { WalletChain } from "@/lib/wallet/connection/types";
+import type { WalletAccount, WalletChain } from "@/lib/wallet/connection/types";
 import { mapWalletIdToProviderId } from "@/lib/wallet/utils/wallet-id-mapper";
 import { useConnect, useDisconnect, useConfig } from "wagmi";
 import { getAccount } from "@wagmi/core";
@@ -117,7 +117,72 @@ export function useWalletConnection(): UseWalletConnectionReturn {
         
         // Single-chain wallet - determine chain and connect
         const chain = getChainForWallet(wcWallet.id);
-        await wallet.connect(wcWallet.id, chain);
+        const providerId = mapWalletIdToProviderId(wcWallet.id);
+        
+        // For MetaMask on Ethereum, use Wagmi's MetaMask connector
+        if (chain === 'ethereum' && providerId === 'metamask') {
+          try {
+            const metamaskConnector = wagmiConnectors.find((c: any) => {
+              const id = (c.id || '').toLowerCase();
+              const name = (c.name || '').toLowerCase();
+              const type = (c.type || '').toLowerCase();
+              return id.includes('metamask') || 
+                     name.includes('metamask') ||
+                     type === 'metamask' ||
+                     c.id === 'metaMask' ||
+                     c.id === 'metaMaskSDK';
+            });
+            
+            if (metamaskConnector) {
+              console.log('[useWalletConnection] Using Wagmi MetaMask connector for WalletConnect MetaMask connection');
+              
+              if (wallet.primaryWallet) {
+                try {
+                  await wallet.disconnect();
+                } catch (error) {
+                  console.warn('Error disconnecting existing wallet:', error);
+                }
+              }
+              
+              await wagmiConnect({ connector: metamaskConnector });
+              
+              const wagmiAccount = getAccount(wagmiConfig);
+              let address: string;
+              
+              if (!wagmiAccount.address) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const retryAccount = getAccount(wagmiConfig);
+                if (!retryAccount.address) {
+                  throw new Error('Failed to get account address from MetaMask connector. Please try again.');
+                }
+                address = retryAccount.address;
+              } else {
+                address = wagmiAccount.address;
+              }
+              
+              const account: WalletAccount = {
+                address: address,
+                chain: 'ethereum',
+                provider: wcWallet.id,
+              };
+              
+              useWalletStore.getState().setAccount(account);
+              
+              setIsToastOpen(true);
+              setIsExplorerOpen(false);
+              return;
+            } else {
+              console.warn('[useWalletConnection] Wagmi MetaMask connector not found, using custom connection');
+              await wallet.connect(wcWallet.id, chain);
+            }
+          } catch (wagmiError: any) {
+            console.error('[useWalletConnection] Wagmi MetaMask connection failed, trying custom connection:', wagmiError);
+            await wallet.connect(wcWallet.id, chain);
+          }
+        } else {
+          await wallet.connect(wcWallet.id, chain);
+        }
+        
         setIsToastOpen(true);
         setIsExplorerOpen(false);
         return;
@@ -171,14 +236,94 @@ export function useWalletConnection(): UseWalletConnectionReturn {
         chain = getChainForWallet(walletId);
       }
 
-      await wallet.connect(walletId, chain);
+      // Map wallet ID to provider ID for MetaMask detection
+      const providerId = mapWalletIdToProviderId(walletId);
+      
+      // For MetaMask on Ethereum, use Wagmi's MetaMask connector specifically
+      // This ensures we use MetaMask's own provider and avoid OKX/Rabby conflicts
+      if (chain === 'ethereum' && providerId === 'metamask') {
+        try {
+          // Find Wagmi's MetaMask connector
+          const metamaskConnector = wagmiConnectors.find((c: any) => {
+            const id = (c.id || '').toLowerCase();
+            const name = (c.name || '').toLowerCase();
+            const type = (c.type || '').toLowerCase();
+            return id.includes('metamask') || 
+                   name.includes('metamask') ||
+                   type === 'metamask' ||
+                   c.id === 'metaMask' ||
+                   c.id === 'metaMaskSDK';
+          });
+          
+          if (metamaskConnector) {
+            console.log('[useWalletConnection] Using Wagmi MetaMask connector for direct MetaMask connection');
+            
+            // Disconnect any existing wallet first
+            if (wallet.primaryWallet) {
+              try {
+                await wallet.disconnect();
+              } catch (error) {
+                console.warn('Error disconnecting existing wallet:', error);
+              }
+            }
+            
+            // Connect using Wagmi's MetaMask connector
+            await wagmiConnect({ connector: metamaskConnector });
+            
+            // Get the connected account directly from Wagmi core (synchronous after connection)
+            // This is more reliable than waiting for React hooks to update
+            const wagmiAccount = getAccount(wagmiConfig);
+            let address: string;
+            
+            if (!wagmiAccount.address) {
+              // If address not immediately available, wait a bit and try again
+              await new Promise(resolve => setTimeout(resolve, 300));
+              const retryAccount = getAccount(wagmiConfig);
+              if (!retryAccount.address) {
+                throw new Error('Failed to get account address from MetaMask connector. Please try again.');
+              }
+              address = retryAccount.address;
+            } else {
+              address = wagmiAccount.address;
+            }
+            
+            // Update wallet store with the connected account directly
+            // Don't call wallet.connect() as it will try to connect again via connector
+            // Instead, use the store's setAccount method to set the account directly
+            const account: WalletAccount = {
+              address: address,
+              chain: 'ethereum',
+              provider: walletId, // Keep original wallet ID
+            };
+            
+            // Use the store's setAccount method directly
+            useWalletStore.getState().setAccount(account);
+            
+            setIsToastOpen(true);
+            setIsModalOpen(false);
+            return; // Exit early - connection complete
+          } else {
+            // Fallback to custom connection if connector not found
+            console.warn('[useWalletConnection] Wagmi MetaMask connector not found, using custom connection');
+            await wallet.connect(walletId, chain);
+          }
+        } catch (wagmiError: any) {
+          console.error('[useWalletConnection] Wagmi MetaMask connection failed, trying custom connection:', wagmiError);
+          // Fallback to custom connection
+          await wallet.connect(walletId, chain);
+        }
+      } else {
+        // For other wallets (non-MetaMask or Solana), use the normal connection logic
+        await wallet.connect(walletId, chain);
+      }
+      
       setIsToastOpen(true);
       setIsModalOpen(false);
     } catch (error: any) {
       console.error('Error connecting wallet:', error);
       // Error is already set in store
     }
-  }, [wallet]);
+  }, [wallet, wagmiConfig, wagmiConnect, wagmiConnectors]);
 
   const selectChain = useCallback(async (chain: WalletChain) => {
     if (!pendingWalletId) return;

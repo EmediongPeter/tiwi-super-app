@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IoArrowBack, IoChevronDown } from "react-icons/io5";
+import { IoArrowBack, IoChevronDown, IoChevronForward } from "react-icons/io5";
 import { SettingsView } from "./types";
 import AccountDetails from "./account-details";
 import Security from "./security";
@@ -174,16 +174,13 @@ export default function MobileSettingsView({
   };
 
   return (
-    <div className="min-h-screen bg-[#010501] text-white font-manrope px-4 py-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-      </div>
-
-      <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-4">
-        <h2 className="text-sm font-semibold text-[#B5B5B5] mb-4 px-2">
+    <div className="min-h-screen bg-transparent text-white font-manrope p-8">
+      <div className="bg-[#010501] border-2 border-[#1f261e] overflow-hidden rounded-[24px] min-w-[350px] w-full relative py-14">
+      <div className="pointer-events-none absolute inset-x-4 bottom-px h-px rounded-full bg-[linear-gradient(to_right,rgba(177,241,40,0),rgba(177,241,40,0.95),rgba(177,241,40,0))]" />
+        <p className=" font-semibold leading-[normal] text-[20px] text-white px-14 pb-4">
           Settings
-        </h2>
-        <nav className="space-y-1">
+        </p>
+        <nav className="flex flex-col gap-[16px] px-[12px] py-0 w-full">
           {menuItems.map((item, index) => {
             const Icon = item.icon;
             const isExpanded = isItemExpanded(item.label);
@@ -193,22 +190,26 @@ export default function MobileSettingsView({
               <div key={index}>
                 <button
                   onClick={() => handleToggleExpand(item.label, item.view)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`w-full h-[60px] flex items-center justify-between px-[40px] rounded-[8px] font-medium transition-colors ${
                     isActive
-                      ? "bg-[#081F02] text-[#B1F128]"
-                      : "text-[#B5B5B5] hover:bg-[#121712]"
+                      ? "bg-[#0b0f0a] text-white"
+                      : "bg-transparent text-white hover:bg-[#121712]"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    {Icon && <Icon size={16} />}
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-[8px] justify-center">
+                    {Icon && <Icon size={24} />}
+                    <span className="text-[18px]">{item.label}</span>
                   </div>
-                  <IoChevronDown
-                    size={16}
-                    className={`opacity-60 transition-transform ${
-                      isExpanded ? "rotate-180" : ""
-                    }`}
-                  />
+                  <div className="flex items-center justify-center relative shrink-0 size-[24px]">
+                    <div className="flex-none rotate-90">
+                      <IoChevronForward
+                        size={24}
+                        className={`opacity-60 transition-transform ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </div>
+                  </div>
                 </button>
 
                 {/* Expanded Content */}

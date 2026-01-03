@@ -79,33 +79,50 @@ export class WalletBalanceService {
     }
 
     // Enrich tokens with prices and USD values
-    const enrichedTokens: WalletToken[] = tokens.map(token => {
-      const priceKey = `${token.chainId}:${token.address.toLowerCase()}`;
-      const price = priceMap.get(priceKey);
+    const enrichedTokens: WalletToken[] = tokens
+      .map(token => {
+        const priceKey = `${token.chainId}:${token.address.toLowerCase()}`;
+        const price = priceMap.get(priceKey);
 
-      let usdValue: string | undefined;
-      let priceUSD: string | undefined;
+        let usdValue: string | undefined;
+        let priceUSD: string | undefined;
 
-      if (price) {
-        priceUSD = price.priceUSD;
-        // Calculate USD value: balanceFormatted * priceUSD
-        try {
-          const balanceNum = parseFloat(token.balanceFormatted);
-          const priceNum = parseFloat(price.priceUSD);
-          if (!isNaN(balanceNum) && !isNaN(priceNum)) {
-            usdValue = (balanceNum * priceNum).toFixed(2);
+        if (price) {
+          priceUSD = price.priceUSD;
+          // Calculate USD value: balanceFormatted * priceUSD
+          try {
+            const balanceNum = parseFloat(token.balanceFormatted);
+            const priceNum = parseFloat(price.priceUSD);
+            if (!isNaN(balanceNum) && !isNaN(priceNum)) {
+              usdValue = (balanceNum * priceNum).toFixed(2);
+            }
+          } catch (error) {
+            console.warn(`[WalletBalanceService] Error calculating USD value for ${token.symbol}:`, error);
           }
-        } catch (error) {
-          console.warn(`[WalletBalanceService] Error calculating USD value for ${token.symbol}:`, error);
         }
-      }
 
-      return {
-        ...token,
-        priceUSD,
-        usdValue,
-      };
-    });
+        return {
+          ...token,
+          priceUSD,
+          usdValue,
+        };
+      })
+      // Filter out tokens with zero balance (safety check)
+      .filter(token => {
+        // Check raw balance
+        const balanceBigInt = BigInt(token.balance || '0');
+        if (balanceBigInt === BigInt(0)) {
+          return false;
+        }
+        
+        // Check formatted balance (handle edge cases where balance might be "0.00" or "0")
+        const balanceFormatted = parseFloat(token.balanceFormatted || '0');
+        if (isNaN(balanceFormatted) || balanceFormatted === 0) {
+          return false;
+        }
+        
+        return true;
+      });
 
     // Try to get total balance from net-worth endpoint (more accurate)
     let totalUSD = '0.00';

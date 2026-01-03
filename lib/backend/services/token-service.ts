@@ -493,7 +493,7 @@ export class TokenService {
       })
       .catch((error) => {
         // Silently fail - will retry on next request
-      });
+    });
   }
 }
 

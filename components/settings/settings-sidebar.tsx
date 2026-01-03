@@ -106,47 +106,88 @@ export default function SettingsSidebar({
     return expandedItems.includes(menuItems[index].label);
   };
 
+  // Mobile view styling
+  if (isMobile) {
+    return (
+      <div className="bg-[#010501] h-[837px] border-2 border-[#1f261e] rounded-[24px] overflow-hidden relative w-[350px]">
+        <h2 className="absolute left-[50px] top-[50px] font-semibold text-[20px] text-white leading-normal">
+          Settings
+        </h2>
+        <nav className="absolute left-[-2px] top-[102px] flex flex-col gap-[16px] px-[12px] py-0 w-[350px]">
+          {menuItems.map((item, index) => {
+            const Icon = item.icon;
+            const isActive = activeIndex === index;
+            const isExpanded = isItemExpanded(index);
+
+            return (
+              <div key={index}>
+                <button
+                  onClick={() => {
+                    if (onToggleExpand) {
+                      onToggleExpand(item.label);
+                    } else {
+                      onViewChange(item.view);
+                    }
+                  }}
+                  className={`w-full h-[60px] flex items-center justify-between p-[40px] rounded-[8px] font-medium ${isActive
+                      ? "bg-[#0b0f0a]"
+                      : "bg-transparent"
+                    }`}
+                >
+                  <div className="flex items-center gap-[8px] justify-center">
+                    {Icon && <Icon size={24} className="text-white" />}
+                    <span className="text-[18px] font-medium leading-normal text-center text-white">
+                      {item.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center relative shrink-0 size-[24px]">
+                    <div className="flex-none rotate-90">
+                      <div className="relative size-[24px]">
+                        <IoChevronForward
+                          size={24}
+                          className="text-white opacity-60"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            );
+          })}
+        </nav>
+      </div>
+    );
+  }
+
+  // Desktop view styling
   return (
-    <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-4">
-      <h2 className="text-sm font-semibold text-[#B5B5B5] mb-4 px-2">
+    <div className="bg-[#010501] h-[837px] xl:h-[837px] lg:h-[750px] border-2 border-[rgb(31,38,30)] rounded-bl-[24px] rounded-tl-[24px] overflow-hidden relative py-14">
+      <div className="pointer-events-none absolute inset-x-4 bottom-px h-px rounded-full bg-[linear-gradient(to_right,rgba(177,241,40,0),rgba(177,241,40,0.95),rgba(177,241,40,0))]" />
+
+      <h2 className="font-semibold text-[24px] xl:text-[24px] lg:text-[20px] text-white px-14 pb-3">
         Settings
       </h2>
-      <nav className="space-y-1">
+      <nav className="flex flex-col gap-[16px] xl:gap-[16px] lg:gap-[12px] px-[12px] py-0 w-[536px] xl:w-[536px] lg:w-[480px]">
         {menuItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = activeIndex === index;
-          const isExpanded = isMobile && isItemExpanded(index);
 
           return (
             <div key={index}>
               <button
                 onClick={() => {
-                  if (isMobile && onToggleExpand) {
-                    onToggleExpand(item.label);
-                  } else {
-                    onViewChange(item.view);
-                  }
+                  onViewChange(item.view);
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-[#081F02] text-[#B1F128]"
-                    : "text-[#B5B5B5] hover:bg-[#121712]"
-                }`}
+                className={`w-full h-[60px] xl:h-[60px] lg:h-[56px] flex items-center justify-between px-[40px] xl:px-[40px] lg:px-[32px] rounded-[8px] font-medium transition-colors ${isActive
+                    ? "bg-[#0b0f0a] text-white"
+                    : "bg-transparent text-white hover:bg-[#121712]"
+                  }`}
               >
-                <div className="flex items-center gap-3">
-                  {Icon && <Icon size={16} />}
-                  <span>{item.label}</span>
+                <div className="flex items-center gap-[8px] justify-center">
+                  {Icon && <Icon size={24} className="xl:w-6 xl:h-6 lg:w-5 lg:h-5" />}
+                  <span className="text-[20px] xl:text-[20px] lg:text-[18px]">{item.label}</span>
                 </div>
-                {isMobile ? (
-                  <IoChevronDown
-                    size={16}
-                    className={`opacity-60 transition-transform ${
-                      isExpanded ? "rotate-180" : ""
-                    }`}
-                  />
-                ) : (
-                  <IoChevronForward size={16} className="opacity-60" />
-                )}
+                <IoChevronForward size={24} className="opacity-60 xl:w-6 xl:h-6 lg:w-5 lg:h-5" />
               </button>
             </div>
           );

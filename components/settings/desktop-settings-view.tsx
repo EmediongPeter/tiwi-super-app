@@ -43,10 +43,10 @@ export default function DesktopSettingsView({
     currentView === "import-wallet";
 
   return (
-    <div className="flex gap-6">
+    <div className="flex">
       {/* Left Sidebar */}
       {showSidebar && (
-        <div className="hidden md:block w-64 shrink-0">
+        <div className="hidden md:block w-[536px] xl:w-[536px] lg:w-[480px] shrink-0">
           <SettingsSidebar
             currentView={currentView}
             onViewChange={onViewChange}
@@ -56,12 +56,9 @@ export default function DesktopSettingsView({
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1">
+      <div className="flex-1 h-[837px] xl:h-[837px] lg:h-[750px]">
         {currentView === "main" && (
-          <div className="bg-[#0B0F0A] rounded-2xl border border-[#1f261e] p-6 md:p-8">
-            <h2 className="text-xl font-semibold text-white mb-6">
-              Account Settings
-            </h2>
+          <div className="bg-[#0B0F0A] h-full rounded-2xl rounded-l-none border border-[#1f261e] overflow-hidden p-6 md:p-8">
             <AccountDetails
               walletName={walletName}
               walletAddress={walletAddress}
