@@ -68,24 +68,16 @@ export class TokenAggregationService {
     
     let allResults: NormalizedToken[] = [];
     
-    // NEW FLOW: If query exists, prioritize DexScreener (better search results)
-    // Otherwise, use primary providers first (for popular tokens)
-    if (query && query.trim()) {
-      // Step 1: Fetch from DexScreener first (primary for search)
-      const dexResults = await this.fetchFromDexScreener(chainsToSearch, query, fetchLimit);
-      allResults.push(...dexResults);
-      
-      // Step 2: Fetch from primary providers in parallel (for additional results)
-      const primaryResults = await this.fetchFromPrimaryProviders(chainsToSearch, query, fetchLimit);
-      allResults.push(...primaryResults);
-    } else {
-      // No query: use primary providers first (for popular tokens)
-      console.log(`[TokenAggregationService] No query, fetching from primary providers for ${chainsToSearch.length} chains`);
-      const primaryResults = await this.fetchFromPrimaryProviders(chainsToSearch, query, fetchLimit);
-      console.log(`[TokenAggregationService] Primary providers returned ${primaryResults.length} tokens`);
-      allResults.push(...primaryResults);
-      
-      // Step 2: Fetch from DexScreener as supplement (for additional tokens)
+    // CORRECTED FLOW: Always prioritize primary providers (Jupiter for Solana, LiFi for others)
+    // DexScreener is only used as fallback if primary providers return insufficient results
+    console.log(`[TokenAggregationService] Fetching from primary providers for ${chainsToSearch.length} chains`);
+    const primaryResults = await this.fetchFromPrimaryProviders(chainsToSearch, query, fetchLimit);
+    console.log(`[TokenAggregationService] Primary providers returned ${primaryResults.length} tokens`);
+    allResults.push(...primaryResults);
+    
+    // Step 2: Use DexScreener as fallback only if needed
+    if (this.shouldUseDexScreener(primaryResults, query)) {
+      console.log(`[TokenAggregationService] Using DexScreener as fallback (primary returned ${primaryResults.length} results)`);
       const dexResults = await this.fetchFromDexScreener(chainsToSearch, query, fetchLimit);
       console.log(`[TokenAggregationService] DexScreener returned ${dexResults.length} tokens`);
       allResults.push(...dexResults);
@@ -147,6 +139,11 @@ export class TokenAggregationService {
 
   /**
    * Fetch tokens from primary providers (chain-specific)
+   * 
+   * Strategy:
+   * - Solana chains → Jupiter (primary)
+   * - Other chains → LiFi (primary)
+   * - Fetch in parallel for performance
    */
   private async fetchFromPrimaryProviders(
     chainIds: number[],
@@ -155,39 +152,34 @@ export class TokenAggregationService {
   ): Promise<NormalizedToken[]> {
     const results: NormalizedToken[] = [];
     
-    // Group chains by type to optimize provider selection
-    // For priority chains, we'll resolve them individually in fetchFromProvider
-    // So we'll just pass all chainIds to providers and let them handle it
-    const chainsByType = new Map<string, number[]>();
-    for (const chainId of chainIds) {
-      // Try to resolve chain to get its type
-      const chain = await resolveChain(chainId);
-      if (!chain) continue;
-      
-      const type = chain.type;
-      if (!chainsByType.has(type)) {
-        chainsByType.set(type, []);
-      }
-      chainsByType.get(type)!.push(chainId);
-    }
+    // Separate Solana chains from others
+    const { SOLANA_CHAIN_ID } = await import('@/lib/backend/providers/moralis');
+    const solanaChains = chainIds.filter(id => id === SOLANA_CHAIN_ID);
+    const otherChains = chainIds.filter(id => id !== SOLANA_CHAIN_ID);
     
-    // Fetch from primary providers for each chain type
     const fetchPromises: Promise<NormalizedToken[]>[] = [];
     
-    for (const [type, chainIdsForType] of chainsByType.entries()) {
-      for (const chainId of chainIdsForType) {
-        const primaryProviders = await this.registry.getPrimaryProviders(chainId);
-        
-        // Fetch from all primary providers in parallel
-        for (const provider of primaryProviders) {
-          fetchPromises.push(
-            this.fetchFromProvider(provider, { chainIds: [chainId], search: query, limit })
-          );
-        }
+    // Fetch from Jupiter for Solana chains
+    if (solanaChains.length > 0) {
+      const jupiter = this.registry.getProvider('jupiter');
+      if (jupiter) {
+        fetchPromises.push(
+          this.fetchFromProvider(jupiter, { chainIds: solanaChains, search: query, limit })
+        );
       }
     }
     
-    // Wait for all primary provider fetches
+    // Fetch from LiFi for other chains (EVM, cross-chain, etc.)
+    if (otherChains.length > 0) {
+      const lifi = this.registry.getProvider('lifi');
+      if (lifi) {
+        fetchPromises.push(
+          this.fetchFromProvider(lifi, { chainIds: otherChains, search: query, limit })
+        );
+      }
+    }
+    
+    // Wait for all primary provider fetches in parallel
     const providerResults = await Promise.allSettled(fetchPromises);
     
     // Collect successful results
@@ -195,7 +187,7 @@ export class TokenAggregationService {
       if (result.status === 'fulfilled') {
         results.push(...result.value);
       } else {
-        console.warn('[TokenAggregationService] Provider fetch failed:', result.reason);
+        console.warn('[TokenAggregationService] Primary provider fetch failed:', result.reason);
       }
     }
     

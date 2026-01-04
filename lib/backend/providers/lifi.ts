@@ -95,67 +95,92 @@ export class LiFiProvider extends BaseTokenProvider {
       // Determine chain types from chain IDs (for filtering)
       const chainTypes = this.getChainTypes(lifiChainIds);
       
-      // Build LiFi request parameters
-      const requestParams: {
-        chains: number[];
-        chainTypes?: ChainType[];
-        orderBy?: 'marketCapUSD' | 'priceUSD' | 'volumeUSD24H' | 'fdvUSD';
-        limit?: number;
-        search?: string;
-      } = {
-        chains: lifiChainIds,
-        limit: limit,
-      };
-      
-      // Only set orderBy when NOT searching (fetching all tokens)
-      // When searching, let LiFi handle the ordering
-      if (!search || !search.trim()) {
-        requestParams.orderBy = 'volumeUSD24H'; // Order by 24h volume for all tokens
-      }
-      
-      // Add chain types if we have them (helps LiFi filter)
-      if (chainTypes.length > 0) {
-        requestParams.chainTypes = chainTypes;
-      }
-      
-      // Add search if provided (LiFi handles search server-side)
+      // Build LiFi request parameters with extended support
+      // Note: LiFi SDK requires extended to be either true or false (not boolean | undefined)
       if (search && search.trim()) {
-        requestParams.search = search.trim();
-      }
-      
-      // Single API call for all chains
-      // console.log("🚀 ~ LiFiProvider ~ fetchTokensFromLiFi ~ requestParams:", requestParams)
-      const response = await getTokens(requestParams);
-      // console.log("🚀 ~ LiFiProvider ~ fetchTokensFromLiFi ~ response:", response)
-      
-      // LiFi returns: { tokens: { [chainId]: Token[] } }
-      // Collect all tokens from all chains
-      const allTokens: ProviderToken[] = [];
-      for (const chainId of lifiChainIds) {
-        const tokens: Token[] = response.tokens[chainId] || [];
-        for (const token of tokens) {
-          allTokens.push({
-            address: token.address,
-            symbol: token.symbol,
-            name: token.name,
-            decimals: token.decimals,
-            logoURI: token.logoURI,
-            priceUSD: token.priceUSD || '0',
-            chainId: chainId, // LiFi chain ID
-            raw: token, // Store raw token for debugging
-          });
+        // Use extended mode for search to get more metadata
+        const requestParams: {
+          chains: number[];
+          chainTypes?: ChainType[];
+          limit?: number;
+          search: string;
+          extended: true; // Must be true (not boolean)
+          minPriceUSD?: number;
+        } = {
+          chains: lifiChainIds,
+          limit: limit,
+          search: search.trim(),
+          extended: true, // Extended mode for search
+        };
+        
+        // Add chain types if we have them (helps LiFi filter)
+        if (chainTypes.length > 0) {
+          requestParams.chainTypes = chainTypes;
         }
+        
+        // Use extended response type
+        const response = await getTokens(requestParams);
+        return this.processLiFiResponse(response, lifiChainIds, limit);
+      } else {
+        // No search: use standard mode (no extended)
+        const requestParams: {
+          chains: number[];
+          chainTypes?: ChainType[];
+          orderBy?: 'marketCapUSD' | 'priceUSD' | 'volumeUSD24H' | 'fdvUSD';
+          limit?: number;
+          extended?: false;
+        } = {
+          chains: lifiChainIds,
+          limit: limit,
+          orderBy: 'volumeUSD24H', // Order by 24h volume for all tokens
+        };
+        
+        // Add chain types if we have them (helps LiFi filter)
+        if (chainTypes.length > 0) {
+          requestParams.chainTypes = chainTypes;
+        }
+        
+        const response = await getTokens(requestParams);
+        return this.processLiFiResponse(response, lifiChainIds, limit);
       }
-      
-      // Mix tokens from different chains (round-robin style)
-      // This ensures tokens are interleaved rather than grouped by chain
-      return mixTokensByChain(allTokens, limit);
     } catch (error: any) {
       console.error(`[LiFiProvider] Error fetching tokens from LiFi:`, error);
       return [];
     }
   }
   
+  /**
+   * Process LiFi API response (handles both standard and extended responses)
+   */
+  private processLiFiResponse(
+    response: any,
+    lifiChainIds: number[],
+    limit: number
+  ): ProviderToken[] {
+    // LiFi returns: { tokens: { [chainId]: Token[] } }
+    // Collect all tokens from all chains
+    const allTokens: ProviderToken[] = [];
+    for (const chainId of lifiChainIds) {
+      const tokens: Token[] = response.tokens[chainId] || [];
+      for (const token of tokens) {
+        allTokens.push({
+          address: token.address,
+          symbol: token.symbol,
+          name: token.name,
+          decimals: token.decimals,
+          logoURI: token.logoURI,
+          priceUSD: token.priceUSD || '0',
+          chainId: chainId, // LiFi chain ID
+          raw: token, // Store raw token for debugging/execute route
+        });
+      }
+    }
+    
+    // Mix tokens from different chains (round-robin style)
+    // This ensures tokens are interleaved rather than grouped by chain
+    return mixTokensByChain(allTokens, limit);
+  }
+
   /**
    * Determine chain types from chain IDs
    * Returns array of LiFi ChainType enum values for filtering

@@ -21,8 +21,9 @@ export interface RouterParams {
   toChainId: number | string;
   toToken: string;
   toDecimals: number;                  // Token decimals (from request or fetched)
-  recipient?: string;                  // Provider-specific address format
+  recipient?: string;                  // Provider-specific address format (taker for Jupiter)
   slippage?: number;                   // Provider-specific slippage format
+  slippageMode?: 'fixed' | 'auto';    // Slippage mode (for Jupiter RTSE)
   order?: string;                      // Provider-specific order preference
 }
 
@@ -69,6 +70,11 @@ export interface RouterRoute {
     gasUSD: string;                    // Gas estimate in USD
     tiwiProtocolFeeUSD?: string;       // Tiwi protocol fee (0.25% of fromAmountUSD)
     total: string;                     // Total fees in USD (includes Tiwi fee)
+    jupiterFeeInfo?: {                 // Jupiter-specific fee breakdown (for display)
+      jupiterFeeBps: number;           // Jupiter's default fee in basis points
+      tiwiFeeBps: number;              // Tiwi protocol fee in basis points
+      feeMint: string;                  // Token mint fees are collected in
+    };
   };
   
   // Route steps

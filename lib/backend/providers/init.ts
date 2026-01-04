@@ -8,6 +8,7 @@
 import { getProviderRegistry } from './registry';
 import { LiFiProvider } from './lifi';
 import { DexScreenerProvider } from './dexscreener';
+import { JupiterTokenProvider } from './jupiter';
 
 /**
  * Initialize and register all providers
@@ -15,15 +16,19 @@ import { DexScreenerProvider } from './dexscreener';
 export function initializeProviders(): void {
   const registry = getProviderRegistry();
   
-  // Register LiFi provider
+  // Register LiFi provider (for EVM and cross-chain)
   const lifiProvider = new LiFiProvider();
   registry.register(lifiProvider);
   
-  // Register DexScreener provider
+  // Register Jupiter provider (for Solana - primary)
+  const jupiterProvider = new JupiterTokenProvider();
+  registry.register(jupiterProvider);
+  
+  // Register DexScreener provider (fallback)
   const dexscreenerProvider = new DexScreenerProvider();
   registry.register(dexscreenerProvider);
   
-  // Future: Register Relay, Jupiter, Squid providers here
+  // Future: Register Relay, Squid providers here
   // const relayProvider = new RelayProvider();
   // registry.register(relayProvider);
   

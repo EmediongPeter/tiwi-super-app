@@ -9,6 +9,7 @@ import { getRouterRegistry } from '@/lib/backend/routers/registry';
 import { getTokenService } from '@/lib/backend/services/token-service';
 import { getTokenPrice } from '@/lib/backend/providers/price-provider';
 import { getAutoSlippageService } from '@/lib/backend/services/auto-slippage-service';
+import { getJupiterFeeInfoService } from '@/lib/backend/services/jupiter-fee-info-service';
 import { ChainTransformer, toSmallestUnit, transformTokenAddress, transformSlippage } from '@/lib/backend/routers/transformers';
 import { selectBestRoute, sortRoutesByScore } from '@/lib/backend/routers/scoring';
 import { 
@@ -17,6 +18,7 @@ import {
   ROUTER_TIMEOUT_MS,
   MAX_RETRY_ATTEMPTS 
 } from '@/lib/backend/routers/constants';
+import { SOLANA_CHAIN_ID } from '@/lib/backend/providers/moralis';
 import type { RouteRequest, RouteResponse, RouterRoute, RouterParams, RouterError } from '@/lib/backend/routers/types';
 import type { SwapRouter } from '@/lib/backend/routers/base';
 
@@ -136,6 +138,7 @@ export class RouteService {
         
         // Get route from router (with timeout)
         const route = await this.getRouteWithTimeout(router, routerParams);
+        console.log("🚀 ~ RouteService ~ getRouteWithFixedSlippage ~ route:", route)
         
         return { router: router.name, route, error: null };
       } catch (error: any) {
@@ -282,6 +285,7 @@ export class RouteService {
       toDecimals,
       recipient: request.recipient,
       slippage,
+      slippageMode: request.slippageMode, // Pass slippage mode to router
       order,
     };
   }
@@ -420,6 +424,7 @@ export class RouteService {
   /**
    * Enrich route with USD values and Tiwi protocol fee
    * For routes that don't provide USD values (Uniswap, PancakeSwap), calculate them
+   * For Jupiter routes, fetch fee info from Jupiter's /fees endpoint
    */
   private async enrichRouteWithUSD(
     route: RouterRoute,
@@ -427,6 +432,11 @@ export class RouteService {
   ): Promise<RouterRoute> {
     console.log("🚀 ~ RouteService ~ enrichRouteWithUSD ~ route:", route)
     const TIWI_PROTOCOL_FEE_RATE = 0.0025; // 0.25%
+    
+    // Special handling for Jupiter routes - fetch fee info
+    if (route.router === 'jupiter' && route.fromToken.chainId === SOLANA_CHAIN_ID) {
+      return this.enrichJupiterRoute(route, request);
+    }
 
     // Identify route provider for logging
     console.log(`[enrichRouteWithUSD] Route provider: ${route}`);
@@ -572,6 +582,129 @@ export class RouteService {
       console.warn(`[enrichRouteWithUSD] Could not compute USD values for provider "${route.router}" - price API failed. Returning original route.`);
       return route;
     }
+  }
+  
+  /**
+   * Enrich Jupiter route with fee information
+   * Fetches fee breakdown from Jupiter's /fees endpoint
+   */
+  private async enrichJupiterRoute(
+    route: RouterRoute,
+    request: RouteRequest
+  ): Promise<RouterRoute> {
+    const TIWI_PROTOCOL_FEE_RATE = 0.0025; // 0.25%
+    const feeInfoService = getJupiterFeeInfoService();
+    
+    // Get USD values (use from route if available, otherwise calculate)
+    let fromAmountUSD = route.fromToken.amountUSD;
+    let toAmountUSD = route.toToken.amountUSD;
+    
+    if (!fromAmountUSD || !toAmountUSD) {
+      // Calculate USD values from token prices
+      try {
+        const [fromTokenPrice, toTokenPrice] = await Promise.all([
+          getTokenPrice(
+            request.fromToken.address,
+            request.fromToken.chainId,
+            request.fromToken.symbol
+          ),
+          getTokenPrice(
+            request.toToken.address,
+            request.toToken.chainId,
+            request.toToken.symbol
+          ),
+        ]);
+        
+        const fromAmountNum = parseFloat(route.fromToken.amount || "0");
+        const toAmountNum = parseFloat(route.toToken.amount || "0");
+        const fromPriceUSD = fromTokenPrice ? parseFloat(fromTokenPrice.priceUSD) : 0;
+        const toPriceUSD = toTokenPrice ? parseFloat(toTokenPrice.priceUSD) : 0;
+        
+        fromAmountUSD = fromAmountNum > 0 && fromPriceUSD > 0
+          ? (fromAmountNum * fromPriceUSD).toFixed(2)
+          : "0.00";
+        toAmountUSD = toAmountNum > 0 && toPriceUSD > 0
+          ? (toAmountNum * toPriceUSD).toFixed(2)
+          : "0.00";
+      } catch (error) {
+        console.warn('[RouteService] Failed to fetch token prices for Jupiter route:', error);
+        fromAmountUSD = fromAmountUSD || "0.00";
+        toAmountUSD = toAmountUSD || "0.00";
+      }
+    }
+    
+    // Fetch fee info from Jupiter
+    const fromAmountUSDNum = parseFloat(fromAmountUSD || "0");
+    const feeBreakdown = await feeInfoService.calculateTotalFees(
+      request.fromToken.address,
+      request.toToken.address,
+      fromAmountUSDNum
+    );
+    
+    // Calculate gas USD (convert SOL to USD)
+    let gasUSD = "0.00";
+    if (route.fees.gas && route.fees.gas !== "0") {
+      try {
+        const solPrice = await getTokenPrice(
+          'So11111111111111111111111111111111111111112', // SOL mint
+          SOLANA_CHAIN_ID,
+          'SOL'
+        );
+        if (solPrice) {
+          const gasSOL = parseFloat(route.fees.gas);
+          const solPriceUSD = parseFloat(solPrice.priceUSD);
+          gasUSD = (gasSOL * solPriceUSD).toFixed(2);
+        }
+      } catch (error) {
+        console.warn('[RouteService] Failed to fetch SOL price for gas calculation:', error);
+      }
+    }
+    
+    // Tiwi protocol fee is already included in the swap via referralFee
+    // But we show it separately for transparency
+    const tiwiProtocolFeeUSD = feeBreakdown
+      ? feeBreakdown.tiwiFeeUSD.toFixed(2)
+      : (fromAmountUSDNum * TIWI_PROTOCOL_FEE_RATE).toFixed(2);
+    
+    // Total fees = Jupiter fee + Tiwi fee + Gas
+    const jupiterFeeUSD = feeBreakdown
+      ? feeBreakdown.jupiterFeeUSD.toFixed(2)
+      : "0.00";
+    const gasUSDNum = parseFloat(gasUSD);
+    const jupiterFeeNum = parseFloat(jupiterFeeUSD);
+    const tiwiFeeNum = parseFloat(tiwiProtocolFeeUSD);
+    const totalFeesUSD = (gasUSDNum + jupiterFeeNum + tiwiFeeNum).toFixed(2);
+    
+    // Extract fee info from raw response if available
+    const rawOrder = route.raw as any;
+    const jupiterFeeInfo = rawOrder?.feeBps 
+      ? {
+          jupiterFeeBps: rawOrder.feeBps,
+          tiwiFeeBps: 31, // 31 bps = 0.25% net after 20% cut
+          feeMint: rawOrder.feeMint,
+        }
+      : null;
+    
+    return {
+      ...route,
+      fromToken: {
+        ...route.fromToken,
+        amountUSD: fromAmountUSD,
+      },
+      toToken: {
+        ...route.toToken,
+        amountUSD: toAmountUSD,
+      },
+      fees: {
+        ...route.fees,
+        gasUSD,
+        tiwiProtocolFeeUSD,
+        total: totalFeesUSD,
+        // Add Jupiter-specific fee info for frontend display
+        // TODO
+        jupiterFeeInfo: jupiterFeeInfo!,
+      },
+    };
   }
 }
 
