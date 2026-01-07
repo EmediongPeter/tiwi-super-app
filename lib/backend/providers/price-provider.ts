@@ -343,7 +343,7 @@ async function getPriceFromCoinGecko(
       };
 
       if (COINGECKO_API_KEY) {
-        headers['x-cg-pro-api-key'] = COINGECKO_API_KEY;
+        headers['x-cg-demo-api-key'] = COINGECKO_API_KEY;
       }
 
       const response = await rateLimitedRequest(() => 

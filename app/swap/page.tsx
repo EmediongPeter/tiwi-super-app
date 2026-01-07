@@ -23,9 +23,11 @@ import ErrorToast, { type ErrorToastAction } from "@/components/ui/error-toast";
 import { parseRouteError } from "@/lib/shared/utils/error-messages";
 import { useTokenBalance } from "@/hooks/useTokenBalance";
 import { useSettingsStore } from "@/lib/frontend/store/settings-store";
+import { useSwapExecution } from "@/hooks/useSwapExecution";
+import TransactionToast from "@/components/earn/transaction-toast";
 
 // Default tokens (ensure chainId/address/logo for routing + display)
-const DEFAULT_FROM_TOKEN: Token = {
+export const DEFAULT_FROM_TOKEN: Token = {
   id: "56-0xDA1060158F7D593667cCE0a15DB346BB3FfB3596".toLowerCase(),
   name: "TIWI CAT",
   symbol: "TWC",
@@ -40,17 +42,17 @@ const DEFAULT_FROM_TOKEN: Token = {
   decimals: 9
 };
 
-const DEFAULT_TO_TOKEN: Token = {
+export const DEFAULT_TO_TOKEN: Token = {
   id: "56-0x55d398326f99059ff775485246999027b3197955".toLowerCase(),
-  name: "Tether USD",
-  symbol: "USDT",
-  address: "0x55d398326f99059fF775485246999027B3197955",
+  name: "Binance Coin",
+  symbol: "BNB",
+  address: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
   chain: "BNB Chain",
   chainId: 56,
   logo: "/assets/icons/tokens/tether.svg",
   chainLogo: "/assets/icons/chains/bsc.svg",
   chainBadge: "bsc",
-  decimals: 6
+  decimals: 18
 };
 
 export default function SwapPage() {
@@ -130,7 +132,6 @@ export default function SwapPage() {
   
   // Get quote error and route from store
   const route = useSwapStore((state) => state.route);
-  console.log("🚀 ~ SwapPage ~ route:", route)
   const quoteError = useSwapStore((state) => state.quoteError);
   
   // Get settings store for slippage actions
@@ -227,6 +228,31 @@ export default function SwapPage() {
   const [recipientAddress, setRecipientAddress] = useState<string | null>(connectedAddress);
   const [isExecutingTransfer, setIsExecutingTransfer] = useState(false);
   const [transferStatus, setTransferStatus] = useState<string>("");
+
+    // Swap execution hook
+    const {
+      execute: executeSwap,
+      isExecuting: isExecutingSwap,
+      status: swapStatus,
+      error: swapError,
+      reset: resetSwapExecution,
+    } = useSwapExecution();
+  
+
+  // Sync swap execution status with transfer status for UI
+  useEffect(() => {
+    if (swapStatus) {
+      setTransferStatus(swapStatus.message);
+    }
+  }, [swapStatus]);
+
+  // Handle swap execution errors
+  useEffect(() => {
+    if (swapError) {
+      const errorMessage = swapError.message || "Swap failed. Please try again.";
+      setTransferStatus(`Error: ${errorMessage}`);
+    }
+  }, [swapError]);
   const prevConnectedAddressRef = useRef<string | null>(connectedAddress);
   const userChangedRecipientRef = useRef(false);
 
@@ -283,8 +309,87 @@ export default function SwapPage() {
       return;
     }
     
-    // TODO: Implement swap functionality
-    console.log("Swap clicked");
+    // Execute swap using swap executor
+    await executeSwapTransaction();
+  };
+
+  /**
+   * Execute swap transaction using the swap executor
+   */
+  const executeSwapTransaction = async () => {
+    // Validate prerequisites
+    if (!fromToken || !toToken || !fromAmount || !connectedAddress) {
+      setTransferStatus("Please select tokens and enter an amount");
+      return;
+    }
+
+    if (!route) {
+      setTransferStatus("Please wait for quote to load");
+      return;
+    }
+
+    // Validate route hasn't expired
+    const now = Math.floor(Date.now() / 1000);
+    if (route.expiresAt && now >= route.expiresAt) {
+      setTransferStatus("Quote has expired. Please get a new quote.");
+      // Optionally trigger a new quote fetch here
+      return;
+    }
+
+    // Validate fromAmount is greater than 0
+    const fromAmountNum = parseNumber(fromAmount);
+    if (fromAmountNum <= 0) {
+      setTransferStatus("Please enter a valid amount");
+      return;
+    }
+
+    try {
+      setIsExecutingTransfer(true);
+      setTransferStatus("Preparing swap...");
+
+      // Execute swap using the swap executor
+      const result = await executeSwap({
+        route,
+        fromToken,
+        toToken,
+        fromAmount,
+        userAddress: connectedAddress,
+        recipientAddress: recipientAddress || undefined,
+        isFeeOnTransfer: true,
+      });
+
+      // Success - update status with transaction hash
+      const txHash = result.txHash;
+      const shortHash = `${txHash.slice(0, 6)}...${txHash.slice(-4)}`;
+      setTransferStatus(`Swap successful! Transaction: ${shortHash}`);
+
+      // Show success message for a few seconds, then clear
+      setTimeout(() => {
+        setTransferStatus("");
+      }, 5000);
+
+      // Note: Balances will automatically refresh via useTokenBalance hook
+      // The hook watches for changes and will refetch when needed
+    } catch (error: any) {
+      console.error("Swap execution error:", error);
+      
+      // Extract user-friendly error message
+      let errorMessage = "Swap failed. Please try again.";
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
+      setTransferStatus(`Error: ${errorMessage}`);
+      
+      // Clear error message after 10 seconds
+      setTimeout(() => {
+        setTransferStatus("");
+      }, 10000);
+    } finally {
+      setIsExecutingTransfer(false);
+    }
   };
 
   const executeWalletToWalletTransfer = async () => {
@@ -532,14 +637,20 @@ export default function SwapPage() {
         <div className="flex flex-col lg:flex-row lg:items-start gap-3 sm:gap-4 lg:gap-5 xl:gap-6 relative z-30 pb-[80px] sm:pb-[95px] md:pb-[110px] lg:pb-[125px] xl:pb-[145px] 2xl:pb-[160px]">
           {/* Chart Section - Left Side (Desktop) */}
           <div className="flex-1 order-2 lg:order-1 hidden lg:block relative z-30">
-            <TradingChart />
+            <TradingChart 
+              fromToken={fromToken}
+              toToken={toToken}
+            />
           </div>
 
           {/* Swap / Limit Interface - Right Side (Desktop) */}
           <div className="w-full lg:w-[480px] xl:w-[540px] 2xl:w-[606px] order-1 lg:order-2 relative z-30">
             {/* Mobile Chart Section */}
             <div className="lg:hidden mb-3 sm:mb-4 relative z-30">
-              <TradingChart />
+              <TradingChart 
+                fromToken={fromToken}
+                toToken={toToken}
+              />
             </div>
 
             {/* Swap / Limit Card */}
@@ -585,8 +696,8 @@ export default function SwapPage() {
               onSwapClick={handleSwapClick}
               onConnectClick={handleConnectClick}
               isConnected={!!connectedAddress}
-              isExecutingTransfer={isExecutingTransfer}
-              transferStatus={transferStatus}
+              isExecutingTransfer={isExecutingTransfer || isExecutingSwap}
+              transferStatus={transferStatus || swapStatus?.message || ""}
             />
           </div>
         </div>

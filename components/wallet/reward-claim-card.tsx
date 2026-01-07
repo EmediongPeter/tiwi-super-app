@@ -14,7 +14,7 @@ interface RewardClaimCardProps {
  */
 export default function RewardClaimCard({ onNavigate }: RewardClaimCardProps) {
   const router = useRouter();
-  const claimableRewards = "$8.52"; // Will come from API
+  const claimableRewards = "$0.00"; // Will come from API
 
   const handleClick = () => {
     onNavigate?.();

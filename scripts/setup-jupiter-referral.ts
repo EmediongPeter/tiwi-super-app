@@ -18,6 +18,20 @@ import { Connection, Keypair, PublicKey, sendAndConfirmTransaction } from "@sola
 import { createSolanaConnection } from '@/lib/backend/utils/solana-connection';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as dotenv from 'dotenv';
+import * as bs58 from 'bs58';
+
+// Load environment variables from .env file
+const envPath = path.join(process.cwd(), '.env');
+const envLocalPath = path.join(process.cwd(), '.env.local');
+
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else if (fs.existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath });
+} else {
+  console.warn('⚠️  No .env or .env.local file found. Using environment variables from system.');
+}
 
 // Jupiter Ultra Referral Project public key
 const JUPITER_REFERRAL_PROJECT = new PublicKey('DkiqsTrw1u1bYFumumC7sCG2S8K25qc2vemJFHyW2wJc');
@@ -35,6 +49,7 @@ const POPULAR_MINTS = [
 function loadWallet(): Keypair {
   // Try environment variable first
   const privateKey = process.env.SOLANA_PRIVATE_KEY;
+  console.log("🚀 ~ loadWallet ~ privateKey:", privateKey)
   if (privateKey) {
     try {
       // Handle base58 string or JSON array
@@ -43,9 +58,10 @@ function loadWallet(): Keypair {
         keyArray = JSON.parse(privateKey);
       } else {
         // Assume base58 - convert to Uint8Array
-        const { decode } = require('bs58');
-        const decoded = decode(privateKey);
+        const decoded = bs58.default.decode(privateKey);
+        console.log("🚀 ~ loadWallet ~ decoded:", decoded)
         keyArray = Array.from(decoded);
+        console.log("🚀 ~ loadWallet ~ keyArray:", keyArray)
       }
       return Keypair.fromSecretKey(Uint8Array.from(keyArray));
     } catch (error) {
@@ -88,6 +104,7 @@ async function main() {
   console.log('================================\n');
   
   // Validate environment
+  console.log("🚀 ~ main ~ process.env.JUPITER_API_KEY:", process.env.JUPITER_API_KEY)
   if (!process.env.JUPITER_API_KEY) {
     console.error('❌ Error: JUPITER_API_KEY not set in environment');
     process.exit(1);
@@ -213,4 +230,3 @@ main().catch((error) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
-

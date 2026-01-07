@@ -6,7 +6,7 @@
  */
 
 import { getWalletTokens, SOLANA_CHAIN_ID } from '@/lib/backend/providers/moralis';
-import { getWalletNetWorth } from '@/lib/backend/providers/moralis-rest-client';
+import { getWalletNetWorth, getAddressType } from '@/lib/backend/providers/moralis-rest-client';
 import { getTokenPrices } from '@/lib/backend/providers/price-provider';
 import { getCache, CACHE_TTL } from '@/lib/backend/utils/cache';
 import type { WalletToken, WalletBalanceResponse } from '@/lib/backend/types/wallet';
@@ -125,11 +125,16 @@ export class WalletBalanceService {
       });
 
     // Try to get total balance from net-worth endpoint (more accurate)
+    // Note: Only works for EVM addresses, skip for Solana addresses
     let totalUSD = '0.00';
     try {
+      // Check if address is Solana - skip net-worth endpoint for Solana addresses
+      const addressType = getAddressType(address);
+      
       // Filter out Solana chain ID for net-worth (only EVM chains supported)
+      // Also skip if the address itself is a Solana address
       const evmChainIds = chainsToFetch.filter(id => id !== SOLANA_CHAIN_ID);
-      if (evmChainIds.length > 0) {
+      if (evmChainIds.length > 0 && addressType === 'evm') {
         const netWorthData = await getWalletNetWorth(address, evmChainIds);
         if (netWorthData?.total_networth_usd) {
           totalUSD = parseFloat(netWorthData.total_networth_usd).toFixed(2);

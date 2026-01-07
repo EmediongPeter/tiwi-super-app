@@ -410,10 +410,20 @@ export async function getSolanaNativeBalance(
     
     const response = await getSolanaNativeBalanceAPI(address);
     
-    // Moralis Solana API returns: { lamports: string | number }
+    // Portfolio endpoint returns: { nativeBalance: { lamports: string, solana: string }, tokens: [...], nfts: [...] }
     let lamports = '0';
     
-    if (response.lamports !== undefined && response.lamports !== null) {
+    if (response.nativeBalance) {
+      // Portfolio endpoint structure
+      if (response.nativeBalance.lamports !== undefined && response.nativeBalance.lamports !== null) {
+        lamports = response.nativeBalance.lamports.toString();
+      } else if (response.nativeBalance.solana !== undefined) {
+        // Convert SOL to lamports
+        const solAmount = parseFloat(response.nativeBalance.solana.toString());
+        lamports = (BigInt(Math.floor(solAmount * 1e9))).toString();
+      }
+    } else if (response.lamports !== undefined && response.lamports !== null) {
+      // Legacy response structure
       lamports = response.lamports.toString();
       // Fix: Check if incorrectly multiplied by 10^9
       const lamportsNum = BigInt(lamports);
@@ -421,6 +431,7 @@ export async function getSolanaNativeBalance(
         lamports = (lamportsNum / BigInt(10 ** 9)).toString();
       }
     } else if (response.balance !== undefined) {
+      // Fallback to balance field
       const balance = response.balance;
       const balanceStr = balance.toString();
       const balanceNum = typeof balance === 'string' ? parseFloat(balance) : Number(balance);
@@ -494,37 +505,57 @@ export async function getSolanaTokenBalances(
     try {
       const response = await getSolanaTokenBalancesAPI(address);
       
-      // Moralis Solana API returns array of tokens
-      if (Array.isArray(response)) {
-        for (const tokenData of response) {
-          try {
-            const mint = tokenData.mint || tokenData.token_address;
-            const balance = tokenData.balance || tokenData.amount || '0';
-            const balanceBigInt = BigInt(balance);
-            
-            if (balanceBigInt === BigInt(0)) {
-              continue;
-            }
-            
-            const decimals = tokenData.decimals !== undefined 
-              ? Number(tokenData.decimals) 
-              : 9;
-            const balanceFormatted = formatBalance(balance, decimals);
-            
-            tokens.push({
-              address: mint,
-              symbol: tokenData.symbol || 'UNKNOWN',
-              name: tokenData.name || 'Unknown Token',
-              decimals,
-              balance: balance.toString(),
-              balanceFormatted,
-              chainId: SOLANA_CHAIN_ID,
-              logoURI: tokenData.logo || tokenData.thumbnail,
-            });
-          } catch (tokenError) {
-            console.warn('[MoralisProvider] Error processing Solana token:', tokenError);
+      // Portfolio endpoint returns: { nativeBalance: {...}, tokens: [...], nfts: [...] }
+      // Legacy endpoint returns: array of tokens
+      let tokenArray: any[] = [];
+      
+      if (response.tokens && Array.isArray(response.tokens)) {
+        // Portfolio endpoint structure
+        tokenArray = response.tokens;
+      } else if (Array.isArray(response)) {
+        // Legacy endpoint structure
+        tokenArray = response;
+      }
+      
+      for (const tokenData of tokenArray) {
+        try {
+          const mint = tokenData.mint || tokenData.token_address;
+          
+          // Use amountRaw (integer string) instead of amount (decimal string) for BigInt conversion
+          // amountRaw is the raw balance in smallest units (e.g., "23320246664668" for tokens with 6 decimals)
+          // amount is the human-readable decimal (e.g., "23320246.664668")
+          const balanceRaw = tokenData.amountRaw || tokenData.balance || '0';
+          
+          // Validate that balanceRaw is a valid integer string before converting to BigInt
+          if (!/^\d+$/.test(balanceRaw.toString())) {
+            console.warn(`[MoralisProvider] Invalid amountRaw for token ${mint}: ${balanceRaw}`);
             continue;
           }
+          
+          const balanceBigInt = BigInt(balanceRaw);
+          
+          if (balanceBigInt === BigInt(0)) {
+            continue;
+          }
+          
+          const decimals = tokenData.decimals !== undefined 
+            ? Number(tokenData.decimals) 
+            : 9;
+          const balanceFormatted = formatBalance(balanceRaw, decimals);
+          
+          tokens.push({
+            address: mint,
+            symbol: tokenData.symbol || 'UNKNOWN',
+            name: tokenData.name || 'Unknown Token',
+            decimals,
+            balance: balanceRaw.toString(),
+            balanceFormatted,
+            chainId: SOLANA_CHAIN_ID,
+            logoURI: tokenData.logo || tokenData.thumbnail,
+          });
+        } catch (tokenError) {
+          console.warn('[MoralisProvider] Error processing Solana token:', tokenError);
+          continue;
         }
       }
     } catch (splError: any) {

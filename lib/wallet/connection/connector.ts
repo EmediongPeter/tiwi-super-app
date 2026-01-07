@@ -325,7 +325,7 @@ export const connectWallet = async (
             name: (wallet as any).info?.name,
           }
         });
-        // throw new Error('MetaMask connection failed: Rabby wallet detected instead of MetaMask. Please ensure MetaMask is installed and enabled.');
+        throw new Error('MetaMask connection failed: Rabby wallet detected instead of MetaMask. Please ensure MetaMask is installed and enabled.');
       }
       // Verify it's actually MetaMask by checking MetaMask-specific properties
       const isActuallyMetaMask = wallet._metamask !== undefined || 

@@ -94,6 +94,22 @@ class MoralisCache {
  * @param options - Query options
  * @returns NFT data from Moralis
  */
+/**
+ * Get wallet NFTs for EVM chains
+ * Endpoint: GET /:address/nft
+ * 
+ * This endpoint returns comprehensive NFT data including:
+ * - On-chain and off-chain metadata
+ * - Floor prices
+ * - Rarity information
+ * - Collection data
+ * - All data needed by frontend (no enrichment needed)
+ * 
+ * @param address - Wallet address
+ * @param chainId - Chain ID
+ * @param options - Query options
+ * @returns NFT data with all enrichment included
+ */
 export async function getWalletNFTs(
   address: string,
   chainId: number,
@@ -112,6 +128,7 @@ export async function getWalletNFTs(
   
   const cacheKey = `moralis:nft:wallet:${chainId}:${address.toLowerCase()}:${options?.limit || 100}`;
   
+  // Cache for 5 minutes - balance can change frequently
   return makeMoralisRequest(
     `/${address}/nft`,
     {
@@ -630,8 +647,9 @@ export async function getSolanaNativeBalance(address: string): Promise<any> {
 
   const cacheKey = `moralis:solana:balance:${address}`;
   
+  // Use /portfolio endpoint which returns both native balance and tokens
   return makeMoralisRequest(
-    `/account/mainnet/${address}/balance`,
+    `/account/mainnet/${address}/portfolio`,
     {
       baseUrl: MORALIS_SOLANA_BASE_URL,
       cacheKey,
@@ -642,6 +660,7 @@ export async function getSolanaNativeBalance(address: string): Promise<any> {
 
 /**
  * Get SPL token balances for Solana
+ * Uses /portfolio endpoint which returns both native balance and tokens
  */
 export async function getSolanaTokenBalances(address: string): Promise<any> {
   // Validate Solana address
@@ -651,14 +670,45 @@ export async function getSolanaTokenBalances(address: string): Promise<any> {
 
   const cacheKey = `moralis:solana:tokens:${address}`;
   
+  // Use /portfolio endpoint which returns both native balance and tokens
   return makeMoralisRequest(
-    `/account/mainnet/${address}/tokens`,
+    `/account/mainnet/${address}/portfolio`,
     {
       baseUrl: MORALIS_SOLANA_BASE_URL,
       cacheKey,
       cacheTTL: CACHE_TTL.SOLANA_TOKENS,
     }
   );
+}
+
+/**
+ * Get Solana NFTs from portfolio endpoint
+ * The portfolio endpoint returns NFTs with limited data, so we'll enrich with metadata
+ * 
+ * @param address - Solana wallet address
+ * @returns Array of NFTs from portfolio endpoint (limited data)
+ */
+export async function getSolanaNFTsFromPortfolio(address: string): Promise<any[]> {
+  // Validate Solana address
+  if (!isValidSolanaAddress(address)) {
+    throw new Error(`Invalid Solana address: ${address}`);
+  }
+
+  const cacheKey = `moralis:solana:portfolio:${address}`;
+  
+  // Use /portfolio endpoint which returns nativeBalance, tokens, and nfts
+  const portfolio = await makeMoralisRequest(
+    `/account/mainnet/${address}/portfolio`,
+    {
+      baseUrl: MORALIS_SOLANA_BASE_URL,
+      cacheKey,
+      cacheTTL: CACHE_TTL.SOLANA_TOKENS, // 30 seconds
+    }
+  );
+  
+  // Extract NFTs from portfolio response
+  const nfts = portfolio.nfts || [];
+  return Array.isArray(nfts) ? nfts : [];
 }
 
 /**
@@ -682,6 +732,99 @@ export async function getSolanaTransactions(
       params: { limit },
       cacheKey,
       cacheTTL: CACHE_TTL.TRANSACTIONS,
+    }
+  );
+}
+
+/**
+ * Get NFTs owned by a Solana address
+ * Endpoint: GET /account/:network/:address/nft
+ * 
+ * @param address - Solana wallet address
+ * @returns Array of NFTs owned by the address
+ */
+export async function getSolanaWalletNFTs(address: string): Promise<any> {
+  // Validate Solana address
+  if (!isValidSolanaAddress(address)) {
+    throw new Error(`Invalid Solana address: ${address}`);
+  }
+
+  const cacheKey = `moralis:solana:nft:wallet:${address}`;
+  
+  return makeMoralisRequest(
+    `/account/mainnet/${address}/nft`,
+    {
+      baseUrl: MORALIS_SOLANA_BASE_URL,
+      cacheKey,
+      cacheTTL: CACHE_TTL.TRANSACTIONS, // 5 minutes
+    }
+  );
+}
+
+/**
+ * Get NFT metadata for a Solana NFT
+ * Endpoint: GET /nft/:network/:address/metadata
+ * 
+ * @param mintAddress - NFT mint address (contract address)
+ * @returns NFT metadata including image, attributes, collection info, floor prices, rarity, etc.
+ */
+export async function getSolanaNFTMetadata(mintAddress: string): Promise<any> {
+  // Validate Solana address
+  if (!isValidSolanaAddress(mintAddress)) {
+    throw new Error(`Invalid Solana mint address: ${mintAddress}`);
+  }
+
+  const cacheKey = `moralis:solana:nft:metadata:${mintAddress}`;
+  
+  // Cache for 24 hours - metadata doesn't change often
+  return makeMoralisRequest(
+    `/nft/mainnet/${mintAddress}/metadata`,
+    {
+      baseUrl: MORALIS_SOLANA_BASE_URL,
+      cacheKey,
+      cacheTTL: 24 * 60 * 60 * 1000, // 24 hours
+    }
+  );
+}
+
+/**
+ * Get individual NFT metadata for EVM NFTs
+ * Endpoint: GET /nft/:address/:token_id
+ * 
+ * This endpoint returns comprehensive metadata including:
+ * - On-chain and off-chain metadata
+ * - Floor prices
+ * - Rarity information
+ * - Collection data
+ * 
+ * @param contractAddress - NFT contract address
+ * @param tokenId - Token ID
+ * @param chainId - Chain ID
+ * @returns NFT metadata with all enrichment data
+ */
+export async function getEVMNFTMetadata(
+  contractAddress: string,
+  tokenId: string,
+  chainId: number
+): Promise<any> {
+  // Validate address
+  if (!isValidEVMAddress(contractAddress)) {
+    throw new Error(`Invalid contract address: ${contractAddress}`);
+  }
+
+  const chainName = getChainName(chainId);
+  const cacheKey = `moralis:nft:metadata:${chainId}:${contractAddress.toLowerCase()}:${tokenId}`;
+  
+  // Cache for 1 hour - metadata rarely changes
+  return makeMoralisRequest(
+    `/nft/${contractAddress}/${tokenId}`,
+    {
+      params: {
+        chain: chainName,
+        normalize_metadata: 'true',
+      },
+      cacheKey,
+      cacheTTL: 60 * 60 * 1000, // 1 hour
     }
   );
 }

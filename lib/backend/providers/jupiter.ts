@@ -23,7 +23,7 @@ const JUPITER_TOKENS_V2_SEARCH_API = `${JUPITER_API_BASE}/tokens/v2/search`;
 const JUPITER_TOKENS_V2_CATEGORY_API = `${JUPITER_API_BASE}/tokens/v2`;
 
 // Jupiter API Key (required for Ultra API and Tokens V2 API)
-const JUPITER_API_KEY = process.env.JUPITER_API_KEY || process.env.NEXT_PUBLIC_JUPITER_API_KEY || '';
+const JUPITER_API_KEY = process.env.JUPITER_API_KEY || '';
 
 // Native SOL mint address (Jupiter format)
 const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';

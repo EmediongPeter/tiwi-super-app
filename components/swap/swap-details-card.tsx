@@ -15,7 +15,6 @@ export default function SwapDetailsCard({
   isExpanded,
 }: SwapDetailsCardProps) {
   const route = useSwapStore((state) => state.route);
-  console.log("🚀 ~ SwapDetailsCard ~ route:", route)
   const isQuoteLoading = useSwapStore((state) => state.isQuoteLoading);
   const currency = useCurrencyStore((state) => state.currency);
   const slippageMode = useSettingsStore((state) => state.slippageMode);

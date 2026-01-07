@@ -42,7 +42,7 @@ const JUPITER_API_KEY = process.env.JUPITER_API_KEY || process.env.NEXT_PUBLIC_J
 
 // Tiwi protocol fee: 31 bps = 0.25% net after Jupiter's 20% cut
 // 31 bps × 0.8 = 24.8 bps ≈ 0.25% net
-const TIWI_REFERRAL_FEE_BPS = '31';
+const TIWI_REFERRAL_FEE_BPS = '50';
 
 /**
  * Jupiter Ultra Order Response

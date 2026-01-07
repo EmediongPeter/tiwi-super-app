@@ -1,19 +1,21 @@
 /**
  * NFT Service
  * 
- * Orchestrates NFT data fetching, normalization, and enrichment.
- * Combines data from Moralis (NFTs, transfers) and Reservoir (market data).
+ * Orchestrates NFT data fetching and normalization.
+ * Uses Moralis API which provides all necessary data including metadata, floor prices, and rarity.
+ * 
+ * For EVM: Uses /api/v2.2/:address/nft which returns complete data (no enrichment needed)
+ * For Solana: Gets NFTs from portfolio endpoint and enriches with metadata endpoint
  */
 
 import { 
   getWalletNFTs, 
-  getNFTCollectionMetadata, 
-  getNFTTransfers 
+  getNFTTransfers,
+  getSolanaNFTsFromPortfolio,
+  getSolanaNFTMetadata,
+  getAddressType
 } from '@/lib/backend/providers/moralis-rest-client';
-import { 
-  getCollectionStats, 
-  getTokenSales 
-} from '@/lib/backend/providers/market-data-provider';
+import { SOLANA_CHAIN_ID } from '@/lib/backend/providers/moralis';
 import type { NFT, NFTActivity } from '@/lib/backend/types/nft';
 
 // ============================================================================
@@ -63,6 +65,12 @@ export class NFTService {
     chainId: number
   ): Promise<NFT[]> {
     try {
+      // Handle Solana NFTs differently
+      if (chainId === SOLANA_CHAIN_ID) {
+        return await this.getSolanaWalletNFTs(address);
+      }
+      
+      // EVM chains - Moralis /api/v2.2/:address/nft returns all data we need
       const response = await getWalletNFTs(address, chainId, {
         limit: 100,
         normalizeMetadata: true,
@@ -76,39 +84,10 @@ export class NFTService {
         return [];
       }
       
-      // Process NFTs in batches to avoid overwhelming the API
-      // Fetch market data for unique collections
-      const uniqueCollections = new Set<string>();
-      for (const item of tokenDataArray) {
-        if (item.token_address) {
-          uniqueCollections.add(item.token_address.toLowerCase());
-        }
-      }
-      
-      // Fetch collection stats for all unique collections in parallel
-      const collectionStatsPromises = Array.from(uniqueCollections).map(
-        contractAddress => getCollectionStats(contractAddress, chainId)
-      );
-      const collectionStatsResults = await Promise.allSettled(collectionStatsPromises);
-      
-      // Create a map of contract address to stats
-      const statsMap = new Map<string, any>();
-      let statsIndex = 0;
-      for (const contractAddress of uniqueCollections) {
-        const result = collectionStatsResults[statsIndex];
-        if (result.status === 'fulfilled' && result.value) {
-          statsMap.set(contractAddress, result.value);
-        }
-        statsIndex++;
-      }
-      
-      // Normalize each NFT
+      // Normalize each NFT - Moralis already provides all market data, rarity, etc.
       for (const item of tokenDataArray) {
         try {
-          const contractAddress = item.token_address?.toLowerCase();
-          const collectionStats = contractAddress ? statsMap.get(contractAddress) : null;
-          
-          const nft = await this.normalizeNFT(item, chainId, collectionStats);
+          const nft = this.normalizeEVMNFT(item, chainId);
           if (nft) {
             nfts.push(nft);
           }
@@ -126,55 +105,174 @@ export class NFTService {
   }
 
   /**
-   * Normalize Moralis NFT response to our NFT type
+   * Get Solana NFTs for a wallet
    * 
-   * @param item - Raw NFT data from Moralis
+   * Gets NFTs from portfolio endpoint (limited data) and enriches with metadata endpoint
+   * 
+   * @param address - Solana wallet address
+   * @returns Array of Solana NFTs
+   */
+  private async getSolanaWalletNFTs(address: string): Promise<NFT[]> {
+    try {
+      // Get NFTs from portfolio endpoint (returns limited data)
+      const nftArray = await getSolanaNFTsFromPortfolio(address);
+      
+      if (!Array.isArray(nftArray) || nftArray.length === 0) {
+        return [];
+      }
+      
+      const nfts: NFT[] = [];
+      
+      // Fetch metadata for each NFT in parallel to enrich with full data
+      const metadataPromises = nftArray.map(async (item) => {
+        try {
+          const mintAddress = item.mint || item.associatedTokenAddress;
+          if (!mintAddress) {
+            return null;
+          }
+          
+          // Fetch detailed metadata (includes image, attributes, collection info, floor prices, rarity, etc.)
+          let metadata = null;
+          try {
+            metadata = await getSolanaNFTMetadata(mintAddress);
+          } catch (error) {
+            // Metadata fetch failed, use basic info from portfolio endpoint
+            console.warn(`[NFTService] Failed to fetch metadata for ${mintAddress}:`, error);
+          }
+          
+          // Normalize Solana NFT to our unified NFT type
+          const nft = this.normalizeSolanaNFT(item, metadata, address);
+          return nft;
+        } catch (error) {
+          console.error('[NFTService] Error processing Solana NFT:', error);
+          return null;
+        }
+      });
+      
+      const results = await Promise.allSettled(metadataPromises);
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          nfts.push(result.value);
+        }
+      }
+      
+      return nfts;
+    } catch (error) {
+      console.error('[NFTService] Error fetching Solana NFTs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Normalize Solana NFT response to our unified NFT type
+   * 
+   * Combines data from portfolio endpoint (basic info) with metadata endpoint (enriched data)
+   * 
+   * @param item - Raw NFT data from portfolio endpoint (limited data)
+   * @param metadata - Detailed metadata from metadata endpoint (includes image, attributes, floor prices, rarity, etc.)
+   * @param owner - Owner address
+   * @returns Normalized NFT in unified format
+   */
+  private normalizeSolanaNFT(item: any, metadata: any, owner: string): NFT {
+    const mintAddress = item.mint || item.associatedTokenAddress || '';
+    const tokenId = mintAddress; // For Solana, mint address serves as token ID
+    
+    // Use metadata if available (enriched), otherwise use basic info from portfolio endpoint
+    const name = metadata?.name || item.name || 'Unnamed NFT';
+    const description = metadata?.description || null;
+    
+    // Image from metadata (enriched) or portfolio endpoint
+    const image = metadata?.imageOriginalUrl || 
+                 metadata?.image || 
+                 item.media || 
+                 null;
+    
+    // Collection info from metadata or portfolio endpoint
+    const collectionName = metadata?.collection?.name || 
+                          metadata?.contract?.name || 
+                          item.name || 
+                          null;
+    const collectionSymbol = metadata?.collection?.symbol || 
+                           metadata?.contract?.symbol || 
+                           item.symbol || 
+                           null;
+    
+    // Extract attributes from metadata (enriched with rarity info if available)
+    const attributes = metadata?.attributes?.map((attr: any) => ({
+      trait_type: attr.traitType || attr.trait_type || 'Unknown',
+      value: attr.value || 'Unknown',
+    })) || [];
+    
+    return {
+      contractAddress: mintAddress,
+      tokenId,
+      name,
+      description,
+      image,
+      imageThumbnail: image, // Use same image for thumbnail
+      chainId: SOLANA_CHAIN_ID,
+      collectionName,
+      collectionSymbol,
+      contractType: 'ERC721', // Solana NFTs are similar to ERC721
+      owner,
+      amount: item.amount || item.amountRaw || '1',
+      attributes,
+      // Market data from metadata endpoint (if available)
+      floorPrice: metadata?.floorPrice || null,
+      floorPriceUSD: metadata?.floorPriceUSD || null,
+      // Note: Solana metadata endpoint may not provide totalVolume, owners, listed, supply
+      // These would require collection-level endpoint if needed
+    };
+  }
+
+  /**
+   * Normalize EVM NFT response from Moralis to our unified NFT type
+   * 
+   * Moralis /api/v2.2/:address/nft already includes:
+   * - Normalized metadata (name, description, image, attributes)
+   * - Floor prices (floor_price, floor_price_usd, floor_price_currency)
+   * - Rarity (rarity_rank, rarity_percentage, rarity_label)
+   * - Collection info (collection_logo, collection_banner_image, etc.)
+   * - List prices (list_price with marketplace info)
+   * 
+   * @param item - Raw NFT data from Moralis (already enriched)
    * @param chainId - Chain ID
-   * @param collectionStats - Collection stats from Reservoir (optional)
    * @returns Normalized NFT or null if invalid
    */
-  private async normalizeNFT(
+  private normalizeEVMNFT(
     item: any,
-    chainId: number,
-    collectionStats?: any
-  ): Promise<NFT | null> {
+    chainId: number
+  ): NFT | null {
     try {
-      // Extract image URL (try multiple sources)
-      const image = item.metadata?.image || 
-                   item.token_uri?.image || 
+      // Extract image URL - Moralis provides normalized_metadata.image
+      const image = item.normalized_metadata?.image || 
+                   item.metadata?.image || 
                    item.image || 
                    null;
       
       // Normalize image URL (handle IPFS, HTTP, etc.)
       const normalizedImage = this.normalizeImageUrl(image);
-      
-      // Calculate listed percentage
-      let listedPercentage: number | undefined;
-      if (collectionStats?.onSaleCount !== undefined && collectionStats?.tokenCount !== undefined) {
-        if (collectionStats.tokenCount > 0) {
-          listedPercentage = (collectionStats.onSaleCount / collectionStats.tokenCount) * 100;
-        }
-      }
 
       // Parse block timestamp if available
       let blockTimestampMinted: number | undefined;
       if (item.block_number_minted) {
-        // We'll use block_timestamp if available, otherwise leave undefined
-        // (block timestamp would require additional RPC call)
         blockTimestampMinted = item.block_timestamp 
           ? new Date(item.block_timestamp).getTime()
           : undefined;
       }
 
+      // Extract attributes from normalized_metadata (Moralis provides enriched attributes with rarity)
+      const attributes = item.normalized_metadata?.attributes || item.metadata?.attributes || [];
+
       return {
         contractAddress: item.token_address,
         tokenId: item.token_id,
-        name: item.name || item.metadata?.name || `#${item.token_id}`,
-        description: item.metadata?.description,
+        name: item.normalized_metadata?.name || item.name || item.metadata?.name || `#${item.token_id}`,
+        description: item.normalized_metadata?.description || item.metadata?.description,
         image: normalizedImage,
-        imageThumbnail: normalizedImage, // Could generate thumbnail later
+        imageThumbnail: normalizedImage,
         chainId,
-        collectionName: item.metadata?.collection?.name || collectionStats?.name,
+        collectionName: item.name || item.normalized_metadata?.collection?.name,
         collectionSymbol: item.symbol,
         contractType: item.contract_type as 'ERC721' | 'ERC1155',
         owner: item.owner_of,
@@ -182,20 +280,16 @@ export class NFTService {
         minterAddress: item.minter_address,
         blockNumberMinted: item.block_number_minted,
         blockTimestampMinted,
-        attributes: item.metadata?.attributes || [],
+        attributes,
         
-        // Market data from Reservoir
-        floorPrice: collectionStats?.floorAsk?.price?.amount?.native,
-        floorPriceUSD: collectionStats?.floorAsk?.price?.amount?.usd?.toString(),
-        totalVolume: collectionStats?.volume?.allTime?.native,
-        totalVolumeUSD: collectionStats?.volume?.allTime?.usd?.toString(),
-        owners: collectionStats?.ownerCount,
-        listed: collectionStats?.onSaleCount,
-        listedPercentage,
-        supply: collectionStats?.tokenCount,
+        // Market data from Moralis (already included in response)
+        floorPrice: item.floor_price || null,
+        floorPriceUSD: item.floor_price_usd || null,
+        // Note: Moralis doesn't provide totalVolume, owners, listed, supply in wallet endpoint
+        // These would require collection-level endpoint if needed
       };
     } catch (error) {
-      console.error('[NFTService] Error normalizing NFT:', error);
+      console.error('[NFTService] Error normalizing EVM NFT:', error);
       return null;
     }
   }
@@ -226,18 +320,9 @@ export class NFTService {
       const activities: NFTActivity[] = [];
       const transfers = transfersResponse.result || [];
       
-      // Fetch sale data from Reservoir for price information
-      const salesData = await getTokenSales(contractAddress, tokenId, chainId);
+      // Note: Moralis transfer endpoint may include price information
+      // If not available, we can extract from transfer value or leave undefined
       const salesMap = new Map<string, { price: string; priceUSD?: string }>();
-      
-      if (salesData) {
-        for (const sale of salesData) {
-          salesMap.set(sale.transactionHash.toLowerCase(), {
-            price: sale.price.native,
-            priceUSD: sale.price.usd?.toString(),
-          });
-        }
-      }
       
       // Process transfers
       for (const transfer of transfers) {

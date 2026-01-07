@@ -35,16 +35,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Parse chain IDs
-    const chainIds = chainIdsParam
+    let chainIds = chainIdsParam
       ? chainIdsParam.split(',').map(id => parseInt(id, 10)).filter(id => !isNaN(id))
       : [1, 56, 137, 42161, 43114, 8453]; // Default chains (Ethereum, BSC, Polygon, Arbitrum, Avalanche, Base)
 
-    // For now, only support EVM chains (Solana support can be added later)
-    const evmAddress = isValidEVMAddress(address);
-    if (!evmAddress) {
+    // Check if address is Solana
+    const isSolanaAddress = isValidSolanaAddress(address);
+    const isEVMAddress = isValidEVMAddress(address);
+    
+    if (isSolanaAddress) {
+      // For Solana addresses, add Solana chain ID if not already included
+      const { SOLANA_CHAIN_ID } = await import('@/lib/backend/providers/moralis');
+      if (!chainIds.includes(SOLANA_CHAIN_ID)) {
+        chainIds = [SOLANA_CHAIN_ID];
+      }
+    } else if (!isEVMAddress) {
       return NextResponse.json(
-        { error: 'Solana NFT support coming soon' },
-        { status: 501 }
+        { error: 'Invalid address format' },
+        { status: 400 }
       );
     }
 

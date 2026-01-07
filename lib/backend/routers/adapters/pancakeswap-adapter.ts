@@ -144,24 +144,23 @@ export class PancakeSwapAdapter extends BaseRouter {
       const fromToken = this.convertToWETH(params.fromToken, fromChainId);
       const toToken = this.convertToWETH(params.toToken, fromChainId);
       
-      // Build swap path
-      const path = this.buildSwapPath(fromToken, toToken, wethAddress);
-      
-      // Get quote from router
+      // ✅ Find best route using multi-hop path finding (like tiwi-test)
       const amountIn = BigInt(params.fromAmount);
-      const amounts = await publicClient.readContract({
-        address: routerAddress,
-        abi: ROUTER_ABI,
-        functionName: 'getAmountsOut',
-        args: [amountIn, path],
-      });
-      console.log("🚀 ~ PancakeSwapAdapter ~ getRoute ~ amounts:", amounts)
+      const bestRoute = await this.findBestRoute(
+        fromToken,
+        toToken,
+        amountIn,
+        fromChainId,
+        routerAddress,
+        publicClient
+      );
       
-      if (!amounts || amounts.length === 0 || amounts[amounts.length - 1] === BigInt(0)) {
+      if (!bestRoute) {
         return null; // No route found
       }
       
-      const amountOut = amounts[amounts.length - 1];
+      const path = bestRoute.path;
+      const amountOut = bestRoute.expectedOutput;
       const amountOutString = amountOut.toString();
       
       // Use provided decimals from RouterParams (passed from RouteService)
@@ -173,8 +172,8 @@ export class PancakeSwapAdapter extends BaseRouter {
       console.log('[PancakeSwapAdapter] Raw amountOut:', amountOutString, 'length:', amountOutString.length);
       console.log('[PancakeSwapAdapter] Token decimals - from:', fromDecimals, 'to:', toDecimals);
       
-      // Calculate price impact (simplified: assume 0.3% fee for V2)
-      const priceImpact = this.calculatePriceImpact(amountIn, amountOut, path.length);
+      // Use price impact from best route if available, otherwise calculate
+      const priceImpact = bestRoute.priceImpact ?? this.calculatePriceImpact(amountIn, amountOut, path.length);
       
       // Estimate gas cost (non-blocking - don't fail route if estimation fails)
       let gasEstimate = '0';
@@ -210,7 +209,10 @@ export class PancakeSwapAdapter extends BaseRouter {
         priceImpact,
         params.slippage || 0.5,
         gasEstimate,
-        gasUSD
+        gasUSD,
+        routerAddress,
+        params.fromToken, // Original tokenIn (before WETH conversion)
+        params.toToken   // Original tokenOut (before WETH conversion)
       );
       
       // Debug logging to verify converted amount
@@ -245,27 +247,162 @@ export class PancakeSwapAdapter extends BaseRouter {
   }
   
   /**
-   * Build swap path (direct or through WETH)
+   * Get intermediate tokens for routing (chain-specific)
+   * These are high-liquidity tokens used for multi-hop swaps
    */
-  private buildSwapPath(fromToken: Address, toToken: Address, wethAddress: Address): Address[] {
-    // Direct pair
-    if (fromToken.toLowerCase() !== wethAddress.toLowerCase() && 
-        toToken.toLowerCase() !== wethAddress.toLowerCase()) {
-      // Try direct first, fallback to WETH if needed
-      return [fromToken, toToken];
+  private getIntermediateTokens(chainId: number): Address[] {
+    const weth = WETH_ADDRESSES[chainId];
+    if (!weth) return [];
+
+    const intermediates: Address[] = [weth]; // Always try WETH first
+
+    // Add chain-specific common tokens (high liquidity)
+    if (chainId === 56) {
+      // BSC
+      intermediates.push(
+        getAddress('0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82'), // CAKE
+        getAddress('0x55d398326f99059fF775485246999027B3197955'), // USDT
+        getAddress('0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56'), // BUSD
+        getAddress('0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'), // USDC
+        getAddress('0x50c5725949A6F0c72E6C4a641F24049A917E0Cb6'), // FDUSD
+      );
+    } else if (chainId === 1) {
+      // Ethereum
+      intermediates.push(
+        getAddress('0xdAC17F958D2ee523a2206206994597C13D831ec7'), // USDT
+        getAddress('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'), // USDC
+        getAddress('0x6B175474E89094C44Da98b954EedeAC495271d0F'), // DAI
+      );
+    } else if (chainId === 137) {
+      // Polygon
+      intermediates.push(
+        getAddress('0xc2132D05D31c914a87C6611C10748AEb04B58e8F'), // USDT
+        getAddress('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'), // USDC
+      );
+    } else if (chainId === 42161) {
+      // Arbitrum
+      intermediates.push(
+        getAddress('0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'), // USDT
+        getAddress('0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8'), // USDC
+      );
+    } else if (chainId === 10) {
+      // Optimism
+      intermediates.push(
+        getAddress('0x94b008aA00579c1307B0EF2c499aD98a8ce58e58'), // USDT
+        getAddress('0x7F5c764cBc14f9669B88837ca1490cCa17c31607'), // USDC
+      );
+    } else if (chainId === 8453) {
+      // Base
+      intermediates.push(
+        getAddress('0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2'), // USDC
+        getAddress('0x50c5725949A6F0c72E6C4a641F24049A917E0Cb6'), // DAI
+      );
     }
+
+    return intermediates;
+  }
+
+  /**
+   * Find best route using multi-hop path finding (like tiwi-test)
+   * Tries multiple paths and returns the one with highest output
+   */
+  private async findBestRoute(
+    tokenIn: Address,
+    tokenOut: Address,
+    amountIn: bigint,
+    chainId: number,
+    routerAddress: Address,
+    publicClient: any
+  ): Promise<{ path: Address[]; expectedOutput: bigint; priceImpact: number } | null> {
+    const intermediates = this.getIntermediateTokens(chainId);
     
-    // One token is WETH
-    if (fromToken.toLowerCase() === wethAddress.toLowerCase()) {
-      return [fromToken, toToken];
+    // Build all possible paths
+    const paths: Address[][] = [
+      [tokenIn, tokenOut], // Direct path
+    ];
+
+    // Add 2-hop paths through intermediates
+    for (const intermediate of intermediates) {
+      if (
+        intermediate.toLowerCase() !== tokenIn.toLowerCase() &&
+        intermediate.toLowerCase() !== tokenOut.toLowerCase()
+      ) {
+        paths.push([tokenIn, intermediate, tokenOut]);
+      }
     }
-    
-    if (toToken.toLowerCase() === wethAddress.toLowerCase()) {
-      return [fromToken, toToken];
+
+    // Add 3-hop paths (token -> intermediate1 -> intermediate2 -> token)
+    for (let i = 0; i < intermediates.length; i++) {
+      for (let j = i + 1; j < intermediates.length; j++) {
+        const intermediate1 = intermediates[i];
+        const intermediate2 = intermediates[j];
+        if (
+          intermediate1.toLowerCase() !== tokenIn.toLowerCase() &&
+          intermediate1.toLowerCase() !== tokenOut.toLowerCase() &&
+          intermediate2.toLowerCase() !== tokenIn.toLowerCase() &&
+          intermediate2.toLowerCase() !== tokenOut.toLowerCase() &&
+          intermediate1.toLowerCase() !== intermediate2.toLowerCase()
+        ) {
+          paths.push([tokenIn, intermediate1, intermediate2, tokenOut]);
+        }
+      }
     }
+
+    // Try each path and collect valid routes
+    const validRoutes: Array<{ path: Address[]; expectedOutput: bigint; priceImpact: number }> = [];
     
-    // Both are WETH (shouldn't happen, but handle gracefully)
-    return [fromToken, toToken];
+    // Test all paths in parallel for speed
+    const pathTests = paths.map(async (path) => {
+      try {
+        const amounts = await publicClient.readContract({
+          address: routerAddress,
+          abi: ROUTER_ABI,
+          functionName: 'getAmountsOut',
+          args: [amountIn, path],
+        }) as bigint[];
+
+        if (amounts && amounts.length > 0 && amounts[amounts.length - 1] > BigInt(0)) {
+          // Calculate price impact (simplified)
+          const inputAmount = Number(amountIn) / 1e18;
+          const outputAmount = Number(amounts[amounts.length - 1]) / 1e18;
+          const priceImpact = inputAmount > 0 
+            ? Math.abs((inputAmount - outputAmount) / inputAmount) * 100 
+            : 0;
+
+          return {
+            path,
+            expectedOutput: amounts[amounts.length - 1],
+            priceImpact: Math.min(priceImpact, 100),
+          };
+        }
+        return null;
+      } catch (error) {
+        // Path doesn't exist or has insufficient liquidity, skip it
+        return null;
+      }
+    });
+
+    const results = await Promise.allSettled(pathTests);
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        validRoutes.push(result.value);
+      }
+    }
+
+    if (validRoutes.length === 0) {
+      return null;
+    }
+
+    // Sort by highest output, then lowest price impact
+    validRoutes.sort((a, b) => {
+      if (a.expectedOutput > b.expectedOutput) return -1;
+      if (a.expectedOutput < b.expectedOutput) return 1;
+      if (a.priceImpact < b.priceImpact) return -1;
+      if (a.priceImpact > b.priceImpact) return 1;
+      return 0;
+    });
+
+    return validRoutes[0];
   }
   
   /**
@@ -297,7 +434,10 @@ export class PancakeSwapAdapter extends BaseRouter {
     priceImpact: number,
     slippage: number,
     gasEstimate: string = '0',
-    gasUSD: string = '0'
+    gasUSD: string = '0',
+    routerAddress: Address,
+    originalTokenIn: string,
+    originalTokenOut: string
   ): RouterRoute {
     // Debug logging
     console.log('[PancakeSwapAdapter.normalizeRoute] Converting amounts:', {
@@ -373,6 +513,14 @@ export class PancakeSwapAdapter extends BaseRouter {
       steps,
       estimatedTime: 0, // Same-chain swaps are instant
       expiresAt: Date.now() + (QUOTE_EXPIRATION_SECONDS * 1000),
+      // Store raw router response data for simulation
+      raw: {
+        path: path.map(addr => addr.toLowerCase()), // Exact path array from router
+        routerAddress: routerAddress.toLowerCase(),
+        tokenIn: getAddress(originalTokenIn).toLowerCase(), // Original token address (before WETH conversion)
+        tokenOut: getAddress(originalTokenOut).toLowerCase(), // Original token address (before WETH conversion)
+        amountOut: toAmount, // Output amount in smallest units
+      },
     };
   }
 }

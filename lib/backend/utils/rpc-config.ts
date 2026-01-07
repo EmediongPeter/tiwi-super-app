@@ -8,6 +8,8 @@
 /**
  * Chain ID to RPC URL mapping.
  * Supports environment variable overrides.
+ * 
+ * IMPORTANT: Uses NEXT_PUBLIC_ prefix for client-side access in browser.
  */
 export const RPC_CONFIG: Record<number, string> = {
   // Ethereum Mainnet (1)

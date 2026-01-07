@@ -71,6 +71,7 @@ export default function WalletExplorerModal({
     // Check if it's a WalletProvider (installed wallet)
     if ('installed' in wallet && wallet.installed) {
       // Installed wallet - connect it (pass as string ID)
+      console.log("🚀 ~ handleWalletClick ~ wallet.id:", wallet.id)
       onWalletConnect?.(wallet.id);
       onOpenChange(false);
     } else if ('installed' in wallet && !wallet.installed) {
@@ -88,6 +89,7 @@ export default function WalletExplorerModal({
       
       if (installedWallet) {
         // It's installed, connect it (pass as string ID)
+        console.log("🚀 ~ handleWalletClick ~ installedWallet.id:", installedWallet.id)
         onWalletConnect?.(installedWallet.id);
         onOpenChange(false);
       } else {
