@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { IoChevronDownOutline, IoSearchOutline } from "react-icons/io5";
+import { fetchTokens } from "@/lib/frontend/api/tokens";
+import type { Token } from "@/lib/frontend/types/tokens";
 import { TokenIcon } from "@/components/portfolio/token-icon";
 import { getTokenFallbackIcon } from "@/lib/shared/utils/portfolio-formatting";
-import { useTokenSearch } from "@/hooks/useTokenSearch";
 
 interface TokenSpotlightModalProps {
   open: boolean;
@@ -40,6 +41,9 @@ export default function TokenSpotlightModal({
   onSave,
 }: TokenSpotlightModalProps) {
   const isEditMode = !!editingToken;
+  const [allTokens, setAllTokens] = useState<Token[]>([]);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [tokenSearchQuery, setTokenSearchQuery] = useState("");
   const [selectedToken, setSelectedToken] = useState<{
     symbol: string;
     name: string;
@@ -52,19 +56,47 @@ export default function TokenSpotlightModal({
   const [showTokenDropdown, setShowTokenDropdown] = useState(false);
   const tokenRef = useRef<HTMLDivElement>(null);
 
-  // Use the same token search hook as portfolio receive/select assets
-  // This provides: cached tokens first, background API fetch, debounced search, all tokens
-  const {
-    query: tokenSearchQuery,
-    setQuery: setTokenSearchQuery,
-    tokens: allTokens,
-    isLoading: isLoadingTokens,
-    isSearching: isSearchingTokens,
-  } = useTokenSearch({
-    // No chain filter - get all tokens across all chains
-    limit: 1000, // Large limit to get all available tokens
-    debounceDelay: 400, // Same as portfolio
-  });
+  // Fetch all tokens when modal opens (both add and edit modes)
+  useEffect(() => {
+    if (open) {
+      setIsLoadingTokens(true);
+      fetchTokens({ limit: 1000 }) // Fetch a large number of tokens
+        .then((tokens) => {
+          setAllTokens(tokens);
+          // Set first token as default if no token selected (only in add mode)
+          if (!isEditMode && tokens.length > 0 && !selectedToken) {
+            const firstToken = tokens[0];
+            setSelectedToken({
+              symbol: firstToken.symbol,
+              name: firstToken.name,
+              address: firstToken.address,
+              logo: firstToken.logo || getTokenFallbackIcon(firstToken.symbol),
+            });
+          }
+        })
+        .catch((error) => {
+          console.error("Error fetching tokens:", error);
+          setAllTokens([]);
+        })
+        .finally(() => {
+          setIsLoadingTokens(false);
+        });
+    }
+  }, [open, isEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filter tokens by search query
+  const filteredTokens = useMemo(() => {
+    if (!tokenSearchQuery.trim()) {
+      return allTokens;
+    }
+    const query = tokenSearchQuery.toLowerCase();
+    return allTokens.filter(
+      (token) =>
+        token.symbol.toLowerCase().includes(query) ||
+        token.name.toLowerCase().includes(query) ||
+        token.address.toLowerCase().includes(query)
+    );
+  }, [allTokens, tokenSearchQuery]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -256,10 +288,6 @@ export default function TokenSpotlightModal({
               onClick={() => {
                 if (!isEditMode) {
                   setShowTokenDropdown(!showTokenDropdown);
-                  // Reset search when opening dropdown
-                  if (!showTokenDropdown) {
-                    setTokenSearchQuery("");
-                  }
                 }
               }}
               disabled={isEditMode}
@@ -305,7 +333,6 @@ export default function TokenSpotlightModal({
                       value={tokenSearchQuery}
                       onChange={(e) => setTokenSearchQuery(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
                       className="w-full bg-[#121712] border border-[#1f261e] rounded-lg pl-10 pr-3 py-2 text-sm text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
                       autoFocus
                     />
@@ -315,7 +342,7 @@ export default function TokenSpotlightModal({
                   <div className="p-8 text-center">
                     <p className="text-[#b5b5b5] text-sm">Loading tokens...</p>
                   </div>
-                ) : allTokens.length === 0 ? (
+                ) : filteredTokens.length === 0 ? (
                   <div className="p-8 text-center">
                     <p className="text-[#b5b5b5] text-sm">
                       {tokenSearchQuery ? "No tokens found matching your search." : "No tokens available."}
@@ -323,12 +350,7 @@ export default function TokenSpotlightModal({
                   </div>
                 ) : (
                   <div className="max-h-80 overflow-y-auto">
-                    {isSearchingTokens && (
-                      <div className="px-4 py-2 text-center border-b border-[#1f261e]">
-                        <p className="text-[#7c7c7c] text-xs">Searching...</p>
-                      </div>
-                    )}
-                    {allTokens.map((token) => (
+                    {filteredTokens.map((token) => (
                       <button
                         key={token.id}
                         onClick={() => {
