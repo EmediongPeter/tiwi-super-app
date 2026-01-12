@@ -9,6 +9,8 @@
  * - MEV protection
  * - Sub-second transaction landing
  * - Fee collection via referral accounts
+ * Implements SwapRouter interface for Jupiter Aggregator (Solana).
+ * Uses Jupiter API for route fetching and quote generation.
  */
 
 import { BaseRouter } from '../base';

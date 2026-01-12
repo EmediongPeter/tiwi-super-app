@@ -97,7 +97,7 @@ export interface NFTTransfer {
 // ============================================================================
 
 export interface NFTActivity {
-  type: 'received' | 'sent' | 'mint' | 'burn' | 'list' | 'sale';
+  type: 'received' | 'sent' | 'mint' | 'burn' | 'list' | 'sale' | 'transfer';
   date: string;           // Formatted date (e.g., "Jan 4, 2024")
   timestamp: number;      // Unix timestamp
   nftName: string;

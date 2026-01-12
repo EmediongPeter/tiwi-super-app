@@ -17,7 +17,7 @@ import { JupiterAdapter } from './adapters/jupiter-adapter';
  * 
  * Router Priority Order (lower = higher priority):
  * - LiFi (0): Primary aggregator, supports cross-chain
- * - Jupiter (3): Solana same-chain swaps
+ * - Jupiter (1): Solana aggregator, same-chain only
  * - PancakeSwap (5): BNB Chain fallback, same-chain only
  * - Uniswap (10): EVM chains fallback, same-chain only
  */
@@ -28,7 +28,7 @@ export function initializeRouters(): void {
   const lifiAdapter = new LiFiAdapter();
   registry.register(lifiAdapter);
   
-  // Register Jupiter router (priority 3 - for Solana)
+  // Register Jupiter router (priority 1 - for Solana)
   const jupiterAdapter = new JupiterAdapter();
   registry.register(jupiterAdapter);
   
