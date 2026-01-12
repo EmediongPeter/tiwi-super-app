@@ -201,6 +201,59 @@ export interface Database {
           block_timestamp?: string | null;
         };
       };
+      bug_reports: {
+        Row: {
+          id: string;
+          user_wallet: string;
+          description: string;
+          screenshot: string | null;
+          log_file: string | null;
+          device_info: {
+            userAgent?: string;
+            platform?: string;
+            language?: string;
+            screenResolution?: string;
+          } | null;
+          status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_wallet: string;
+          description: string;
+          screenshot?: string | null;
+          log_file?: string | null;
+          device_info?: {
+            userAgent?: string;
+            platform?: string;
+            language?: string;
+            screenResolution?: string;
+          } | null;
+          status?: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_wallet?: string;
+          description?: string;
+          screenshot?: string | null;
+          log_file?: string | null;
+          device_info?: {
+            userAgent?: string;
+            platform?: string;
+            language?: string;
+            screenResolution?: string;
+          } | null;
+          status?: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          created_at?: string;
+        };
+      };
     };
   };
 }

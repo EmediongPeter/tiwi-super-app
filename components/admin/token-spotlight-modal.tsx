@@ -1,80 +1,264 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { IoChevronDownOutline } from "react-icons/io5";
+import { IoChevronDownOutline, IoSearchOutline } from "react-icons/io5";
+import { fetchTokens } from "@/lib/frontend/api/tokens";
+import type { Token } from "@/lib/frontend/types/tokens";
+import { TokenIcon } from "@/components/portfolio/token-icon";
+import { getTokenFallbackIcon } from "@/lib/shared/utils/portfolio-formatting";
 
 interface TokenSpotlightModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  editingToken?: {
+    id: string;
+    symbol: string;
+    name?: string;
+    address?: string;
+    rank: number;
+    startDate?: string;
+    endDate?: string;
+  } | null;
+  onSave?: (tokenData: {
+    id?: string;
+    symbol: string;
+    rank: number;
+    startDate: string;
+    endDate: string;
+  }) => void;
 }
-
-const tokens = [
-  {
-    symbol: "TIWICAT",
-    name: "TWC",
-    address: "0x8d...T1J2",
-    icon: "TWC",
-  },
-  {
-    symbol: "USDT",
-    name: "Tether",
-    address: "0x8d...T1J2",
-    icon: "USDT",
-  },
-  {
-    symbol: "USDC",
-    name: "USDC",
-    address: "0x8d...T1J2",
-    icon: "USDC",
-  },
-  {
-    symbol: "BNB",
-    name: "BNB Smart Chain",
-    address: "0x8d...T1J2",
-    icon: "BNB",
-  },
-];
-
-const spotlightTypes = [
-  "Homepage Banner",
-  "CoinPage Highlight",
-  "Wallet Recommendation",
-];
 
 export default function TokenSpotlightModal({
   open,
   onOpenChange,
+  editingToken = null,
+  onSave,
 }: TokenSpotlightModalProps) {
-  const [spotlightTitle, setSpotlightTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [selectedToken, setSelectedToken] = useState(tokens[0]);
-  const [startDate, setStartDate] = useState("08/30/2020");
-  const [endDate, setEndDate] = useState("08/30/2020");
+  const isEditMode = !!editingToken;
+  const [allTokens, setAllTokens] = useState<Token[]>([]);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [tokenSearchQuery, setTokenSearchQuery] = useState("");
+  const [selectedToken, setSelectedToken] = useState<{
+    symbol: string;
+    name: string;
+    address: string;
+    logo: string;
+  } | null>(null);
+  const [rank, setRank] = useState<number>(editingToken?.rank || 1);
+  const [startDate, setStartDate] = useState(editingToken?.startDate || "");
+  const [endDate, setEndDate] = useState(editingToken?.endDate || "");
   const [showTokenDropdown, setShowTokenDropdown] = useState(false);
-  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
-  const [selectedType, setSelectedType] = useState("Homepage Banner");
   const tokenRef = useRef<HTMLDivElement>(null);
-  const typeRef = useRef<HTMLDivElement>(null);
+
+  // Fetch all tokens when modal opens (both add and edit modes)
+  useEffect(() => {
+    if (open) {
+      setIsLoadingTokens(true);
+      fetchTokens({ limit: 1000 }) // Fetch a large number of tokens
+        .then((tokens) => {
+          setAllTokens(tokens);
+          // Set first token as default if no token selected (only in add mode)
+          if (!isEditMode && tokens.length > 0 && !selectedToken) {
+            const firstToken = tokens[0];
+            setSelectedToken({
+              symbol: firstToken.symbol,
+              name: firstToken.name,
+              address: firstToken.address,
+              logo: firstToken.logo || getTokenFallbackIcon(firstToken.symbol),
+            });
+          }
+        })
+        .catch((error) => {
+          console.error("Error fetching tokens:", error);
+          setAllTokens([]);
+        })
+        .finally(() => {
+          setIsLoadingTokens(false);
+        });
+    }
+  }, [open, isEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filter tokens by search query
+  const filteredTokens = useMemo(() => {
+    if (!tokenSearchQuery.trim()) {
+      return allTokens;
+    }
+    const query = tokenSearchQuery.toLowerCase();
+    return allTokens.filter(
+      (token) =>
+        token.symbol.toLowerCase().includes(query) ||
+        token.name.toLowerCase().includes(query) ||
+        token.address.toLowerCase().includes(query)
+    );
+  }, [allTokens, tokenSearchQuery]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (tokenRef.current && !tokenRef.current.contains(event.target as Node)) {
         setShowTokenDropdown(false);
       }
-      if (typeRef.current && !typeRef.current.contains(event.target as Node)) {
-        setShowTypeDropdown(false);
-      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Get today's date in YYYY-MM-DD format for date input
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
+  // Get default end date (30 days from today)
+  const getDefaultEndDate = () => {
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + 30);
+    return endDate.toISOString().split('T')[0];
+  };
+
+  // Initialize dates when modal opens, reset form when it closes
+  useEffect(() => {
+    if (open) {
+      if (editingToken) {
+        // Edit mode: populate with existing data
+        setRank(editingToken.rank);
+        setStartDate(editingToken.startDate || getTodayDate());
+        setEndDate(editingToken.endDate || getDefaultEndDate());
+        // Find the token in allTokens to get its logo, or use fallback
+        // This will be updated once tokens are fetched
+        const tokenLogo = allTokens.find(t => t.symbol === editingToken.symbol)?.logo || getTokenFallbackIcon(editingToken.symbol);
+        setSelectedToken({
+          symbol: editingToken.symbol,
+          name: editingToken.name || editingToken.symbol,
+          address: editingToken.address || "",
+          logo: tokenLogo,
+        });
+      } else {
+        // Add mode: reset form
+        setRank(1);
+        setStartDate(getTodayDate());
+        setEndDate(getDefaultEndDate());
+        setTokenSearchQuery("");
+        // Set first token as default if available (only in add mode)
+        if (allTokens.length > 0 && !selectedToken) {
+          const firstToken = allTokens[0];
+          setSelectedToken({
+            symbol: firstToken.symbol,
+            name: firstToken.name,
+            address: firstToken.address,
+            logo: firstToken.logo || getTokenFallbackIcon(firstToken.symbol),
+          });
+        }
+      }
+    } else {
+      // Reset when modal closes
+      setShowTokenDropdown(false);
+      setTokenSearchQuery("");
+    }
+  }, [open, editingToken, allTokens]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    // Validate dates
+    if (!startDate || !endDate) {
+      alert("Please select both start and end dates");
+      return;
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (end < start) {
+      alert("End date must be after start date");
+      return;
+    }
+
+    if (rank < 1) {
+      alert("Rank must be at least 1");
+      return;
+    }
+
+    if (!selectedToken) {
+      alert("Please select a token");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const tokenData = {
+        symbol: selectedToken.symbol,
+        name: selectedToken.name,
+        address: selectedToken.address,
+        rank,
+        startDate,
+        endDate,
+      };
+
+      if (isEditMode && editingToken) {
+        // Update existing token
+        const response = await fetch("/api/v1/token-spotlight", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: editingToken.id,
+            ...tokenData,
+          }),
+        });
+
+        if (response.ok) {
+          // Trigger refresh
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("spotlightTokenUpdated"));
+          }
+          if (onSave) {
+            onSave({ ...tokenData, id: editingToken.id });
+          }
+          onOpenChange(false);
+        } else {
+          const error = await response.json();
+          alert(error.error || "Failed to update spotlight token");
+        }
+      } else {
+        // Create new token
+        const response = await fetch("/api/v1/token-spotlight", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(tokenData),
+        });
+
+        if (response.ok) {
+          // Trigger refresh
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("spotlightTokenUpdated"));
+          }
+          if (onSave) {
+            onSave({ ...tokenData });
+          }
+          onOpenChange(false);
+        } else {
+          const error = await response.json();
+          alert(error.error || "Failed to create spotlight token");
+        }
+      }
+    } catch (error) {
+      console.error("Error saving spotlight token:", error);
+      alert("Failed to save spotlight token. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -84,7 +268,7 @@ export default function TokenSpotlightModal({
       >
         <DialogHeader className="flex flex-row items-center justify-between mb-6">
           <DialogTitle className="text-xl font-semibold text-white">
-            Token Spotlights
+            {isEditMode ? "Edit Token Spotlight" : "Add Token Spotlight"}
           </DialogTitle>
           <button
             onClick={() => onOpenChange(false)}
@@ -95,20 +279,6 @@ export default function TokenSpotlightModal({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Spotlight Title */}
-          <div>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Spotlight Title
-            </label>
-            <input
-              type="text"
-              placeholder="Trending This Week"
-              value={spotlightTitle}
-              onChange={(e) => setSpotlightTitle(e.target.value)}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-            />
-          </div>
-
           {/* Select Token Dropdown */}
           <div className="relative" ref={tokenRef}>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
@@ -116,67 +286,134 @@ export default function TokenSpotlightModal({
             </label>
             <button
               onClick={() => {
-                setShowTokenDropdown(!showTokenDropdown);
-                setShowTypeDropdown(false);
+                if (!isEditMode) {
+                  setShowTokenDropdown(!showTokenDropdown);
+                }
               }}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors"
+              disabled={isEditMode}
+              className={`w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between transition-colors ${
+                isEditMode
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:border-[#b1f128]"
+              }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-[#b1f128] rounded-full flex items-center justify-center text-[#010501] font-semibold text-xs">
-                  {selectedToken.icon}
-                </div>
-                <div className="text-left">
-                  <div className="text-white font-medium text-sm">
-                    {selectedToken.symbol} ({selectedToken.name} {selectedToken.address})
-                  </div>
-                </div>
+                {selectedToken ? (
+                  <>
+                    <TokenIcon
+                      src={selectedToken.logo || getTokenFallbackIcon(selectedToken.symbol)}
+                      symbol={selectedToken.symbol}
+                      alt={selectedToken.symbol}
+                      width={32}
+                      height={32}
+                    />
+                    <div className="text-left">
+                      <div className="text-white font-medium text-sm">
+                        {selectedToken.symbol}
+                      </div>
+                      <div className="text-[#b5b5b5] text-xs">
+                        {selectedToken.name}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-[#7c7c7c] text-sm">Select a token</span>
+                )}
               </div>
               <IoChevronDownOutline className="w-5 h-5 text-[#b5b5b5]" />
             </button>
             {showTokenDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                <div className="p-2 border-b border-[#1f261e]">
-                  <input
-                    type="text"
-                    placeholder="Search by tokens or address"
-                    className="w-full bg-[#121712] border border-[#1f261e] rounded-lg px-3 py-2 text-sm text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-                  />
+              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg max-h-96 overflow-y-auto">
+                <div className="p-2 border-b border-[#1f261e] sticky top-0 bg-[#0b0f0a]">
+                  <div className="relative">
+                    <IoSearchOutline className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7c7c7c]" />
+                    <input
+                      type="text"
+                      placeholder="Search by symbol, name, or address"
+                      value={tokenSearchQuery}
+                      onChange={(e) => setTokenSearchQuery(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full bg-[#121712] border border-[#1f261e] rounded-lg pl-10 pr-3 py-2 text-sm text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
+                      autoFocus
+                    />
+                  </div>
                 </div>
-                {tokens.map((token, index) => (
-                  <button
-                    key={index}
-                    onClick={() => {
-                      setSelectedToken(token);
-                      setShowTokenDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-3 text-white hover:bg-[#121712] transition-colors flex items-center gap-3"
-                  >
-                    <div className="w-8 h-8 bg-[#b1f128] rounded-full flex items-center justify-center text-[#010501] font-semibold text-xs">
-                      {token.icon}
-                    </div>
-                    <div>
-                      <div className="font-medium text-sm">
-                        {token.symbol} ({token.name} {token.address})
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                {isLoadingTokens ? (
+                  <div className="p-8 text-center">
+                    <p className="text-[#b5b5b5] text-sm">Loading tokens...</p>
+                  </div>
+                ) : filteredTokens.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <p className="text-[#b5b5b5] text-sm">
+                      {tokenSearchQuery ? "No tokens found matching your search." : "No tokens available."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {filteredTokens.map((token) => (
+                      <button
+                        key={token.id}
+                        onClick={() => {
+                          setSelectedToken({
+                            symbol: token.symbol,
+                            name: token.name,
+                            address: token.address,
+                            logo: token.logo || getTokenFallbackIcon(token.symbol),
+                          });
+                          setShowTokenDropdown(false);
+                          setTokenSearchQuery("");
+                        }}
+                        className="w-full text-left px-4 py-3 text-white hover:bg-[#121712] transition-colors flex items-center gap-3 border-b border-[#1f261e] last:border-b-0"
+                      >
+                        <TokenIcon
+                          src={token.logo || getTokenFallbackIcon(token.symbol)}
+                          symbol={token.symbol}
+                          alt={token.symbol}
+                          width={24}
+                          height={24}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-white">
+                            {token.symbol}
+                          </div>
+                          <div className="text-[#b5b5b5] text-xs truncate">
+                            {token.name}
+                          </div>
+                          <div className="text-[#7c7c7c] text-xs font-mono truncate">
+                            {token.address}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Description */}
+          {/* Rank Input */}
           <div>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Description
+              Rank
             </label>
-            <textarea
-              placeholder="short promotional copy"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] resize-none"
+            <input
+              type="number"
+              min="1"
+              placeholder="Enter rank (1 = highest priority)"
+              value={rank}
+              onChange={(e) => {
+                const value = parseInt(e.target.value, 10);
+                if (!isNaN(value) && value >= 1) {
+                  setRank(value);
+                } else if (e.target.value === "") {
+                  setRank(1);
+                }
+              }}
+              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
             />
+            <p className="text-[#7c7c7c] text-xs mt-1">
+              Lower numbers indicate higher priority. Rank will be considered within the date range.
+            </p>
           </div>
 
           {/* Date Pickers - Two Columns */}
@@ -186,9 +423,10 @@ export default function TokenSpotlightModal({
                 Start Date
               </label>
               <input
-                type="text"
+                type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                min={getTodayDate()}
                 className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
               />
             </div>
@@ -197,68 +435,33 @@ export default function TokenSpotlightModal({
                 End Date
               </label>
               <input
-                type="text"
+                type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                min={startDate || getTodayDate()}
                 className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
               />
             </div>
           </div>
 
-          {/* Spotlight Type Dropdown */}
-          <div className="relative" ref={typeRef}>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Spotlight Type
-            </label>
-            <button
-              onClick={() => {
-                setShowTypeDropdown(!showTypeDropdown);
-                setShowTokenDropdown(false);
-              }}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="radio"
-                  checked={selectedType === "Homepage Banner"}
-                  readOnly
-                  className="w-4 h-4 text-[#b1f128] focus:ring-[#b1f128]"
-                />
-                <span>{selectedType}</span>
-              </div>
-              <IoChevronDownOutline className="w-5 h-5 text-[#b5b5b5]" />
-            </button>
-            {showTypeDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
-                {spotlightTypes.map((type) => (
-                  <label
-                    key={type}
-                    className="flex items-center gap-3 px-4 py-2 text-white hover:bg-[#121712] transition-colors cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="spotlightType"
-                      checked={selectedType === type}
-                      onChange={() => {
-                        setSelectedType(type);
-                        setShowTypeDropdown(false);
-                      }}
-                      className="w-4 h-4 text-[#b1f128] focus:ring-[#b1f128]"
-                    />
-                    <span>{type}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+          {/* Info Message */}
+          <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-lg p-4">
+            <p className="text-[#b5b5b5] text-sm">
+              <span className="font-medium text-white">Note:</span> The token will be ranked based on the specified rank number within the selected date range. Tokens with lower rank numbers will appear first. If multiple tokens have overlapping date ranges, they will be ordered by rank.
+            </p>
           </div>
 
           {/* Publish Button */}
           <div className="pt-4 border-t border-[#1f261e]">
             <button
-              onClick={() => onOpenChange(false)}
-              className="w-full px-4 py-2.5 bg-[#b1f128] text-[#010501] rounded-lg hover:bg-[#9dd81f] transition-colors font-medium"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="w-full px-4 py-2.5 bg-[#b1f128] text-[#010501] rounded-lg hover:bg-[#9dd81f] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Publish Spotlight
+              {isSubmitting 
+                ? (isEditMode ? "Updating..." : "Adding...") 
+                : (isEditMode ? "Update Spotlight Token" : "Add Spotlight Token")
+              }
             </button>
           </div>
         </div>

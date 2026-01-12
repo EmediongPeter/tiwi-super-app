@@ -98,6 +98,8 @@ export default function SettingsSidebar({
       currentView === "contact-support"
     )
       return 6;
+    if (currentView === "view-bug-reports" || currentView === "create-bug-report")
+      return 6;
     return -1;
   };
 

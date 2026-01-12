@@ -6,9 +6,9 @@
  */
 
 import { useState, useCallback } from 'react';
-import { swapExecutor, type SwapExecutionParams, type SwapExecutionResult, type SwapExecutionStatus } from '@/lib/frontend/services/swap-executor';
 import type { RouterRoute } from '@/lib/backend/routers/types';
 import type { Token } from '@/lib/frontend/types/tokens';
+import { SwapExecutionParams, SwapExecutionResult, SwapExecutionStatus, swapExecutor } from '@/lib/frontend/services/swap-executor';
 
 export interface UseSwapExecutionReturn {
   // Execution state

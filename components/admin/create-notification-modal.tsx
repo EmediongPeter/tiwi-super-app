@@ -8,10 +8,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { IoChevronDownOutline, IoPaperPlaneOutline } from "react-icons/io5";
+import type { CreateNotificationRequest } from "@/lib/shared/types/notifications";
 
 interface CreateNotificationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
 }
 
 const targetAudiences = [
@@ -37,12 +39,14 @@ const priorities = [
 export default function CreateNotificationModal({
   open,
   onOpenChange,
+  onSuccess,
 }: CreateNotificationModalProps) {
   const [title, setTitle] = useState("");
   const [messageBody, setMessageBody] = useState("");
   const [selectedTargetAudience, setSelectedTargetAudience] = useState("All Users");
   const [selectedDeliveryType, setSelectedDeliveryType] = useState("Push Notification");
   const [selectedPriority, setSelectedPriority] = useState("Normal");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showTargetDropdown, setShowTargetDropdown] = useState(false);
   const [showDeliveryDropdown, setShowDeliveryDropdown] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
@@ -75,6 +79,97 @@ export default function CreateNotificationModal({
         return "text-[#ffa500]";
       default:
         return "text-white";
+    }
+  };
+
+  // Map UI values to API values
+  const mapTargetAudience = (label: string): CreateNotificationRequest["targetAudience"] => {
+    switch (label) {
+      case "All Users":
+        return "all-users";
+      case "By Network":
+        return "by-network";
+      case "By Activity (Stakers)":
+        return "by-activity-stakers";
+      case "By Activity (LPs)":
+        return "by-activity-lps";
+      case "By Activity (DAO voters)":
+        return "by-activity-dao";
+      default:
+        return "all-users";
+    }
+  };
+
+  const mapDeliveryType = (label: string): CreateNotificationRequest["deliveryType"] => {
+    switch (label) {
+      case "Push Notification":
+        return "push";
+      case "In-app Banner":
+        return "banner";
+      case "Modal Alert":
+        return "modal";
+      default:
+        return "push";
+    }
+  };
+
+  const mapPriority = (label: string): CreateNotificationRequest["priority"] => {
+    switch (label) {
+      case "Critical (System alerts)":
+        return "critical";
+      case "Important":
+        return "important";
+      default:
+        return "normal";
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!title.trim() || !messageBody.trim()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const request: CreateNotificationRequest = {
+        title: title.trim(),
+        messageBody: messageBody.trim(),
+        targetAudience: mapTargetAudience(selectedTargetAudience),
+        deliveryType: mapDeliveryType(selectedDeliveryType),
+        priority: mapPriority(selectedPriority),
+        createdBy: "Admin", // In production, use actual admin user
+      };
+
+      const response = await fetch("/api/v1/notifications", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (response.ok) {
+        // Reset form
+        setTitle("");
+        setMessageBody("");
+        setSelectedTargetAudience("All Users");
+        setSelectedDeliveryType("Push Notification");
+        setSelectedPriority("Normal");
+        
+        // Close modal and notify parent
+        onOpenChange(false);
+        if (onSuccess) {
+          onSuccess();
+        }
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to create notification");
+      }
+    } catch (error) {
+      console.error("Error creating notification:", error);
+      alert("Failed to create notification. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -264,11 +359,12 @@ export default function CreateNotificationModal({
           {/* Send Notification Button */}
           <div className="pt-4 border-t border-[#1f261e]">
             <button
-              onClick={() => onOpenChange(false)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#b1f128] text-[#010501] rounded-lg hover:bg-[#9dd81f] transition-colors font-medium"
+              onClick={handleSubmit}
+              disabled={isSubmitting || !title.trim() || !messageBody.trim()}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#b1f128] text-[#010501] rounded-lg hover:bg-[#9dd81f] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <IoPaperPlaneOutline className="w-5 h-5" />
-              <span>Send Notification</span>
+              <span>{isSubmitting ? "Sending..." : "Send Notification"}</span>
             </button>
           </div>
         </div>

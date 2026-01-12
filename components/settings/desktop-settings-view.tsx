@@ -38,6 +38,8 @@ export default function DesktopSettingsView({
     currentView === "faqs" ||
     currentView === "tutorials" ||
     currentView === "report-bug" ||
+    currentView === "view-bug-reports" ||
+    currentView === "create-bug-report" ||
     currentView === "contact-support" ||
     currentView === "add-new-wallet" ||
     currentView === "import-wallet";

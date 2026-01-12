@@ -7,7 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { IoChevronDownOutline, IoCalendarOutline } from "react-icons/io5";
+import { IoChevronDownOutline, IoCloseOutline } from "react-icons/io5";
+import { useChains } from "@/hooks/useChains";
 
 interface EditPoolModalProps {
   open: boolean;
@@ -15,59 +16,66 @@ interface EditPoolModalProps {
   poolData: any;
 }
 
-const poolTypes = ["Fixed Term", "Flexible", "Locked", "Dynamic"];
-
 export default function EditPoolModal({
   open,
   onOpenChange,
   poolData,
 }: EditPoolModalProps) {
-  const [poolName, setPoolName] = useState("");
-  const [poolDescription, setPoolDescription] = useState("");
-  const [poolType, setPoolType] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const { chains, isLoading: chainsLoading } = useChains();
+  
+  // Step 1 fields
+  const [selectedChain, setSelectedChain] = useState<{ id: number; name: string } | null>(null);
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [minStakingPeriod, setMinStakingPeriod] = useState("");
   const [minStakeAmount, setMinStakeAmount] = useState("");
   const [maxStakeAmount, setMaxStakeAmount] = useState("");
-  const [rewardRate, setRewardRate] = useState("");
-  const [rewardToken, setRewardToken] = useState("");
-  const [rewardDistribution, setRewardDistribution] = useState("");
-  const [earlyUnstakePenalty, setEarlyUnstakePenalty] = useState("");
-  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
-  const [showDistributionDropdown, setShowDistributionDropdown] = useState(false);
+  const [showChainDropdown, setShowChainDropdown] = useState(false);
+  
+  // Step 2 fields
+  const [stakeModificationFee, setStakeModificationFee] = useState(false);
+  const [timeBoost, setTimeBoost] = useState(false);
+  const [country, setCountry] = useState("");
+  const [stakePoolCreationFee, setStakePoolCreationFee] = useState("0.15");
+  const [rewardPoolCreationFee, setRewardPoolCreationFee] = useState("");
 
-  const typeRef = useRef<HTMLDivElement>(null);
-  const distributionRef = useRef<HTMLDivElement>(null);
+  const chainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open && poolData) {
-      setPoolName(poolData.poolName || "");
-      setPoolDescription(poolData.poolDescription || "");
-      setPoolType(poolData.poolType || "");
-      setStartDate(poolData.startDate || "");
-      setEndDate(poolData.endDate || "");
+      // Set chain
+      if (poolData.chain && chains.length > 0) {
+        const chain = chains.find(c => c.name === poolData.chain || c.id === poolData.chainId);
+        if (chain) {
+          setSelectedChain({ id: chain.id, name: chain.name });
+        }
+      }
+      
+      setTokenAddress(poolData.tokenAddress || "");
+      setMinStakingPeriod(poolData.minStakingPeriod || "");
       setMinStakeAmount(poolData.minStakeAmount || "");
       setMaxStakeAmount(poolData.maxStakeAmount || "");
-      setRewardRate(poolData.rewardRate || "");
-      setRewardToken(poolData.rewardToken || "");
-      setRewardDistribution(poolData.rewardDistribution || "");
-      setEarlyUnstakePenalty(poolData.earlyUnstakePenalty || "");
+      setStakeModificationFee(poolData.stakeModificationFee || false);
+      setTimeBoost(poolData.timeBoost || false);
+      setCountry(poolData.country || "");
+      setStakePoolCreationFee(poolData.stakePoolCreationFee || "0.15");
+      setRewardPoolCreationFee(poolData.rewardPoolCreationFee || "");
     }
-  }, [open, poolData]);
+  }, [open, poolData, chains]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (typeRef.current && !typeRef.current.contains(event.target as Node)) {
-        setShowTypeDropdown(false);
-      }
-      if (distributionRef.current && !distributionRef.current.contains(event.target as Node)) {
-        setShowDistributionDropdown(false);
+      if (chainRef.current && !chainRef.current.contains(event.target as Node)) {
+        setShowChainDropdown(false);
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleTimeBoostToggle = () => {
+    setTimeBoost(!timeBoost);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -81,200 +89,171 @@ export default function EditPoolModal({
           </DialogTitle>
           <button
             onClick={() => onOpenChange(false)}
-            className="text-[#b5b5b5] hover:text-white transition-colors"
+            className="flex items-center gap-2 text-[#b1f128] hover:text-[#9dd81f] transition-colors font-medium"
           >
-            Cancel
+            <IoCloseOutline className="w-5 h-5" />
+            <span>Cancel</span>
           </button>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Pool Name */}
-          <div>
+          {/* Chain Selection */}
+          <div className="relative" ref={chainRef}>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Pool Name
-            </label>
-            <input
-              type="text"
-              value={poolName}
-              onChange={(e) => setPoolName(e.target.value)}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-            />
-          </div>
-
-          {/* Pool Description */}
-          <div>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Pool Description
-            </label>
-            <textarea
-              value={poolDescription}
-              onChange={(e) => setPoolDescription(e.target.value)}
-              rows={3}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] resize-none"
-            />
-          </div>
-
-          {/* Pool Type */}
-          <div className="relative" ref={typeRef}>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Pool Type
+              Chain Selection
             </label>
             <button
               onClick={() => {
-                setShowTypeDropdown(!showTypeDropdown);
-                setShowDistributionDropdown(false);
+                setShowChainDropdown(!showChainDropdown);
               }}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors"
+              disabled={chainsLoading}
+              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{poolType}</span>
+              <div className="flex items-center gap-2">
+                {selectedChain ? (
+                  <>
+                    <span>{selectedChain.name}</span>
+                  </>
+                ) : (
+                  <span className="text-[#7c7c7c]">Select chain</span>
+                )}
+              </div>
               <IoChevronDownOutline className="w-5 h-5 text-[#b5b5b5]" />
             </button>
-            {showTypeDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
-                {poolTypes.map((type) => (
+            {showChainDropdown && (
+              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {chains.map((chain) => (
                   <button
-                    key={type}
+                    key={chain.id}
                     onClick={() => {
-                      setPoolType(type);
-                      setShowTypeDropdown(false);
+                      setSelectedChain({ id: chain.id, name: chain.name });
+                      setShowChainDropdown(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-white hover:bg-[#121712] transition-colors"
+                    className="w-full text-left px-4 py-2 text-white hover:bg-[#121712] transition-colors flex items-center gap-2"
                   >
-                    {type}
+                    <span>{chain.name}</span>
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Start Date and End Date */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-                Start Date
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 pr-10 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-                />
-                <IoCalendarOutline className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#7c7c7c]" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-                End Date
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 pr-10 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-                />
-                <IoCalendarOutline className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#7c7c7c]" />
-              </div>
-            </div>
-          </div>
-
-          {/* Minimum and Maximum Stake Amount */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-                Minimum Stake Amount
-              </label>
-              <input
-                type="text"
-                value={minStakeAmount}
-                onChange={(e) => setMinStakeAmount(e.target.value)}
-                className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-              />
-            </div>
-            <div>
-              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-                Maximum Stake Amount
-              </label>
-              <input
-                type="text"
-                value={maxStakeAmount}
-                onChange={(e) => setMaxStakeAmount(e.target.value)}
-                className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-              />
-            </div>
-          </div>
-
-          {/* Reward Rate */}
+          {/* Select Token */}
           <div>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Reward Rate (%)
+              Select Token
             </label>
             <input
               type="text"
-              value={rewardRate}
-              onChange={(e) => setRewardRate(e.target.value)}
+              value={tokenAddress}
+              onChange={(e) => setTokenAddress(e.target.value)}
               className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
+              placeholder="Token Address"
             />
           </div>
 
-          {/* Reward Token */}
+          {/* Minimum staking period */}
           <div>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Reward Token
+              Minimum staking period
             </label>
             <input
               type="text"
-              value={rewardToken}
-              onChange={(e) => setRewardToken(e.target.value)}
+              value={minStakingPeriod}
+              onChange={(e) => setMinStakingPeriod(e.target.value)}
               className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
+              placeholder="In"
             />
           </div>
 
-          {/* Reward Distribution Frequency */}
-          <div className="relative" ref={distributionRef}>
+          {/* Min Stake Amount */}
+          <div>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Reward Distribution Frequency
+              Min Stake Amount
+            </label>
+            <input
+              type="text"
+              value={minStakeAmount}
+              onChange={(e) => setMinStakeAmount(e.target.value)}
+              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
+              placeholder="0.00"
+            />
+          </div>
+
+          {/* Max Stake Amount */}
+          <div>
+            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+              Max Stake Amount
+            </label>
+            <input
+              type="text"
+              value={maxStakeAmount}
+              onChange={(e) => setMaxStakeAmount(e.target.value)}
+              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
+              placeholder="0.00"
+            />
+          </div>
+
+          {/* Stake modification fee */}
+          <div className="flex items-center justify-between">
+            <label className="block text-[#b5b5b5] text-sm font-medium">
+              Stake modification fee
             </label>
             <button
-              onClick={() => {
-                setShowDistributionDropdown(!showDistributionDropdown);
-                setShowTypeDropdown(false);
-              }}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors"
+              onClick={() => setStakeModificationFee(!stakeModificationFee)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                stakeModificationFee ? "bg-[#b1f128]" : "bg-[#1f261e]"
+              }`}
             >
-              <span>{rewardDistribution}</span>
-              <IoChevronDownOutline className="w-5 h-5 text-[#b5b5b5]" />
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  stakeModificationFee ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
             </button>
-            {showDistributionDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
-                {["Daily", "Weekly", "Monthly", "At Maturity"].map((freq) => (
-                  <button
-                    key={freq}
-                    onClick={() => {
-                      setRewardDistribution(freq);
-                      setShowDistributionDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-white hover:bg-[#121712] transition-colors"
-                  >
-                    {freq}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* Early Unstake Penalty */}
+          {/* Time boost */}
           <div>
             <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Early Unstake Penalty (%)
+              Time boost
+            </label>
+            <button
+              onClick={handleTimeBoostToggle}
+              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-[#b1f128] hover:border-[#b1f128] transition-colors font-medium flex items-center justify-center gap-2"
+            >
+              {timeBoost ? "Reset Option" : "+ Add Option"}
+            </button>
+          </div>
+
+          {/* Select your country */}
+          <div>
+            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+              Select your country
             </label>
             <input
               type="text"
-              value={earlyUnstakePenalty}
-              onChange={(e) => setEarlyUnstakePenalty(e.target.value)}
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
               className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
+              placeholder="Select country"
             />
+          </div>
+
+          {/* Fee Information */}
+          <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[#b5b5b5] text-sm">Stake Pool Creation Fee</span>
+              <span className="text-white text-sm font-medium">
+                {stakePoolCreationFee} {selectedChain?.name === "Ethereum" ? "ETH" : selectedChain?.name || "ETH"}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[#b5b5b5] text-sm">Reward Pool Creation Fee</span>
+              <span className="text-white text-sm font-medium">
+                {rewardPoolCreationFee || "%"}
+              </span>
+            </div>
           </div>
 
           {/* Action Buttons */}
@@ -297,8 +276,3 @@ export default function EditPoolModal({
     </Dialog>
   );
 }
-
-
-
-
-
