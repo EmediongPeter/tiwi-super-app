@@ -14,6 +14,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getChartDataService } from '@/lib/backend/services/chart-data-service';
+import { getCache, CACHE_TTL } from '@/lib/backend/utils/cache';
+import { fillChartData } from '@/lib/backend/utils/chart-data-filler';
+import { updateLastCandleWithCurrentPrice } from '@/lib/backend/utils/chart-price-updater';
 import type { ResolutionString } from '@/lib/backend/types/chart';
 
 // ============================================================================
@@ -63,36 +66,127 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Parse symbol to get base, quote, chainId
+    // Parse symbol to support both same-chain and cross-chain pairs
+    // Format options:
+    // 1. Same-chain: baseAddress-quoteAddress-chainId (backward compatible)
+    // 2. Cross-chain: baseAddress-baseChainId-quoteAddress-quoteChainId
     const parts = symbol.split('-');
-    if (parts.length !== 3) {
+    
+    let baseToken: string;
+    let quoteToken: string;
+    let baseChainId: number | undefined;
+    let quoteChainId: number | undefined;
+    let chainId: number | undefined; // For backward compatibility
+
+    if (parts.length === 3) {
+      // Same-chain format (backward compatible)
+      const [baseTokenPart, quoteTokenPart, chainIdStr] = parts;
+      baseToken = baseTokenPart;
+      quoteToken = quoteTokenPart;
+      chainId = parseInt(chainIdStr, 10);
+      if (isNaN(chainId)) {
+        return NextResponse.json(
+          { s: 'error', errmsg: 'Invalid chain ID in symbol' },
+          { status: 400 }
+        );
+      }
+      baseChainId = chainId;
+      quoteChainId = chainId;
+    } else if (parts.length === 4) {
+      // Cross-chain format: baseAddress-baseChainId-quoteAddress-quoteChainId
+      const [baseTokenPart, baseChainIdStr, quoteTokenPart, quoteChainIdStr] = parts;
+      baseToken = baseTokenPart;
+      quoteToken = quoteTokenPart;
+      baseChainId = parseInt(baseChainIdStr, 10);
+      quoteChainId = parseInt(quoteChainIdStr, 10);
+      
+      if (isNaN(baseChainId) || isNaN(quoteChainId)) {
+        return NextResponse.json(
+          { s: 'error', errmsg: 'Invalid chain IDs in symbol' },
+          { status: 400 }
+        );
+      }
+    } else {
       return NextResponse.json(
-        { s: 'error', errmsg: 'Invalid symbol format. Expected: baseAddress-quoteAddress-chainId' },
+        { s: 'error', errmsg: 'Invalid symbol format. Expected: baseAddress-quoteAddress-chainId (same-chain) or baseAddress-baseChainId-quoteAddress-quoteChainId (cross-chain)' },
         { status: 400 }
       );
     }
 
-    const [baseToken, quoteToken, chainIdStr] = parts;
-    const chainId = parseInt(chainIdStr, 10);
-
-    if (isNaN(chainId)) {
-      return NextResponse.json(
-        { s: 'error', errmsg: 'Invalid chain ID in symbol' },
-        { status: 400 }
-      );
+    // Create cache key based on request parameters
+    const cacheKey = `chart:${symbol}:${resolution}:${from}:${to}`;
+    const cache = getCache();
+    
+    // Check cache first (cache for 5 minutes to prevent repeated calls)
+    const cachedData = cache.get<{ bars: any[] }>(cacheKey);
+    if (cachedData) {
+      console.log(`[API] /api/v1/charts/history - Returning cached data for ${symbol}`);
+      const bars = cachedData.bars;
+      
+      // Transform to UDF format
+      const response = {
+        s: 'ok' as const,
+        t: bars.map(bar => Math.floor(bar.time / 1000)),
+        o: bars.map(bar => bar.open),
+        h: bars.map(bar => bar.high),
+        l: bars.map(bar => bar.low),
+        c: bars.map(bar => bar.close),
+        v: bars.map(bar => bar.volume || 0),
+      };
+      
+      return NextResponse.json(response);
     }
 
-    // Fetch historical bars
+    // Fetch historical bars (supports both same-chain and cross-chain)
     const chartService = getChartDataService();
-    const bars = await chartService.getHistoricalBars({
+    let bars = await chartService.getHistoricalBars({
       baseToken,
       quoteToken,
-      chainId,
+      chainId, // For backward compatibility
+      baseChainId, // For cross-chain support
+      quoteChainId, // For cross-chain support
       resolution,
       from,
       to,
       countback,
     });
+
+    // CRITICAL: Update the last candle with the current price FIRST
+    // This ensures we use the correct price before filling data
+    // The price calculation matches the header: basePriceUSD / quotePriceUSD
+    if (bars.length > 0) {
+      bars = await updateLastCandleWithCurrentPrice(
+        bars,
+        baseToken,
+        quoteToken,
+        baseChainId || chainId!,
+        quoteChainId || chainId!
+      );
+    }
+
+    // Fill sparse data to ensure we always have enough bars for chart display
+    // This ensures candlesticks are always visible even with limited data
+    // NOTE: fillChartData will use the updated last candle price for synthetic bars
+    const fromMs = from * 1000;
+    const toMs = to * 1000;
+    const minBars = countback || 50; // Minimum bars to display
+    
+    bars = fillChartData(bars, fromMs, toMs, resolution, minBars);
+
+    // CRITICAL: Update the last candle AGAIN after filling (in case a new bar was added)
+    // This ensures the final last candle always has the correct current price
+    if (bars.length > 0) {
+      bars = await updateLastCandleWithCurrentPrice(
+        bars,
+        baseToken,
+        quoteToken,
+        baseChainId || chainId!,
+        quoteChainId || chainId!
+      );
+    }
+
+    // Cache the result for 5 minutes (prevents repeated API calls)
+    cache.set(cacheKey, { bars }, CACHE_TTL.CHART_DATA);
 
     // Transform to UDF format
     if (bars.length === 0) {

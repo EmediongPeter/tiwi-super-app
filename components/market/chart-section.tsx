@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Script from "next/script";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
+import { TradingViewChart } from "@/components/charts/tradingview-chart";
+import { ResolutionString } from "@/charting_library/charting_library/charting_library";
+import { fetchTokens } from "@/lib/frontend/api/tokens";
+import type { Token } from "@/lib/frontend/types/tokens";
 import OverviewSection from "./overview-section";
 
 interface ChartSectionProps {
-  pair: string; // e.g., "BTC/USDT"
+  pair: string; // e.g., "BTC/USDT" or "WBNB/USDT"
 }
 
 type ChartTab = "Chart" | "Overview";
@@ -14,98 +17,89 @@ type TimePeriod = "15m" | "1h" | "4h" | "6h" | "1D" | "3D" | "More";
 
 /**
  * Chart Section Component
- * Displays trading chart with TradingView widget integration
+ * Displays trading chart with TradingView Advanced Charts (using our custom datafeed)
  */
 export default function ChartSection({ pair }: ChartSectionProps) {
   const [activeTab, setActiveTab] = useState<ChartTab>("Chart");
   const [activeTimePeriod, setActiveTimePeriod] = useState<TimePeriod>("1D");
-  const [tradingViewLoaded, setTradingViewLoaded] = useState(false);
-  const [chartRendered, setChartRendered] = useState(false);
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const widgetRef = useRef<any>(null);
+  const [baseToken, setBaseToken] = useState<Token | null>(null);
+  const [quoteToken, setQuoteToken] = useState<Token | null>(null);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(true);
+  const [chartError, setChartError] = useState<Error | null>(null);
 
-  // TradingView widget configuration - only create once, update interval when needed
-  useEffect(() => {
-    if (tradingViewLoaded && chartContainerRef.current && activeTab === "Chart" && (window as any).TradingView) {
-      // If widget already exists, just update the interval
-      if (widgetRef.current && chartRendered) {
-        try {
-          widgetRef.current.setInterval(
-            activeTimePeriod === "1D" ? "D" : activeTimePeriod === "15m" ? "15" : activeTimePeriod === "1h" ? "60" : activeTimePeriod === "4h" ? "240" : activeTimePeriod === "6h" ? "360" : "D"
-          );
-        } catch (error) {
-          console.error("Error updating TradingView interval:", error);
-        }
-        return;
-      }
-
-      // Clear previous widget only if not rendered yet
-      if (!chartRendered && chartContainerRef.current) {
-        chartContainerRef.current.innerHTML = "";
-      }
-
-      // Create TradingView widget only once
-      if (!widgetRef.current) {
-        try {
-          const widget = new (window as any).TradingView.widget({
-            autosize: true,
-            symbol: pair.replace("/", ""), // Convert "BTC/USDT" to "BTCUSDT"
-            interval: activeTimePeriod === "1D" ? "D" : activeTimePeriod === "15m" ? "15" : activeTimePeriod === "1h" ? "60" : activeTimePeriod === "4h" ? "240" : activeTimePeriod === "6h" ? "360" : "D",
-            timezone: "Etc/UTC",
-            theme: "dark",
-            style: "1",
-            locale: "en",
-            toolbar_bg: "#010501",
-            enable_publishing: false,
-            hide_top_toolbar: false,
-            hide_legend: false,
-            save_image: false,
-            container_id: "tradingview-chart",
-            backgroundColor: "#010501",
-            gridColor: "#1f261e",
-            onready: () => {
-              setChartRendered(true);
-            },
-          });
-          widgetRef.current = widget;
-
-          // Fallback timeout: Hide loader after 600ms even if onready doesn't fire
-          const timeoutId = setTimeout(() => {
-            setChartRendered(true);
-          }, 6000);
-
-          // Also check if chart has rendered by checking container content
-          const checkInterval = setInterval(() => {
-            if (chartContainerRef.current && chartContainerRef.current.children.length > 0) {
-              setChartRendered(true);
-              clearInterval(checkInterval);
-              clearTimeout(timeoutId);
-            }
-          }, 100);
-
-          // Clean up interval after 2 seconds max
-          setTimeout(() => {
-            clearInterval(checkInterval);
-          }, 2000);
-
-          return () => {
-            clearTimeout(timeoutId);
-            clearInterval(checkInterval);
-          };
-        } catch (error) {
-          console.error("Error loading TradingView widget:", error);
-          // If widget creation fails, still hide loader after timeout
-          setTimeout(() => {
-            setChartRendered(true);
-          }, 600);
-        }
-      }
-
-      return () => {
-        // Don't cleanup on tab switch - keep widget alive
+  // Parse pair to get base and quote symbols
+  const { baseSymbol, quoteSymbol } = useMemo(() => {
+    const normalized = pair.replace("/", "-").replace("_", "-").toUpperCase();
+    const parts = normalized.split("-");
+    if (parts.length >= 2) {
+      return {
+        baseSymbol: parts[0], // e.g., "WBNB", "BTC"
+        quoteSymbol: parts[1], // e.g., "USDT", "BNB"
       };
     }
-  }, [tradingViewLoaded, pair, activeTab, activeTimePeriod, chartRendered]);
+    return { baseSymbol: "", quoteSymbol: "" };
+  }, [pair]);
+
+  // Fetch token data by symbols
+  useEffect(() => {
+    if (!baseSymbol || !quoteSymbol) {
+      setIsLoadingTokens(false);
+      return;
+    }
+
+    setIsLoadingTokens(true);
+    
+    // Fetch both tokens in parallel
+    Promise.all([
+      fetchTokens({ query: baseSymbol, limit: 5 }),
+      fetchTokens({ query: quoteSymbol, limit: 5 }),
+    ])
+      .then(([baseResults, quoteResults]) => {
+        // Find exact symbol match (case-insensitive)
+        const base = baseResults.find(
+          (t) => t.symbol.toUpperCase() === baseSymbol.toUpperCase()
+        );
+        const quote = quoteResults.find(
+          (t) => t.symbol.toUpperCase() === quoteSymbol.toUpperCase()
+        );
+
+        if (base && quote) {
+          setBaseToken(base);
+          setQuoteToken(quote);
+          setChartError(null);
+        } else {
+          console.warn(`[ChartSection] Could not find tokens: ${baseSymbol}/${quoteSymbol}`);
+          setChartError(new Error(`Tokens not found: ${baseSymbol}/${quoteSymbol}`));
+        }
+      })
+      .catch((error) => {
+        console.error("[ChartSection] Error fetching tokens:", error);
+        setChartError(error instanceof Error ? error : new Error("Failed to load tokens"));
+      })
+      .finally(() => {
+        setIsLoadingTokens(false);
+      });
+  }, [baseSymbol, quoteSymbol]);
+
+  // Map time period to resolution
+  const resolution = useMemo<ResolutionString>(() => {
+    switch (activeTimePeriod) {
+      case "15m":
+        return "15";
+      case "1h":
+        return "60";
+      case "4h":
+        return "240";
+      case "6h":
+        return "360";
+      case "1D":
+        return "1D";
+      case "3D":
+        return "3D";
+      default:
+        return "1D";
+    }
+  }, [activeTimePeriod]);
 
   const timePeriods: TimePeriod[] = ["15m", "1h", "4h", "6h", "1D", "3D", "More"];
 
@@ -178,26 +172,44 @@ export default function ChartSection({ pair }: ChartSectionProps) {
       <div className="flex-1 min-h-0 relative border-b border-[#1f261e] mt-2 lg:mt-1.5 xl:mt-1.5 2xl:mt-2">
         {activeTab === "Chart" ? (
           <>
-            {/* TradingView Script */}
-            <Script
-              src="https://s3.tradingview.com/tv.js"
-              strategy="lazyOnload"
-              onLoad={() => setTradingViewLoaded(true)}
-            />
-            
-            {/* Chart Container */}
-            <div
-              id="tradingview-chart"
-              ref={chartContainerRef}
-              className="w-full h-full bg-[#0b0f0a]"
-            />
-            
-            {/* Loading Skeleton - Shows until chart is rendered (non-blocking) */}
-            {!chartRendered && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#0b0f0a] z-10 pointer-events-none">
+            {isLoadingTokens ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#0b0f0a] z-10">
                 <div className="flex flex-col gap-4 items-center">
                   <div className="w-12 h-12 border-4 border-[#1f261e] border-t-[#b1f128] rounded-full animate-spin"></div>
-                  <div className="text-[#7c7c7c] text-sm font-medium">Loading chart...</div>
+                  <div className="text-[#7c7c7c] text-sm font-medium">Loading tokens...</div>
+                </div>
+              </div>
+            ) : chartError ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#0b0f0a] z-10">
+                <div className="text-center px-4">
+                  <p className="text-[#b5b5b5] text-sm mb-2">Chart unavailable</p>
+                  <p className="text-[#7c7c7c] text-xs">{chartError.message}</p>
+                </div>
+              </div>
+            ) : baseToken && quoteToken ? (
+              <TradingViewChart
+                baseToken={baseToken.address}
+                quoteToken={quoteToken.address}
+                chainId={baseToken.chainId === quoteToken.chainId ? baseToken.chainId : undefined}
+                baseChainId={baseToken.chainId}
+                quoteChainId={quoteToken.chainId}
+                height="100%"
+                theme="dark"
+                interval={resolution}
+                onError={(error) => {
+                  console.error("[ChartSection] Chart error:", error);
+                  setChartError(error);
+                }}
+                onReady={() => {
+                  setChartError(null);
+                }}
+                className="w-full h-full"
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#0b0f0a] z-10">
+                <div className="text-center px-4">
+                  <p className="text-[#b5b5b5] text-sm">Unable to load chart data</p>
+                  <p className="text-[#7c7c7c] text-xs">Please check the pair format: {pair}</p>
                 </div>
               </div>
             )}

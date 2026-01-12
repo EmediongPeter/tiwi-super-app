@@ -40,17 +40,82 @@ export default function TradingPage() {
   const [tokenStats, setTokenStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch token data and stats
+  // Fetch real token data and price stats from API
   useEffect(() => {
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      const token = getTokenByPair(pair);
-      const stats = getTokenStats(pair);
-      setTokenData(token);
-      setTokenStats(stats);
-      setIsLoading(false);
-    }, 500);
+    
+    // Fetch price data from API (ensures price matches chart)
+    const fetchMarketData = async () => {
+      try {
+        // Parse pair to get symbols
+        const normalized = pair.replace("/", "-").replace("_", "-").toUpperCase();
+        const parts = normalized.split("-");
+        
+        if (parts.length < 2) {
+          console.error('[MarketPage] Invalid pair format:', pair);
+          // Fallback to mock data
+          const token = getTokenByPair(pair);
+          const stats = getTokenStats(pair);
+          setTokenData(token);
+          setTokenStats(stats);
+          setIsLoading(false);
+          return;
+        }
+        
+        const [baseSymbol, quoteSymbol] = parts;
+        
+        // Fetch real price data from API
+        const response = await fetch(`/api/v1/market/${pair}/price`);
+        
+        if (response.ok) {
+          const priceData = await response.json();
+          
+          // Format token data
+          const token = {
+            symbol: priceData.baseToken.symbol,
+            pair: priceData.pair,
+            icon: "", // Will be fetched from token service if needed
+          };
+          
+          // Format stats with real price data
+          // Use pairPriceUSD for display (matches chart's pair price)
+          const pairPrice = priceData.priceUSD || priceData.price;
+          const stats = {
+            price: `$${pairPrice.toFixed(2)}`, // Pair price in USD (matches chart)
+            change: `${priceData.priceChange24h >= 0 ? '+' : ''}${priceData.priceChange24h.toFixed(2)}%`,
+            changePositive: priceData.priceChange24h >= 0,
+            vol24h: priceData.volume24h >= 1e9 
+              ? `$${(priceData.volume24h / 1e9).toFixed(2)}B`
+              : priceData.volume24h >= 1e6
+              ? `$${(priceData.volume24h / 1e6).toFixed(2)}M`
+              : `$${priceData.volume24h.toFixed(2)}`,
+            high24h: `$${priceData.high24h.toFixed(2)}`,
+            low24h: `$${priceData.low24h.toFixed(2)}`,
+          };
+          
+          setTokenData(token);
+          setTokenStats(stats);
+        } else {
+          // Fallback to mock data if API fails
+          console.warn('[MarketPage] Failed to fetch price data, using mock data');
+          const token = getTokenByPair(pair);
+          const stats = getTokenStats(pair);
+          setTokenData(token);
+          setTokenStats(stats);
+        }
+      } catch (error) {
+        console.error('[MarketPage] Error fetching market data:', error);
+        // Fallback to mock data on error
+        const token = getTokenByPair(pair);
+        const stats = getTokenStats(pair);
+        setTokenData(token);
+        setTokenStats(stats);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchMarketData();
   }, [pair]);
 
   useEffect(() => {

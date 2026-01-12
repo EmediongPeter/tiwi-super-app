@@ -23,6 +23,7 @@ import { widget } from '@/charting_library';
 import type { IChartingLibraryWidget } from '@/charting_library/charting_library';
 import { TradingViewDatafeed } from '@/lib/frontend/charts/tradingview-datafeed';
 import { ResolutionString } from '@/charting_library/charting_library/charting_library';
+import { formatPriceForChart } from '@/lib/shared/utils/price-formatting-subscript';
 
 // ============================================================================
 // Component Props
@@ -31,7 +32,9 @@ import { ResolutionString } from '@/charting_library/charting_library/charting_l
 export interface TradingViewChartProps {
   baseToken: string; // Token address
   quoteToken: string; // Token address (or native token like 0x000...)
-  chainId: number;
+  chainId?: number; // For backward compatibility (same-chain pairs)
+  baseChainId?: number; // Base token chain ID (for cross-chain support)
+  quoteChainId?: number; // Quote token chain ID (for cross-chain support)
   height?: string | number;
   theme?: 'light' | 'dark';
   interval?: ResolutionString;
@@ -47,7 +50,9 @@ export interface TradingViewChartProps {
 export function TradingViewChart({
   baseToken,
   quoteToken,
-  chainId,
+  chainId, // For backward compatibility
+  baseChainId, // For cross-chain support
+  quoteChainId, // For cross-chain support
   height = '600px',
   theme = 'dark',
   interval = '15' as ResolutionString,
@@ -61,8 +66,17 @@ export function TradingViewChart({
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Create symbol identifier: baseAddress-quoteAddress-chainId
-    const symbol = `${baseToken}-${quoteToken}-${chainId}`;
+    // Determine if this is a cross-chain pair
+    const resolvedBaseChainId = baseChainId || chainId;
+    const resolvedQuoteChainId = quoteChainId || chainId;
+    const isCrossChain = resolvedBaseChainId !== resolvedQuoteChainId;
+
+    // Create symbol identifier
+    // Same-chain: baseAddress-quoteAddress-chainId (backward compatible)
+    // Cross-chain: baseAddress-baseChainId-quoteAddress-quoteChainId
+    const symbol = isCrossChain
+      ? `${baseToken}-${resolvedBaseChainId}-${quoteToken}-${resolvedQuoteChainId}`
+      : `${baseToken}-${quoteToken}-${resolvedBaseChainId}`;
 
     // Initialize datafeed
     const datafeed = new TradingViewDatafeed();
@@ -112,6 +126,48 @@ export function TradingViewChart({
             return date.toLocaleString();
           },
         },
+        // Price formatter factory - creates a formatter for the price axis and OHLC values
+        priceFormatterFactory: (symbolInfo: any, minTick: string) => {
+          return {
+            format: (price: number) => {
+              // Format price with subscript notation for very small values
+              // This formats:
+              // 1. Price axis labels on the right side
+              // 2. OHLC values (O, H, L, C) displayed when hovering/selecting candles
+              return formatPriceForChart(price);
+            },
+            parse: (value: string) => {
+              // Parse formatted price back to number
+              // Remove subscript notation and convert back
+              try {
+                return parseFloat(value.replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (char) => {
+                  const subscriptMap: Record<string, string> = {
+                    '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
+                    '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9'
+                  };
+                  return subscriptMap[char] || char;
+                }));
+              } catch {
+                return parseFloat(value) || 0;
+              }
+            },
+          };
+        },
+        volumeFormatter: {
+          format: (volume: number) => {
+            // Format volume with subscript notation if needed
+            if (volume < 0.000001) {
+              return formatPriceForChart(volume);
+            }
+            // For larger volumes, use standard formatting
+            if (volume >= 1000000) {
+              return `${(volume / 1000000).toFixed(2)}M`;
+            } else if (volume >= 1000) {
+              return `${(volume / 1000).toFixed(2)}K`;
+            }
+            return volume.toFixed(2);
+          },
+        },
       },
     };
 
@@ -156,7 +212,7 @@ export function TradingViewChart({
         onError(error);
       }
     }
-  }, [baseToken, quoteToken, chainId, interval, theme]); // Note: onError and onReady are callbacks, not dependencies
+  }, [baseToken, quoteToken, chainId, baseChainId, quoteChainId, interval, theme]); // Note: onError and onReady are callbacks, not dependencies
 
   return (
     <div

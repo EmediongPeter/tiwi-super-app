@@ -41,6 +41,7 @@ function digitsToSubscript(digits: string): string {
  * formatPriceWithSubscript(0.00000000005044) // "0.0₉₅₀₄₄"
  * formatPriceWithSubscript(0.0000000000005608) // "0.0₁₂₅₆₀₈"
  * formatPriceWithSubscript(0.095044, { prefix: '$' }) // "$0.095044"
+ * formatPriceWithSubscript(0.1149838573e-6) // "0.0₆₁₁₄₉" (6 leading zeros, then 1149...)
  */
 export function formatPriceWithSubscript(
   price: number | string,
@@ -56,7 +57,14 @@ export function formatPriceWithSubscript(
     maxDisplayDecimals = 4,
   } = options;
 
-  const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+  let numPrice: number;
+  
+  // Handle scientific notation (e.g., "0.1149838573e-6")
+  if (typeof price === 'string' && (price.includes('e') || price.includes('E'))) {
+    numPrice = parseFloat(price);
+  } else {
+    numPrice = typeof price === 'string' ? parseFloat(price) : price;
+  }
   
   if (isNaN(numPrice) || numPrice <= 0) {
     return `${prefix}0.00`;
@@ -80,6 +88,7 @@ export function formatPriceWithSubscript(
   }
 
   // For very small prices, use subscript notation
+  // Convert to fixed decimal string with high precision to handle scientific notation
   const priceStr = numPrice.toFixed(20); // Use high precision
   const [integerPart, decimalPart] = priceStr.split('.');
   
@@ -115,9 +124,22 @@ export function formatPriceWithSubscript(
 
   // Format: 0.0 + subscript(leadingZeros) + displayDigits
   // Example: 0.00000000005044 → 0.0₉₅₀₄₄ (9 zeros before 5044)
+  // Example: 0.1149838573e-6 = 0.0000001149838573 → 0.0₆₁₁₄₉ (6 zeros before 1149...)
   const subscript = digitsToSubscript(leadingZeros.toString());
   
   return `${prefix}0.${subscript}${displayDigits}`;
+}
+
+/**
+ * Format price for TradingView chart (no prefix, for price axis and OHLC)
+ * This is the formatter used directly in TradingView charts
+ */
+export function formatPriceForChart(price: number | string): string {
+  return formatPriceWithSubscript(price, {
+    prefix: '',
+    minDecimalsForSubscript: 6,
+    maxDisplayDecimals: 6, // Show more digits for chart precision
+  });
 }
 
 /**

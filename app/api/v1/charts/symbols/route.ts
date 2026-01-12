@@ -5,13 +5,17 @@
  * Implements UDF (Unified Data Feed) protocol.
  * 
  * Query params:
- * - symbol: Symbol identifier (format: baseAddress-quoteAddress-chainId)
+ * - symbol: Symbol identifier
+ *   - Same-chain: baseAddress-quoteAddress-chainId
+ *   - Cross-chain: baseAddress-baseChainId-quoteAddress-quoteChainId
+ * - resolution?: Optional resolution/interval (e.g., "15", "1D", "1h")
  * - currencyCode?: Optional currency code
  * - unitId?: Optional unit ID
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getChartDataService } from '@/lib/backend/services/chart-data-service';
+import type { ResolutionString } from '@/lib/backend/types/chart';
 
 // ============================================================================
 // GET Handler
@@ -21,6 +25,7 @@ export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
     const symbol = searchParams.get('symbol');
+    const resolution = searchParams.get('resolution') as ResolutionString | null;
 
     if (!symbol) {
       return NextResponse.json(
@@ -30,7 +35,7 @@ export async function GET(req: NextRequest) {
     }
 
     const chartService = getChartDataService();
-    const symbolInfo = await chartService.resolveSymbol(symbol);
+    const symbolInfo = await chartService.resolveSymbol(symbol, resolution);
 
     // Return in UDF format
     return NextResponse.json(symbolInfo);

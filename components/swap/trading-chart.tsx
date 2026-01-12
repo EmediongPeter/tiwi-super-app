@@ -23,6 +23,7 @@ export default function TradingChart({
   const [chartError, setChartError] = useState<Error | null>(null);
 
   // Determine if we have valid tokens for chart
+  // MULTICHAIN SUPPORT: No longer requires same chain
   const hasValidTokens = useMemo(() => {
     return !!(
       fromToken &&
@@ -30,8 +31,8 @@ export default function TradingChart({
       fromToken.address &&
       toToken.address &&
       fromToken.chainId &&
-      toToken.chainId &&
-      fromToken.chainId === toToken.chainId // Same chain required
+      toToken.chainId
+      // Removed: fromToken.chainId === toToken.chainId - now supports cross-chain!
     );
   }, [fromToken, toToken]);
 
@@ -143,7 +144,9 @@ export default function TradingChart({
           <TradingViewChart
             baseToken={fromToken!.address}
             quoteToken={toToken!.address}
-            chainId={fromToken!.chainId}
+            chainId={fromToken!.chainId === toToken!.chainId ? fromToken!.chainId : undefined}
+            baseChainId={fromToken!.chainId}
+            quoteChainId={toToken!.chainId}
             height="100%"
             theme="dark"
             interval="15" as ResolutionString

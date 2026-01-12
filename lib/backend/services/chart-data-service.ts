@@ -9,6 +9,8 @@
 import { BitqueryChartProvider } from '@/lib/backend/providers/bitquery-chart-provider';
 import { DexScreenerChartProvider } from '@/lib/backend/providers/dexscreener-chart-provider';
 import { convertPairToWrapped } from '@/lib/backend/utils/token-address-helper';
+import { getCrossChainPriceCalculator } from '@/lib/backend/utils/cross-chain-price-calculator';
+import { getTokenService } from '@/lib/backend/services/token-service';
 import type {
   ChartDataParams,
   OHLCBar,
@@ -34,38 +36,100 @@ export class ChartDataService {
 
   /**
    * Get historical OHLC bars with fallback strategy
-   * Strategy: Pair → Base Token → Quote Token → DexScreener
+   * Supports both same-chain and cross-chain pairs
+   * 
+   * Strategy:
+   * 1. If cross-chain (baseChainId !== quoteChainId):
+   *    - Fetch base token OHLC in USD from its chain
+   *    - Fetch quote token OHLC in USD from its chain
+   *    - Calculate pair price: basePriceUSD / quotePriceUSD
+   * 
+   * 2. If same-chain:
+   *    - DexScreener (PRIMARY - free) → Bitquery (FALLBACK)
    */
   async getHistoricalBars(params: ChartDataParams): Promise<OHLCBar[]> {
+    // Determine if this is a cross-chain pair
+    const baseChainId = params.baseChainId || params.chainId;
+    const quoteChainId = params.quoteChainId || params.chainId;
+    const isCrossChain = baseChainId !== quoteChainId;
+
+    if (isCrossChain) {
+      // CROSS-CHAIN: Calculate pair price from individual token prices
+      console.log(`[ChartDataService] Cross-chain pair detected: baseChainId=${baseChainId}, quoteChainId=${quoteChainId}`);
+      
+      if (!baseChainId || !quoteChainId) {
+        throw new Error('Cross-chain pair requires both baseChainId and quoteChainId');
+      }
+      
+      const calculator = getCrossChainPriceCalculator();
+      return await calculator.calculateCrossChainBars({
+        baseToken: params.baseToken,
+        baseChainId,
+        quoteToken: params.quoteToken,
+        quoteChainId,
+        resolution: params.resolution,
+        from: params.from,
+        to: params.to,
+      });
+    }
+
+    // SAME-CHAIN: Use existing strategy (DexScreener → Bitquery)
+    const chainId = params.chainId || baseChainId;
+    
+    if (!chainId) {
+      throw new Error('Chain ID is required for same-chain pairs');
+    }
+    
     // Convert native tokens to wrapped versions
     const { baseToken, quoteToken } = convertPairToWrapped(
       params.baseToken,
       params.quoteToken,
-      params.chainId
+      chainId
     );
 
-    // Strategy 1: Try to fetch pair OHLC data
+    // Strategy 1: Try DexScreener FIRST (FREE, no API points consumed)
+    try {
+      const dexResponse = await this.dexscreenerProvider.fetchPairOHLC({
+        baseToken,
+        quoteToken,
+        chainId: chainId,
+        resolution: params.resolution,
+        from: params.from,
+        to: params.to,
+      });
+
+      if (dexResponse.bars && dexResponse.bars.length > 0) {
+        console.log(`[ChartDataService] Successfully fetched DexScreener data: ${dexResponse.bars.length} bars (FREE)`);
+        return dexResponse.bars;
+      }
+    } catch (error: any) {
+      console.warn(`[ChartDataService] DexScreener fetch failed: ${error.message}`);
+    }
+
+    // Strategy 2: Fallback to Bitquery (for historical data or when DexScreener fails)
     try {
       const pairResponse = await this.bitqueryProvider.fetchPairOHLC({
         baseToken,
         quoteToken,
-        chainId: params.chainId,
+        chainId: chainId,
         resolution: params.resolution,
         from: params.from,
         to: params.to,
       });
 
       if (pairResponse.bars && pairResponse.bars.length > 0) {
+        console.log(`[ChartDataService] Successfully fetched Bitquery data: ${pairResponse.bars.length} bars (FALLBACK)`);
         return pairResponse.bars;
       }
     } catch (error: any) {
-      // Check if it's a points limit error - if so, don't try fallbacks (all keys exhausted)
+      // Check if it's a points limit error - if so, don't try more (all keys exhausted)
       const errorMessage = (error?.message || '').toLowerCase();
       if (errorMessage.includes('points limit') || errorMessage.includes('all api keys')) {
         console.error(`[ChartDataService] Points limit exceeded for all API keys: ${error.message}`);
-        throw error; // Re-throw to surface the error
+        // Don't throw - return empty array, data filler will generate synthetic data
+      } else {
+        console.warn(`[ChartDataService] Bitquery fetch failed: ${error.message}`);
       }
-      console.warn(`[ChartDataService] Pair OHLC fetch failed: ${error.message}`);
     }
 
     // Strategy 2: Try to fetch base token OHLC data
@@ -130,35 +194,95 @@ export class ChartDataService {
 
   /**
    * Resolve symbol information for TradingView
-   * Symbol format: {baseAddress}-{quoteAddress}-{chainId}
+   * Supports both same-chain and cross-chain pairs
+   * Symbol formats:
+   * - Same-chain: baseAddress-quoteAddress-chainId
+   * - Cross-chain: baseAddress-baseChainId-quoteAddress-quoteChainId
+   * 
+   * @param symbolName - Symbol identifier
+   * @param resolution - Optional resolution/interval (e.g., "15", "1D", "1h") for display formatting
    */
-  async resolveSymbol(symbolName: string): Promise<SymbolInfo> {
-    // Parse symbol format: baseAddress-quoteAddress-chainId
+  async resolveSymbol(symbolName: string, resolution?: ResolutionString | null): Promise<SymbolInfo> {
     const parts = symbolName.split('-');
-    if (parts.length !== 3) {
-      throw new Error(`[ChartDataService] Invalid symbol format: ${symbolName}. Expected: baseAddress-quoteAddress-chainId`);
-    }
+    
+    let baseAddress: string;
+    let quoteAddress: string;
+    let baseChainId: number;
+    let quoteChainId: number;
+    let isCrossChain = false;
 
-    const [baseAddress, quoteAddress, chainIdStr] = parts;
-    const chainId = parseInt(chainIdStr, 10);
-
-    if (isNaN(chainId)) {
-      throw new Error(`[ChartDataService] Invalid chain ID: ${chainIdStr}`);
+    if (parts.length === 3) {
+      // Same-chain format (backward compatible)
+      const baseAddressPart = parts[0];
+      const quoteAddressPart = parts[1];
+      const chainIdStr = parts[2];
+      baseAddress = baseAddressPart;
+      quoteAddress = quoteAddressPart;
+      const chainId = parseInt(chainIdStr, 10);
+      if (isNaN(chainId)) {
+        throw new Error(`[ChartDataService] Invalid chain ID: ${chainIdStr}`);
+      }
+      baseChainId = chainId;
+      quoteChainId = chainId;
+    } else if (parts.length === 4) {
+      // Cross-chain format
+      const baseAddressPart = parts[0];
+      const baseChainIdStr = parts[1];
+      const quoteAddressPart = parts[2];
+      const quoteChainIdStr = parts[3];
+      baseAddress = baseAddressPart;
+      quoteAddress = quoteAddressPart;
+      baseChainId = parseInt(baseChainIdStr, 10);
+      quoteChainId = parseInt(quoteChainIdStr, 10);
+      
+      if (isNaN(baseChainId) || isNaN(quoteChainId)) {
+        throw new Error(`[ChartDataService] Invalid chain IDs: ${baseChainIdStr}, ${quoteChainIdStr}`);
+      }
+      isCrossChain = baseChainId !== quoteChainId;
+    } else {
+      throw new Error(`[ChartDataService] Invalid symbol format: ${symbolName}. Expected: baseAddress-quoteAddress-chainId (same-chain) or baseAddress-baseChainId-quoteAddress-quoteChainId (cross-chain)`);
     }
 
     // Get chain information
-    const chain = getCanonicalChain(chainId);
-    if (!chain) {
-      throw new Error(`[ChartDataService] Unsupported chain ID: ${chainId}`);
+    const baseChain = getCanonicalChain(baseChainId);
+    const quoteChain = getCanonicalChain(quoteChainId);
+    
+    if (!baseChain || !quoteChain) {
+      throw new Error(`[ChartDataService] Unsupported chain ID: ${baseChainId} or ${quoteChainId}`);
     }
 
     // Convert native tokens to wrapped
-    const { baseToken, quoteToken } = convertPairToWrapped(baseAddress, quoteAddress, chainId);
+    const { baseToken } = convertPairToWrapped(baseAddress, '0x0000000000000000000000000000000000000000', baseChainId);
+    const { baseToken: quoteToken } = convertPairToWrapped(quoteAddress, '0x0000000000000000000000000000000000000000', quoteChainId);
 
-    // For now, use addresses as symbol names
-    // TODO: Fetch token metadata (symbol, name) from token service
-    const baseSymbol = baseToken.slice(0, 6) + '...' + baseToken.slice(-4);
-    const quoteSymbol = quoteToken.slice(0, 6) + '...' + quoteToken.slice(-4);
+    // Fetch token symbols from token service
+    const tokenService = getTokenService();
+    let baseSymbol = 'UNKNOWN';
+    let quoteSymbol = 'UNKNOWN';
+    
+    try {
+      // Fetch base token metadata
+      const baseTokens = await tokenService.searchTokens(baseToken, undefined, [baseChainId], 1);
+      if (baseTokens.length > 0 && baseTokens[0].symbol) {
+        baseSymbol = baseTokens[0].symbol;
+      }
+    } catch (error) {
+      console.warn(`[ChartDataService] Failed to fetch base token symbol for ${baseToken} on chain ${baseChainId}:`, error);
+      // Fallback to truncated address
+      baseSymbol = baseToken.slice(0, 6) + '...' + baseToken.slice(-4);
+    }
+    
+    try {
+      // Fetch quote token metadata
+      const quoteTokens = await tokenService.searchTokens(quoteToken, undefined, [quoteChainId], 1);
+      if (quoteTokens.length > 0 && quoteTokens[0].symbol) {
+        quoteSymbol = quoteTokens[0].symbol;
+      }
+    } catch (error) {
+      console.warn(`[ChartDataService] Failed to fetch quote token symbol for ${quoteToken} on chain ${quoteChainId}:`, error);
+      // Fallback to truncated address
+      quoteSymbol = quoteToken.slice(0, 6) + '...' + quoteToken.slice(-4);
+    }
 
     // Determine price scale based on typical token prices
     // For very small prices (scientific notation like 5e-13), we need high precision
@@ -166,15 +290,47 @@ export class ChartDataService {
     // Using 10^18 to handle very small prices (up to 18 decimal places)
     const pricescale = 1000000000000000000; // 18 decimals - handles very small prices
 
+    // Format resolution for display (DexScreener style)
+    // Examples: "15" -> "15", "60" -> "1h", "1D" -> "1D", "1W" -> "1W"
+    let resolutionDisplay = resolution || '15';
+    if (resolutionDisplay === '60') {
+      resolutionDisplay = '1h';
+    } else if (resolutionDisplay === '240') {
+      resolutionDisplay = '4h';
+    } else if (resolutionDisplay === '1D') {
+      resolutionDisplay = '1D';
+    } else if (resolutionDisplay === '1W') {
+      resolutionDisplay = '1W';
+    } else if (resolutionDisplay === '1M') {
+      resolutionDisplay = '1M';
+    }
+
+    // Format name like DexScreener: "WBNB/TWC on BNB CHAIN • 15 • tiwiprotocol.xyz"
+    // Ensure domain is lowercase
+    const domain = 'tiwiprotocol.xyz';
+    const chainName = isCrossChain 
+      ? `${baseChain.name.toUpperCase()}/${quoteChain.name.toUpperCase()}` 
+      : baseChain.name.toUpperCase(); // Make chain name uppercase like "BNB CHAIN"
+    
+    const name = `${baseSymbol}/${quoteSymbol} on ${chainName} • ${resolutionDisplay} • ${domain}`;
+
+    // Build description (for tooltip/alt text)
+    const exchange = isCrossChain 
+      ? `${baseChain.name}/${quoteChain.name}` 
+      : baseChain.name;
+    const description = isCrossChain
+      ? `${baseSymbol}/${quoteSymbol} (Cross-Chain: ${baseChain.name} → ${quoteChain.name})`
+      : `${baseSymbol}/${quoteSymbol} on ${baseChain.name}`;
+
     return {
-      name: `${baseSymbol}/${quoteSymbol}`,
+      name, // Format: "WBNB/TWC on BNB CHAIN • 15 • tiwiprotocol.xyz" (all lowercase domain)
       ticker: symbolName,
-      description: `${baseSymbol}/${quoteSymbol} on ${chain.name}`,
+      description,
       type: 'crypto',
       session: '24x7',
       timezone: 'Etc/UTC',
-      exchange: chain.name,
-      listed_exchange: chain.name,
+      exchange: domain.toLowerCase(), // Use lowercase domain instead of chain name
+      listed_exchange: domain.toLowerCase(), // Use lowercase domain instead of chain name
       minmov: 1,
       pricescale,
       has_intraday: true,

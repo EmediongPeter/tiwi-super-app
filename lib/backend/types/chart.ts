@@ -33,11 +33,14 @@ export type ResolutionString = string;
 
 /**
  * Parameters for fetching historical OHLC data
+ * Supports both same-chain and cross-chain pairs
  */
 export interface ChartDataParams {
   baseToken: string; // Token address
   quoteToken: string; // Token address (or native)
-  chainId: number;
+  chainId?: number; // For same-chain pairs (deprecated, use baseChainId/quoteChainId)
+  baseChainId?: number; // Base token chain ID (for cross-chain support)
+  quoteChainId?: number; // Quote token chain ID (for cross-chain support)
   resolution: ResolutionString; // "1", "5", "15", "30", "60", "1D", "1W", "1M"
   from: number; // Unix timestamp in seconds
   to: number; // Unix timestamp in seconds

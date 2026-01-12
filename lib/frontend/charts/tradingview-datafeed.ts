@@ -29,10 +29,51 @@ import type {
 const API_BASE = '/api/v1/charts';
 
 // ============================================================================
+// Client-Side Cache (prevents repeated API calls)
+// ============================================================================
+
+interface CachedBars {
+  bars: any[];
+  timestamp: number;
+}
+
+class ClientCache {
+  private cache = new Map<string, CachedBars>();
+  private readonly TTL = 5 * 60 * 1000; // 5 minutes
+
+  get(key: string): any[] | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    if (Date.now() - entry.timestamp > this.TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.bars;
+  }
+
+  set(key: string, bars: any[]): void {
+    this.cache.set(key, {
+      bars,
+      timestamp: Date.now(),
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+const clientCache = new ClientCache();
+
+// ============================================================================
 // Custom Datafeed Implementation
 // ============================================================================
 
 export class TradingViewDatafeed implements IExternalDatafeed, IDatafeedChartApi {
+  private currentInterval: ResolutionString = '15' as ResolutionString; // Store current interval/resolution
+  
   /**
    * Called when chart is ready
    * Returns chart configuration
@@ -81,6 +122,11 @@ export class TradingViewDatafeed implements IExternalDatafeed, IDatafeedChartApi
   ): void {
     const params = new URLSearchParams({ symbol: symbolName });
     console.log("🚀 ~ TradingViewDatafeed ~ resolveSymbol ~ params:", params)
+    
+    // Get current resolution from the datafeed's stored interval or default to '15'
+    // Note: TradingView doesn't pass resolution in extension, so we use the stored interval
+    const resolution = this.currentInterval || '15';
+    params.append('resolution', resolution);
     
     if (extension?.currencyCode) {
       params.append('currencyCode', extension.currencyCode);
@@ -139,17 +185,45 @@ export class TradingViewDatafeed implements IExternalDatafeed, IDatafeedChartApi
     onResult: HistoryCallback,
     onError: DatafeedErrorCallback
   ): void {
+    // Store current resolution for symbol name formatting
+    this.currentInterval = resolution;
+    
+    const symbol = symbolInfo.ticker || symbolInfo.name;
     const params = new URLSearchParams({
-      symbol: symbolInfo.ticker || symbolInfo.name,
+      symbol,
       resolution,
       from: periodParams.from.toString(),
       to: periodParams.to.toString(),
     });
-    console.log("🚀 ~ TradingViewDatafeed ~ getBars ~ params:", params)
 
     if (periodParams.countBack !== undefined) {
       params.append('countback', periodParams.countBack.toString());
     }
+
+    // Create cache key
+    const cacheKey = `${symbol}:${resolution}:${periodParams.from}:${periodParams.to}`;
+    
+    // Check client-side cache first (CRITICAL: Prevents repeated API calls)
+    const cachedBars = clientCache.get(cacheKey);
+    if (cachedBars) {
+      console.log(`[TradingViewDatafeed] Returning cached data for ${symbol} (${cachedBars.length} bars)`);
+      
+      const lastBarTimeSeconds = cachedBars.length > 0 
+        ? Math.floor(cachedBars[cachedBars.length - 1].time / 1000)
+        : periodParams.to;
+      const nextTime = Math.min(
+        Math.max(periodParams.to, lastBarTimeSeconds),
+        Math.floor(Date.now() / 1000)
+      );
+      
+      onResult(cachedBars, {
+        noData: false,
+        nextTime,
+      });
+      return;
+    }
+
+    console.log(`[TradingViewDatafeed] Fetching data for ${symbol} (first request)`);
 
     fetch(`${API_BASE}/history?${params.toString()}`)
       .then((response) => response.json())
@@ -297,6 +371,9 @@ export class TradingViewDatafeed implements IExternalDatafeed, IDatafeedChartApi
           countBack: periodParams.countBack,
         });
 
+        // Cache the bars to prevent repeated API calls
+        clientCache.set(cacheKey, bars);
+
         // Return bars with nextTime to prevent continuous fetching
         // BEST PRACTICE: nextTime must be >= requested 'to' for subsequent requests to stop fetching
         const result: any = { 
@@ -353,4 +430,3 @@ export class TradingViewDatafeed implements IExternalDatafeed, IDatafeedChartApi
     }
   }
 }
-

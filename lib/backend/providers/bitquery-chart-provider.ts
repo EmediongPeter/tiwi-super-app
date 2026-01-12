@@ -566,4 +566,3 @@ interface TokenOHLCResponse {
     }>;
   };
 }
-
