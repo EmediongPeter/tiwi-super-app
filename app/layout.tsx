@@ -6,19 +6,19 @@ import GlobalBackground from "@/components/layout/global-background";
 import { PrefetchProvider } from "@/components/prefetch/prefetch-provider";
 import { WalletProviders } from "@/lib/frontend/providers/wallet-providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  display: "swap",
-  preload: true,
-});
+// const geistSans = Geist({
+//   variable: "--font-geist-sans",
+//   subsets: ["latin"],
+//   display: "swap",
+//   preload: true,
+// });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap",
-  preload: true,
-});
+// const geistMono = Geist_Mono({
+//   variable: "--font-geist-mono",
+//   subsets: ["latin"],
+//   display: "swap",
+//   preload: true,
+// });
 
 export const metadata: Metadata = {
   title: "TIWI Protocol",
@@ -33,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        // className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <WalletProviders>
           <PrefetchProvider>
