@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { IoArrowBack, IoChevronForward, IoChevronDown, IoRefresh } from "react-icons/io5";
+import { IoArrowBack, IoChevronForward, IoChevronDown, IoRefresh, IoBugOutline } from "react-icons/io5";
 import { FiCopy, FiCheck, FiDownload, FiTrash2, FiFile, FiSettings, FiMail, FiSend, FiPlus, FiUpload } from "react-icons/fi";
 import { FaTelegramPlane } from "react-icons/fa";
 import { FaXTwitter } from "react-icons/fa6";
@@ -11,6 +11,8 @@ import { HiExclamationTriangle } from "react-icons/hi2";
 import { SettingsView } from "@/components/settings/types";
 import MobileSettingsView from "@/components/settings/mobile-settings-view";
 import DesktopSettingsView from "@/components/settings/desktop-settings-view";
+import { useWallet } from "@/lib/wallet/hooks/useWallet";
+import type { BugReport } from "@/lib/shared/types/bug-reports";
 
 const chainIcons = [
   "/assets/chains/chain-1.svg",
@@ -152,14 +154,23 @@ export default function SettingsPage() {
   const [downtimeUpdates, setDowntimeUpdates] = useState(true);
   const [sendDeviceInfo, setSendDeviceInfo] = useState(false);
   const [bugDescription, setBugDescription] = useState("");
+  const [screenshot, setScreenshot] = useState<File | null>(null);
+  const [logFile, setLogFile] = useState<File | null>(null);
+  const [isSubmittingBug, setIsSubmittingBug] = useState(false);
+  const [bugSubmitSuccess, setBugSubmitSuccess] = useState(false);
   const [faqSearch, setFaqSearch] = useState("");
   const [tutorialSearch, setTutorialSearch] = useState("");
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
+  const [userBugReports, setUserBugReports] = useState<BugReport[]>([]);
+  const [isLoadingBugReports, setIsLoadingBugReports] = useState(false);
 
-  const walletAddress = "0xDB...T432";
-  const fullWalletAddress = "0xdeadbeef1234567890abcdef1234567890ab";
+  const wallet = useWallet();
+  const walletAddress = wallet.address || "0xDB...T432";
+  const fullWalletAddress = wallet.address || "0xdeadbeef1234567890abcdef1234567890ab";
   const privateKey = "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab";
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
+  const logFileInputRef = useRef<HTMLInputElement>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -181,10 +192,156 @@ export default function SettingsPage() {
     };
   }, [openDropdown]);
 
+  // Fetch user bug reports
+  useEffect(() => {
+    const fetchUserBugReports = async () => {
+      if (!wallet.address) {
+        setUserBugReports([]);
+        return;
+      }
+
+      setIsLoadingBugReports(true);
+      try {
+        const response = await fetch(
+          `/api/v1/bug-reports?userWallet=${encodeURIComponent(wallet.address)}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          setUserBugReports(data.bugReports || []);
+        }
+      } catch (error) {
+        console.error("Error fetching user bug reports:", error);
+      } finally {
+        setIsLoadingBugReports(false);
+      }
+    };
+
+    // Fetch when wallet is connected or when viewing bug reports
+    if (currentView === "view-bug-reports" || currentView === "report-bug" || currentView === "create-bug-report") {
+      fetchUserBugReports();
+      
+      // Set up polling to refresh bug reports every 30 seconds when viewing
+      if (currentView === "view-bug-reports") {
+        const interval = setInterval(() => {
+          fetchUserBugReports();
+        }, 30000); // Refresh every 30 seconds
+        
+        return () => clearInterval(interval);
+      }
+    }
+  }, [wallet.address, currentView]);
+
+  // Get bug report counts by status
+  const getBugReportCounts = () => {
+    const counts = {
+      pending: 0,
+      reviewed: 0,
+      resolved: 0,
+      dismissed: 0,
+      total: userBugReports.length,
+    };
+
+    userBugReports.forEach((report) => {
+      counts[report.status] = (counts[report.status] || 0) + 1;
+    });
+
+    return counts;
+  };
+
+  const bugReportCounts = getBugReportCounts();
+
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Convert file to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  // Handle bug report submission
+  const handleSubmitBugReport = async () => {
+    if (!bugDescription.trim()) {
+      alert("Please describe the issue before submitting.");
+      return;
+    }
+
+    if (!wallet.address) {
+      alert("Please connect your wallet to submit a bug report.");
+      return;
+    }
+
+    setIsSubmittingBug(true);
+    setBugSubmitSuccess(false);
+
+    try {
+      // Convert files to base64 if they exist
+      let screenshotBase64: string | undefined;
+      let logFileBase64: string | undefined;
+
+      if (screenshot) {
+        screenshotBase64 = await fileToBase64(screenshot);
+      }
+
+      if (logFile) {
+        logFileBase64 = await fileToBase64(logFile);
+      }
+
+      // Get device info if enabled
+      const deviceInfo = sendDeviceInfo
+        ? {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language,
+            screenResolution: `${window.screen.width}x${window.screen.height}`,
+          }
+        : undefined;
+
+      // Submit bug report
+      const response = await fetch("/api/v1/bug-reports", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userWallet: wallet.address,
+          description: bugDescription,
+          screenshot: screenshotBase64,
+          logFile: logFileBase64,
+          deviceInfo,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to submit bug report");
+      }
+
+      // Success
+      setBugSubmitSuccess(true);
+      setBugDescription("");
+      setScreenshot(null);
+      setLogFile(null);
+      setSendDeviceInfo(false);
+
+      // Reset success message after 3 seconds
+      setTimeout(() => {
+        setBugSubmitSuccess(false);
+        setCurrentView("view-bug-reports");
+      }, 3000);
+    } catch (error: any) {
+      console.error("Error submitting bug report:", error);
+      alert(error.message || "Failed to submit bug report. Please try again.");
+    } finally {
+      setIsSubmittingBug(false);
+    }
   };
 
   const handleSaveWalletName = () => {
@@ -220,9 +377,15 @@ export default function SettingsPage() {
       currentView === "faqs" ||
       currentView === "tutorials" ||
       currentView === "report-bug" ||
+      currentView === "view-bug-reports" ||
+      currentView === "create-bug-report" ||
       currentView === "contact-support"
     ) {
-      setCurrentView("support");
+      if (currentView === "view-bug-reports" || currentView === "create-bug-report") {
+        setCurrentView("report-bug");
+      } else {
+        setCurrentView("support");
+      }
     } else {
       setCurrentView("main");
     }
@@ -1388,6 +1551,7 @@ export default function SettingsPage() {
                       <div className="w-11 h-6 bg-[#1f261e] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#B1F128] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#B1F128]"></div>
                     </label>
                   </div>
+
                 </div>
               </div>
             )}
@@ -1855,14 +2019,17 @@ export default function SettingsPage() {
 
                   <div className="flex gap-4 overflow-x-auto pb-2">
                     {[
-                      { title: "How to swap", desc: "Learn the basics of..." },
-                      { title: "Add liquidity", desc: "Learn the basics of..." },
-                      { title: "Create a pool", desc: "Learn the basics of..." },
-                      { title: "Share a pool", desc: "Learn the basics of..." },
+                      { title: "How to swap", desc: "Learn the basics of...", link: "https://docs.tiwi.com/swap" },
+                      { title: "Add liquidity", desc: "Learn the basics of...", link: "https://docs.tiwi.com/liquidity" },
+                      { title: "Create a pool", desc: "Learn the basics of...", link: "https://docs.tiwi.com/create-pool" },
+                      { title: "Share a pool", desc: "Learn the basics of...", link: "https://docs.tiwi.com/share-pool" },
                     ].map((tutorial, index) => (
-                      <div
+                      <a
                         key={index}
-                        className="min-w-[200px] bg-[#010501] rounded-xl border border-[#1f261e] overflow-hidden"
+                        href={tutorial.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-w-[200px] bg-[#010501] rounded-xl border border-[#1f261e] overflow-hidden hover:border-[#B1F128] transition-colors cursor-pointer"
                       >
                         <div className="w-full h-32 bg-[#121712] flex items-center justify-center">
                           <span className="text-[#6E7873] text-sm">Thumbnail</span>
@@ -1875,14 +2042,14 @@ export default function SettingsPage() {
                             {tutorial.desc}
                           </p>
                         </div>
-                      </div>
+                      </a>
                     ))}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Report Bug */}
+            {/* Report Bug - Menu */}
             {currentView === "report-bug" && (
               <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
                 <div className="flex justify-end mb-6">
@@ -1895,8 +2062,79 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                <h2 className="text-2xl font-semibold text-white mb-4">
+                <h2 className="text-2xl font-semibold text-white mb-6">
                   Report a Bug
+                </h2>
+
+                <div className="space-y-4">
+                  {/* View Bug Reports/History */}
+                  <button
+                    onClick={() => setCurrentView("view-bug-reports")}
+                    className="w-full flex items-center justify-between py-4 px-4 bg-[#010501] rounded-xl border border-[#1f261e] hover:bg-[#121712] transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <IoBugOutline className="text-[#B5B5B5] w-5 h-5" />
+                      <div className="flex flex-col">
+                        <span className="text-base text-[#B5B5B5]">
+                          View Bug Reports
+                        </span>
+                        <span className="text-xs text-[#7c7c7c]">
+                          Check status of your submitted reports
+                        </span>
+                      </div>
+                    </div>
+                    {bugReportCounts.total > 0 && (
+                      <div className="flex items-center gap-2">
+                        {bugReportCounts.pending > 0 && (
+                          <span className="bg-[#ffa500] text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                            {bugReportCounts.pending}
+                          </span>
+                        )}
+                        <IoChevronForward size={20} className="text-[#B5B5B5] opacity-60" />
+                      </div>
+                    )}
+                    {bugReportCounts.total === 0 && (
+                      <IoChevronForward size={20} className="text-[#B5B5B5] opacity-60" />
+                    )}
+                  </button>
+
+                  {/* Create New Bug Report */}
+                  <button
+                    onClick={() => setCurrentView("create-bug-report")}
+                    className="w-full flex items-center justify-between py-4 px-4 bg-[#010501] rounded-xl border border-[#1f261e] hover:bg-[#121712] transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <FiPlus className="text-[#B5B5B5] w-5 h-5" />
+                      <div className="flex flex-col">
+                        <span className="text-base text-[#B5B5B5]">
+                          Create New Bug Report
+                        </span>
+                        <span className="text-xs text-[#7c7c7c]">
+                          Submit a new bug report
+                        </span>
+                      </div>
+                    </div>
+                    <IoChevronForward size={20} className="text-[#B5B5B5] opacity-60" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Create Bug Report Form */}
+            {currentView === "create-bug-report" && (
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full overflow-y-auto">
+                <div className="flex justify-end mb-6">
+                  <button
+                    onClick={() => setCurrentView("report-bug")}
+                    className="flex items-center gap-2 text-[#B1F128] border border-[#B1F128] px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#081F02] transition-colors"
+                  >
+                    <IoArrowBack size={16} />
+                    Go Back
+                  </button>
+                </div>
+
+                <h2 className="text-2xl font-semibold text-white mb-4">
+                  Create New Bug Report
                 </h2>
 
                 <p className="text-sm text-[#B5B5B5] mb-6">
@@ -1905,38 +2143,119 @@ export default function SettingsPage() {
                 </p>
 
                 <div className="space-y-6">
+                  {/* Success Message */}
+                  {bugSubmitSuccess && (
+                    <div className="bg-[#081f02] border border-[#B1F128] rounded-xl p-4 text-center">
+                      <p className="text-[#B1F128] text-sm font-medium">
+                        Bug report submitted successfully! Thank you for helping us improve.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Attach Screenshot */}
                   <div className="border-2 border-dashed border-[#1f261e] rounded-xl p-8 text-center bg-[#010501]">
-                    <HiOutlineCloudUpload
-                      size={32}
-                      className="text-[#B5B5B5] mx-auto mb-3"
+                    <input
+                      ref={screenshotInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setScreenshot(file);
+                        }
+                      }}
                     />
-                    <p className="text-sm text-[#B5B5B5] mb-3">
-                      Drag or drop files here or browse your computer.
-                    </p>
-                    <button className="bg-[#B1F128] text-[#010501] font-semibold py-2 px-6 rounded-full hover:opacity-90 transition-opacity text-sm">
-                      Browse File
-                    </button>
-                    <p className="text-xs text-[#6E7873] mt-2">
-                      Attach Screenshot (Recommended)
-                    </p>
+                    {screenshot ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-[#B1F128] font-medium">
+                          {screenshot.name}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setScreenshot(null);
+                            if (screenshotInputRef.current) {
+                              screenshotInputRef.current.value = "";
+                            }
+                          }}
+                          className="text-[#ff5c5c] text-xs hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <HiOutlineCloudUpload
+                          size={32}
+                          className="text-[#B5B5B5] mx-auto mb-3"
+                        />
+                        <p className="text-sm text-[#B5B5B5] mb-3">
+                          Drag or drop files here or browse your computer.
+                        </p>
+                        <button
+                          onClick={() => screenshotInputRef.current?.click()}
+                          className="bg-[#B1F128] text-[#010501] font-semibold py-2 px-6 rounded-full hover:opacity-90 transition-opacity text-sm"
+                        >
+                          Browse File
+                        </button>
+                        <p className="text-xs text-[#6E7873] mt-2">
+                          Attach Screenshot (Recommended)
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   {/* Add Log File */}
                   <div className="border-2 border-dashed border-[#1f261e] rounded-xl p-8 text-center bg-[#010501]">
-                    <HiOutlineCloudUpload
-                      size={32}
-                      className="text-[#B5B5B5] mx-auto mb-3"
+                    <input
+                      ref={logFileInputRef}
+                      type="file"
+                      accept=".log,.txt"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setLogFile(file);
+                        }
+                      }}
                     />
-                    <p className="text-sm text-[#B5B5B5] mb-3">
-                      Choose a log file to help us understand your issue.
-                    </p>
-                    <button className="bg-[#B1F128] text-[#010501] font-semibold py-2 px-6 rounded-full hover:opacity-90 transition-opacity text-sm">
-                      Browse File
-                    </button>
-                    <p className="text-xs text-[#6E7873] mt-2">
-                      Add Log File (Optional)
-                    </p>
+                    {logFile ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-[#B1F128] font-medium">
+                          {logFile.name}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setLogFile(null);
+                            if (logFileInputRef.current) {
+                              logFileInputRef.current.value = "";
+                            }
+                          }}
+                          className="text-[#ff5c5c] text-xs hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <HiOutlineCloudUpload
+                          size={32}
+                          className="text-[#B5B5B5] mx-auto mb-3"
+                        />
+                        <p className="text-sm text-[#B5B5B5] mb-3">
+                          Choose a log file to help us understand your issue.
+                        </p>
+                        <button
+                          onClick={() => logFileInputRef.current?.click()}
+                          className="bg-[#B1F128] text-[#010501] font-semibold py-2 px-6 rounded-full hover:opacity-90 transition-opacity text-sm"
+                        >
+                          Browse File
+                        </button>
+                        <p className="text-xs text-[#6E7873] mt-2">
+                          Add Log File (Optional)
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   {/* Describe the Issue */}
@@ -1970,9 +2289,19 @@ export default function SettingsPage() {
                   </div>
 
                   {/* Submit Button */}
-                  <button className="w-full bg-[#B1F128] text-[#010501] font-semibold py-4 px-6 rounded-full hover:opacity-90 transition-opacity">
-                    Submit Bug/Report
+                  <button
+                    onClick={handleSubmitBugReport}
+                    disabled={isSubmittingBug || !bugDescription.trim()}
+                    className="w-full bg-[#B1F128] text-[#010501] font-semibold py-4 px-6 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmittingBug ? "Submitting..." : "Submit Bug/Report"}
                   </button>
+                  
+                  {!wallet.address && (
+                    <p className="text-xs text-[#ff5c5c] text-center mt-2">
+                      Please connect your wallet to submit a bug report.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -2012,6 +2341,138 @@ export default function SettingsPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* View Bug Reports */}
+            {currentView === "view-bug-reports" && (
+              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full overflow-y-auto">
+                <div className="flex justify-end mb-6">
+                  <button
+                    onClick={() => setCurrentView("report-bug")}
+                    className="flex items-center gap-2 text-[#B1F128] border border-[#B1F128] px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#081F02] transition-colors"
+                  >
+                    <IoArrowBack size={16} />
+                    Go Back
+                  </button>
+                </div>
+
+                <h2 className="text-2xl font-semibold text-white mb-6">
+                  My Bug Reports
+                </h2>
+
+                {!wallet.address ? (
+                  <div className="text-center py-12">
+                    <p className="text-[#B5B5B5] mb-4">Please connect your wallet to view your bug reports.</p>
+                  </div>
+                ) : isLoadingBugReports ? (
+                  <div className="text-center py-12">
+                    <p className="text-[#B5B5B5]">Loading your bug reports...</p>
+                  </div>
+                ) : userBugReports.length === 0 ? (
+                  <div className="text-center py-12">
+                    <IoBugOutline className="text-[#7c7c7c] w-16 h-16 mx-auto mb-4" />
+                    <p className="text-[#B5B5B5] mb-4">You haven't submitted any bug reports yet.</p>
+                    <button
+                      onClick={() => setCurrentView("create-bug-report")}
+                      className="text-[#B1F128] hover:underline"
+                    >
+                      Report a bug
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Status Summary */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                      <div className="bg-[#010501] border border-[#1f261e] rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-[#ffa500] mb-1">
+                          {bugReportCounts.pending}
+                        </div>
+                        <div className="text-xs text-[#B5B5B5]">Pending</div>
+                      </div>
+                      <div className="bg-[#010501] border border-[#1f261e] rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-[#4ade80] mb-1">
+                          {bugReportCounts.reviewed}
+                        </div>
+                        <div className="text-xs text-[#B5B5B5]">Reviewed</div>
+                      </div>
+                      <div className="bg-[#010501] border border-[#1f261e] rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-[#4ade80] mb-1">
+                          {bugReportCounts.resolved}
+                        </div>
+                        <div className="text-xs text-[#B5B5B5]">Resolved</div>
+                      </div>
+                      <div className="bg-[#010501] border border-[#1f261e] rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-[#7c7c7c] mb-1">
+                          {bugReportCounts.dismissed}
+                        </div>
+                        <div className="text-xs text-[#B5B5B5]">Dismissed</div>
+                      </div>
+                    </div>
+
+                    {/* Bug Reports List */}
+                    {userBugReports.map((report) => {
+                      const getStatusColor = (status: BugReport["status"]) => {
+                        switch (status) {
+                          case "pending":
+                            return "bg-[#ffa500] text-white";
+                          case "reviewed":
+                            return "bg-[#4ade80] text-white";
+                          case "resolved":
+                            return "bg-[#4ade80] text-white";
+                          case "dismissed":
+                            return "bg-[#7c7c7c] text-white";
+                          default:
+                            return "bg-[#1f261e] text-[#B5B5B5]";
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={report.id}
+                          className="bg-[#010501] border border-[#1f261e] rounded-xl p-4 hover:border-[#B1F128] transition-colors"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span
+                                  className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                                    report.status
+                                  )}`}
+                                >
+                                  {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                                </span>
+                                <span className="text-xs text-[#7c7c7c]">
+                                  {new Date(report.createdAt).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <p className="text-sm text-[#B5B5B5] line-clamp-3">
+                                {report.description}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-[#7c7c7c]">
+                            {report.screenshot && (
+                              <span className="flex items-center gap-1">
+                                📷 Screenshot
+                              </span>
+                            )}
+                            {report.logFile && (
+                              <span className="flex items-center gap-1">
+                                📄 Log File
+                              </span>
+                            )}
+                            {report.reviewedAt && (
+                              <span className="ml-auto">
+                                Reviewed: {new Date(report.reviewedAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 

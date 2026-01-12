@@ -1,53 +1,85 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { IoChevronDownOutline, IoCloudUploadOutline, IoImageOutline } from "react-icons/io5";
+import { IoChevronDownOutline, IoCloudUploadOutline } from "react-icons/io5";
 
 interface CreateAdvertModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const campaignTypes = ["Product", "Service", "Region", "URL", "API"];
-const advertFormats = ["Image", "Video", "Image & Video"];
+const campaignTypes = [
+  { label: "Banner Ad", value: "banner" },
+  { label: "Video Ad", value: "video" },
+  { label: "Interactive Ad", value: "interactive" },
+];
+
+const advertFormats = [
+  { label: "Full Width", value: "full-width" },
+  { label: "Half Width", value: "half-width" },
+  { label: "Square", value: "square" },
+];
+
+const audiences = [
+  { label: "All Users", value: "all-users" },
+  { label: "By Network", value: "by-network" },
+  { label: "By Activity", value: "by-activity" },
+];
+
+const priorities = [
+  { label: "Normal", value: "normal" },
+  { label: "High", value: "high" },
+  { label: "Urgent", value: "urgent" },
+];
 
 export default function CreateAdvertModal({
   open,
   onOpenChange,
 }: CreateAdvertModalProps) {
-  const [campaignType, setCampaignType] = useState("");
   const [advertName, setAdvertName] = useState("");
-  const [advertId, setAdvertId] = useState("ADVERT ID (auto generated)");
-  const [message, setMessage] = useState("");
-  const [advertFormat, setAdvertFormat] = useState("Image");
-  const [showCampaignTypeDropdown, setShowCampaignTypeDropdown] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedCampaignType, setSelectedCampaignType] = useState("Banner Ad");
+  const [selectedFormat, setSelectedFormat] = useState("Full Width");
+  const [headline, setHeadline] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [selectedAudience, setSelectedAudience] = useState("All Users");
+  const [selectedPriority, setSelectedPriority] = useState("Normal");
+  const [compliance, setCompliance] = useState({
+    "Content is appropriate": false,
+    "No misleading claims": false,
+    "Compliant with regulations": false,
+  });
+
+  const [showCampaignDropdown, setShowCampaignDropdown] = useState(false);
   const [showFormatDropdown, setShowFormatDropdown] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
+  const [showAudienceDropdown, setShowAudienceDropdown] = useState(false);
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const campaignTypeRef = useRef<HTMLDivElement>(null);
+  const campaignRef = useRef<HTMLDivElement>(null);
   const formatRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      // Auto-generate advert ID
-      setAdvertId(`ADV-${Date.now().toString().slice(-6)}`);
-    }
-  }, [open]);
+  const audienceRef = useRef<HTMLDivElement>(null);
+  const priorityRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (campaignTypeRef.current && !campaignTypeRef.current.contains(event.target as Node)) {
-        setShowCampaignTypeDropdown(false);
+      if (campaignRef.current && !campaignRef.current.contains(event.target as Node)) {
+        setShowCampaignDropdown(false);
       }
       if (formatRef.current && !formatRef.current.contains(event.target as Node)) {
         setShowFormatDropdown(false);
+      }
+      if (audienceRef.current && !audienceRef.current.contains(event.target as Node)) {
+        setShowAudienceDropdown(false);
+      }
+      if (priorityRef.current && !priorityRef.current.contains(event.target as Node)) {
+        setShowPriorityDropdown(false);
       }
     };
 
@@ -55,227 +87,352 @@ export default function CreateAdvertModal({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      // Handle file upload
-      console.log("File dropped:", e.dataTransfer.files[0]);
-    }
+  const handleComplianceChange = (key: string) => {
+    setCompliance((prev) => ({
+      ...prev,
+      [key]: !prev[key as keyof typeof prev],
+    }));
   };
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      // Handle file upload
-      console.log("File selected:", e.target.files[0]);
+  const handleSubmit = async () => {
+    if (!advertName.trim()) {
+      alert("Please enter an advert name");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // TODO: Implement API call to create advert
+      console.log("Creating advert:", {
+        advertName,
+        selectedImage,
+        selectedCampaignType,
+        selectedFormat,
+        headline,
+        messageBody,
+        selectedAudience,
+        selectedPriority,
+        compliance,
+      });
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Reset form
+      setAdvertName("");
+      setSelectedImage(null);
+      setSelectedCampaignType("Banner Ad");
+      setSelectedFormat("Full Width");
+      setHeadline("");
+      setMessageBody("");
+      setSelectedAudience("All Users");
+      setSelectedPriority("Normal");
+      setCompliance({
+        "Content is appropriate": false,
+        "No misleading claims": false,
+        "Compliant with regulations": false,
+      });
+
+      onOpenChange(false);
+      alert("Advert created successfully!");
+    } catch (error) {
+      console.error("Error creating advert:", error);
+      alert("Failed to create advert. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="bg-[#121712] border-[#1f261e] text-white max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-[#121712] border-[#1f261e] text-white w-fit max-w-[90vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto"
         showCloseButton={false}
       >
-        <DialogHeader className="flex flex-row items-center justify-between mb-6">
-          <DialogTitle className="text-xl font-semibold text-white">
-            Create Advert
-          </DialogTitle>
-          <button
-            onClick={() => onOpenChange(false)}
-            className="text-[#b5b5b5] hover:text-white transition-colors"
-          >
-            Cancel
-          </button>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          {/* Campaign Type */}
-          <div className="relative" ref={campaignTypeRef}>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Campaign Type
-            </label>
-            <button
-              onClick={() => {
-                setShowCampaignTypeDropdown(!showCampaignTypeDropdown);
-                setShowFormatDropdown(false);
-              }}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors"
-            >
-              <span>{campaignType || "Select campaign type"}</span>
-              <IoChevronDownOutline className="w-5 h-5 text-[#b5b5b5]" />
-            </button>
-            {showCampaignTypeDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
-                {campaignTypes.map((type) => (
-                  <label
-                    key={type}
-                    className="flex items-center gap-3 px-4 py-3 text-white hover:bg-[#121712] transition-colors cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="campaignType"
-                      checked={campaignType === type}
-                      onChange={() => {
-                        setCampaignType(type);
-                        setShowCampaignTypeDropdown(false);
-                      }}
-                      className="w-4 h-4 text-[#b1f128] focus:ring-[#b1f128]"
-                    />
-                    <span>{type}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Advert Name */}
-          <div>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              ADVERT NAME
-            </label>
-            <input
-              type="text"
-              value={advertName}
-              onChange={(e) => setAdvertName(e.target.value)}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128]"
-              placeholder="Enter advert name"
-            />
-          </div>
-
-          {/* Advert ID (Auto-generated) */}
-          <div>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              ADVERT ID (auto generated)
-            </label>
-            <input
-              type="text"
-              value={advertId}
-              readOnly
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] cursor-not-allowed opacity-70"
-            />
-          </div>
-
-          {/* Message (Client) */}
-          <div>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Message (Client)
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] resize-none"
-              placeholder="Enter message for clients"
-            />
-          </div>
-
-          {/* Advert Format */}
-          <div className="relative" ref={formatRef}>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Advert Format
-            </label>
-            <button
-              onClick={() => {
-                setShowFormatDropdown(!showFormatDropdown);
-                setShowCampaignTypeDropdown(false);
-              }}
-              className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white flex items-center justify-between hover:border-[#b1f128] transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="radio"
-                  checked={advertFormat === "Image"}
-                  readOnly
-                  className="w-4 h-4 text-[#b1f128] focus:ring-[#b1f128]"
-                />
-                <span>{advertFormat}</span>
-              </div>
-              <IoChevronDownOutline className="w-5 h-5 text-[#b5b5b5]" />
-            </button>
-            {showFormatDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
-                {advertFormats.map((format) => (
-                  <label
-                    key={format}
-                    className="flex items-center gap-3 px-4 py-3 text-white hover:bg-[#121712] transition-colors cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="advertFormat"
-                      checked={advertFormat === format}
-                      onChange={() => {
-                        setAdvertFormat(format);
-                        setShowFormatDropdown(false);
-                      }}
-                      className="w-4 h-4 text-[#b1f128] focus:ring-[#b1f128]"
-                    />
-                    <span>{format}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Advert Image Upload */}
-          <div>
-            <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
-              Advert Image
-            </label>
-            <div
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`w-full border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                dragActive
-                  ? "border-[#b1f128] bg-[#081f02]"
-                  : "border-[#1f261e] bg-[#0b0f0a] hover:border-[#b1f128]"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileInput}
-                className="hidden"
-              />
-              <IoCloudUploadOutline className="w-12 h-12 text-[#b5b5b5] mx-auto mb-3" />
-              <p className="text-[#b5b5b5] text-sm mb-1">
-                Drag & Drop your image here or
-              </p>
-              <p className="text-[#b1f128] text-sm font-medium">Upload File</p>
-            </div>
-          </div>
-
-          {/* Save Button */}
-          <div className="pt-4 border-t border-[#1f261e]">
+        <div className="p-6">
+          <DialogHeader className="flex flex-row items-center justify-between mb-6">
+            <DialogTitle className="text-xl font-semibold text-white">
+              Create Advert
+            </DialogTitle>
             <button
               onClick={() => onOpenChange(false)}
-              className="w-full px-6 py-2.5 bg-[#b1f128] text-[#010501] rounded-lg hover:bg-[#9dd81f] transition-colors font-medium"
+              className="text-[#b1f128] hover:text-[#9dd81f] transition-colors font-medium"
             >
-              Save
+              Close
             </button>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Advert Name */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Advert Name *
+              </label>
+              <input
+                type="text"
+                value={advertName}
+                onChange={(e) => setAdvertName(e.target.value)}
+                placeholder="Enter advert name"
+                className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#b1f128]"
+              />
+            </div>
+
+            {/* Attach Image */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Attach Image
+              </label>
+              <div className="w-full h-64 bg-[#0b0f0a] border border-[#1f261e] rounded-lg overflow-hidden flex items-center justify-center relative">
+                {selectedImage ? (
+                  <img
+                    src={selectedImage}
+                    alt="Advert preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <label className="flex flex-col items-center justify-center cursor-pointer w-full h-full">
+                    <IoCloudUploadOutline className="w-12 h-12 text-[#7c7c7c] mb-2" />
+                    <span className="text-[#7c7c7c] text-sm">Click to upload image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Campaign Type */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Campaign Type
+              </label>
+              <div className="relative" ref={campaignRef}>
+                <button
+                  onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
+                  className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm flex items-center justify-between hover:border-[#b1f128] transition-colors"
+                >
+                  <span>{selectedCampaignType}</span>
+                  <IoChevronDownOutline className="w-4 h-4" />
+                </button>
+                {showCampaignDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
+                    {campaignTypes.map((type) => (
+                      <button
+                        key={type.value}
+                        onClick={() => {
+                          setSelectedCampaignType(type.label);
+                          setShowCampaignDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#121712] transition-colors first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Advert Format */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Advert Format
+              </label>
+              <div className="relative" ref={formatRef}>
+                <button
+                  onClick={() => setShowFormatDropdown(!showFormatDropdown)}
+                  className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm flex items-center justify-between hover:border-[#b1f128] transition-colors"
+                >
+                  <span>{selectedFormat}</span>
+                  <IoChevronDownOutline className="w-4 h-4" />
+                </button>
+                {showFormatDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
+                    {advertFormats.map((format) => (
+                      <button
+                        key={format.value}
+                        onClick={() => {
+                          setSelectedFormat(format.label);
+                          setShowFormatDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#121712] transition-colors first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {format.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Headline */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Headline (max 60 chars)
+              </label>
+              <input
+                type="text"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value.slice(0, 60))}
+                placeholder="Enter headline"
+                maxLength={60}
+                className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#b1f128]"
+              />
+              <div className="text-[#7c7c7c] text-xs mt-1 text-right">
+                {headline.length}/60
+              </div>
+            </div>
+
+            {/* Message Body */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Message Body
+              </label>
+              <textarea
+                value={messageBody}
+                onChange={(e) => setMessageBody(e.target.value)}
+                placeholder="Enter message body"
+                rows={5}
+                className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#b1f128] resize-none"
+              />
+            </div>
+
+            {/* Audience Targeting */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Audience Targeting
+              </label>
+              <div className="relative" ref={audienceRef}>
+                <button
+                  onClick={() => setShowAudienceDropdown(!showAudienceDropdown)}
+                  className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm flex items-center justify-between hover:border-[#b1f128] transition-colors"
+                >
+                  <span>{selectedAudience}</span>
+                  <IoChevronDownOutline className="w-4 h-4" />
+                </button>
+                {showAudienceDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
+                    {audiences.map((audience) => (
+                      <button
+                        key={audience.value}
+                        onClick={() => {
+                          setSelectedAudience(audience.label);
+                          setShowAudienceDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#121712] transition-colors first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {audience.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Priority Level */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Priority Level
+              </label>
+              <div className="relative" ref={priorityRef}>
+                <button
+                  onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+                  className="w-full bg-[#0b0f0a] border border-[#1f261e] rounded-lg px-4 py-2.5 text-white text-sm flex items-center justify-between hover:border-[#b1f128] transition-colors"
+                >
+                  <span>{selectedPriority}</span>
+                  <IoChevronDownOutline className="w-4 h-4" />
+                </button>
+                {showPriorityDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-lg">
+                    {priorities.map((priority) => (
+                      <button
+                        key={priority.value}
+                        onClick={() => {
+                          setSelectedPriority(priority.label);
+                          setShowPriorityDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-white hover:bg-[#121712] transition-colors first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {priority.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Compliance Review */}
+            <div>
+              <label className="block text-[#b5b5b5] text-sm font-medium mb-2">
+                Compliance Review
+              </label>
+              <div className="space-y-2">
+                {Object.entries(compliance).map(([item, checked]) => (
+                  <div
+                    key={item}
+                    className="flex items-center gap-3 cursor-pointer"
+                    onClick={() => handleComplianceChange(item)}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded border flex items-center justify-center ${
+                        checked
+                          ? "bg-[#b1f128] border-[#b1f128]"
+                          : "border-[#1f261e] bg-[#0b0f0a]"
+                      }`}
+                    >
+                      {checked && (
+                        <svg
+                          className="w-3 h-3 text-[#010501]"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-[#b5b5b5] text-sm">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="flex gap-4 pt-4">
+              <button
+                onClick={() => onOpenChange(false)}
+                className="flex-1 px-6 py-2.5 bg-[#121712] border border-[#1f261e] text-[#b5b5b5] rounded-lg hover:bg-[#1a1f1a] hover:text-white transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting || !advertName.trim()}
+                className="flex-1 px-6 py-2.5 bg-[#b1f128] text-[#010501] rounded-lg hover:bg-[#9dd81f] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "Creating..." : "Create Advert"}
+              </button>
+            </div>
           </div>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
-
-
-
-
-

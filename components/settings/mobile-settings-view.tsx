@@ -147,6 +147,8 @@ export default function MobileSettingsView({
       currentView === "contact-support"
     )
       return "Support";
+    if (currentView === "view-bug-reports" || currentView === "create-bug-report")
+      return "Support";
     return null;
   };
 

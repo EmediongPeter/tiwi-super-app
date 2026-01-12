@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Link from "next/link";
@@ -18,6 +18,8 @@ import type { WalletConnectWallet } from "@/lib/wallet/services/wallet-explorer-
 import { getWalletById } from "@/lib/wallet/detection/detector";
 import { getWalletIconUrl } from "@/lib/wallet/services/wallet-explorer-service";
 import WalletBalancePanel from "@/components/wallet/wallet-balance-panel";
+import NotificationsDropdown from "@/components/notifications/notifications-dropdown";
+import { IoNotificationsOutline } from "react-icons/io5";
 
 interface NavItem {
   label: string;
@@ -38,6 +40,8 @@ export default function Navbar() {
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isWalletPanelOpen, setIsWalletPanelOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [liveNotificationsCount, setLiveNotificationsCount] = useState(0);
   const {
     isModalOpen,
     isExplorerOpen,
@@ -55,6 +59,31 @@ export default function Navbar() {
     handleChainModalBack,
   } = useWalletConnection();
   const wallet = useWallet();
+
+  // Fetch unread notifications count (only when wallet is connected)
+  useEffect(() => {
+    if (!connectedAddress) {
+      setLiveNotificationsCount(0);
+      return;
+    }
+
+    const fetchNotificationsCount = async () => {
+      try {
+        const response = await fetch(`/api/v1/notifications?status=live&userWallet=${encodeURIComponent(connectedAddress)}&unreadOnly=true`);
+        if (response.ok) {
+          const data = await response.json();
+          setLiveNotificationsCount(data.unreadCount || 0);
+        }
+      } catch (error) {
+        console.error("Error fetching notifications count:", error);
+      }
+    };
+
+    fetchNotificationsCount();
+    // Poll every 30 seconds for new notifications
+    const interval = setInterval(fetchNotificationsCount, 30000);
+    return () => clearInterval(interval);
+  }, [connectedAddress]);
 
   const handleConnect = () => {
     openModal();
@@ -163,6 +192,20 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-2">
             {connectedAddress ? (
               <>
+                {/* Notifications Icon with Badge */}
+                <button
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className="relative bg-[#081f02] p-3 rounded-full hover:opacity-90 transition-opacity cursor-pointer"
+                  aria-label="Notifications"
+                >
+                  <IoNotificationsOutline className="w-6 h-6 text-[#b1f128]" />
+                  {liveNotificationsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-[#ff5c5c] text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                      {liveNotificationsCount > 9 ? "9+" : liveNotificationsCount}
+                    </span>
+                  )}
+                </button>
+
                 {/* Share Knowledge Icon (Referrals) - Green border */}
                 <button
                   onClick={handleReferrals}
@@ -254,6 +297,19 @@ export default function Navbar() {
           <div className="md:hidden flex items-center gap-3">
             {connectedAddress ? (
               <>
+                {/* Notifications Icon with Badge */}
+                <button
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className="relative bg-[#081f02] p-2.5 rounded-full hover:opacity-90 transition-opacity"
+                  aria-label="Notifications"
+                >
+                  <IoNotificationsOutline className="w-5 h-5 text-[#b1f128]" />
+                  {liveNotificationsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-[#ff5c5c] text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
+                      {liveNotificationsCount > 9 ? "9+" : liveNotificationsCount}
+                    </span>
+                  )}
+                </button>
                 {/* Wallet Address Button */}
                 <button
                   onClick={handleWalletPanelToggle}
@@ -386,6 +442,31 @@ export default function Navbar() {
           walletAddress={connectedAddress}
           walletIcon={getWalletIcon()}
           onDisconnect={handleDisconnect}
+        />
+      )}
+
+      {/* Notifications Dropdown */}
+      {connectedAddress && (
+        <NotificationsDropdown
+          isOpen={isNotificationsOpen}
+          onClose={() => setIsNotificationsOpen(false)}
+          walletAddress={connectedAddress}
+          onNotificationsViewed={async () => {
+            // Refresh unread count after viewing
+            if (connectedAddress) {
+              try {
+                const response = await fetch(
+                  `/api/v1/notifications?status=live&userWallet=${encodeURIComponent(connectedAddress)}&unreadOnly=true`
+                );
+                if (response.ok) {
+                  const data = await response.json();
+                  setLiveNotificationsCount(data.unreadCount || 0);
+                }
+              } catch (error) {
+                console.error("Error refreshing notification count:", error);
+              }
+            }
+          }}
         />
       )}
     </nav>

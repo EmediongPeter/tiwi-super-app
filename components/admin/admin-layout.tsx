@@ -42,7 +42,7 @@ export default function AdminLayout({
     { icon: IoWaterOutline, label: "Liquidity Pools", href: "/admin/liquidity-pools", key: "liquidity-pools" },
     { icon: IoAlertCircleOutline, label: "Create Adverts", href: "/admin/adverts", key: "create-adverts" },
     { icon: IoDownloadOutline, label: "Download App", href: "#", key: "download-app" },
-    { icon: IoDocumentTextOutline, label: "Support Hub", href: "#", key: "support-hub" },
+    { icon: IoDocumentTextOutline, label: "Support Hub", href: "/admin/support-hub", key: "support-hub" },
   ];
 
   return (
@@ -54,20 +54,22 @@ export default function AdminLayout({
         } hidden lg:flex bg-[#0b0f0a] border-r border-[#1f261e] transition-all duration-300 flex-col shrink-0`}
       >
         {/* Logo */}
-        <div className="p-6 flex items-center justify-center">
-        <div className="h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 relative">
-              <Image
-                src="/assets/logos/tiwi-logo.svg"
-                alt="TIWI Logo"
-                width={40}
-                height={40}
-                className="object-contain w-full h-full"
-              />
-            </div>
+        <div className={`p-6 flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start gap-3"}`}>
+          <div className="h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 relative shrink-0">
+            <Image
+              src="/assets/logos/tiwi-logo.svg"
+              alt="TIWI Logo"
+              width={40}
+              height={40}
+              className="object-contain w-full h-full"
+            />
+          </div>
+          {!sidebarCollapsed && (
             <div className="text-white font-bold text-sm sm:text-base leading-tight">
               <p className="m-0">TIWI</p>
               <p className="m-0">Protocol</p>
             </div>
+          )}
         </div>
 
         

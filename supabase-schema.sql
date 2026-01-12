@@ -160,3 +160,60 @@ CREATE INDEX IF NOT EXISTS idx_tiwi_nft_activities_wallet_timestamp ON tiwi_nft_
 -- Create unique constraint to prevent duplicate NFT activity tracking
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tiwi_nft_activities_unique ON tiwi_nft_activities(transaction_hash, chain_id, contract_address, token_id);
 
+-- ============================================================================
+-- Bug Reports System
+-- ============================================================================
+
+-- Create bug_reports table to store user-submitted bug reports
+CREATE TABLE IF NOT EXISTS bug_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_wallet TEXT NOT NULL,
+  description TEXT NOT NULL,
+  screenshot TEXT, -- Base64 encoded image or URL
+  log_file TEXT, -- Base64 encoded file or URL
+  device_info JSONB, -- Store device info as JSON: {userAgent, platform, language, screenResolution}
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed', 'resolved', 'dismissed')),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for bug_reports
+CREATE INDEX IF NOT EXISTS idx_bug_reports_user_wallet ON bug_reports(user_wallet);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_created_at ON bug_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bug_reports_status_created ON bug_reports(status, created_at DESC);
+
+-- Create index for pending reports (most common query)
+CREATE INDEX IF NOT EXISTS idx_bug_reports_pending ON bug_reports(status) WHERE status = 'pending';
+
+-- ============================================================================
+-- Token Spotlight System
+-- ============================================================================
+
+-- Create token_spotlight table to store spotlight tokens
+CREATE TABLE IF NOT EXISTS token_spotlight (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  symbol TEXT NOT NULL,
+  name TEXT,
+  address TEXT,
+  rank INTEGER NOT NULL CHECK (rank >= 1),
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT check_end_after_start CHECK (end_date >= start_date)
+);
+
+-- Create indexes for token_spotlight
+CREATE INDEX IF NOT EXISTS idx_token_spotlight_symbol ON token_spotlight(symbol);
+CREATE INDEX IF NOT EXISTS idx_token_spotlight_rank ON token_spotlight(rank);
+CREATE INDEX IF NOT EXISTS idx_token_spotlight_dates ON token_spotlight(start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_token_spotlight_created_at ON token_spotlight(created_at DESC);
+
+-- Create unique constraint to prevent duplicate spotlight entries for same symbol within overlapping date ranges
+-- Note: This allows same symbol with different date ranges, but prevents overlapping dates
+CREATE UNIQUE INDEX IF NOT EXISTS idx_token_spotlight_unique_symbol_dates 
+ON token_spotlight(symbol, start_date, end_date) 
+WHERE start_date <= end_date;
+
