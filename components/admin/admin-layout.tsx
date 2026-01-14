@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, ReactNode } from "react";
+import { useState, ReactNode, createContext, useContext, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,13 +15,29 @@ import {
   IoSearchOutline,
   IoPersonOutline,
   IoChevronDownOutline,
+  IoLogOutOutline,
 } from "react-icons/io5";
 import { HiOutlineBolt } from "react-icons/hi2";
 import { TbCoins } from "react-icons/tb";
+import { useAdminAuth } from "@/lib/frontend/contexts/admin-auth-context";
 
 interface AdminLayoutProps {
   children: ReactNode;
   activeNavItem?: string;
+}
+
+// Create context for search state
+const AdminSearchContext = createContext<{
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+} | null>(null);
+
+export function useAdminSearch() {
+  const context = useContext(AdminSearchContext);
+  if (!context) {
+    throw new Error("useAdminSearch must be used within AdminLayout");
+  }
+  return context;
 }
 
 export default function AdminLayout({
@@ -29,7 +45,34 @@ export default function AdminLayout({
   activeNavItem,
 }: AdminLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
+  const { user, signOut } = useAdminAuth();
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    setIsUserMenuOpen(false);
+  };
+
+  // Format email for display
+  const displayEmail = user?.email || 'Admin';
+  const displayName = user?.email?.split('@')[0] || 'Admin';
 
   const navItems = [
     { icon: IoHomeOutline, label: "Dashboard", href: "/admin", key: "dashboard" },
@@ -164,21 +207,47 @@ export default function AdminLayout({
             <input
               type="text"
               placeholder="Search Dashboard..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-[#121712] border border-[#1f261e] rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-[#7c7c7c] focus:outline-none focus:border-[#b1f128] w-full"
             />
           </div>
-          {/* User Profile */}
-          <button className="flex items-center gap-2 px-3 py-2 bg-[#121712] border border-[#1f261e] rounded-lg hover:bg-[#1a1f1a] transition-colors">
-            <div className="flex flex-col items-end">
-              <span className="text-white text-xs font-medium">0x95...3545</span>
-              <span className="text-[#b5b5b5] text-xs">Admin</span>
-            </div>
-            <IoChevronDownOutline className="w-4 h-4 lg:w-5 lg:h-5 text-[#b1f128]" />
-          </button>
+          {/* User Profile Dropdown */}
+          <div className="relative" ref={userMenuRef}>
+            <button 
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              className="flex items-center gap-2 px-3 py-2 bg-[#121712] border border-[#1f261e] rounded-lg hover:bg-[#1a1f1a] transition-colors"
+            >
+              <div className="flex flex-col items-end">
+                <span className="text-white text-xs font-medium">{displayName}</span>
+                <span className="text-[#b5b5b5] text-xs">Admin</span>
+              </div>
+              <IoChevronDownOutline className={`w-4 h-4 lg:w-5 lg:h-5 text-[#b1f128] transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {isUserMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-[#121712] border border-[#1f261e] rounded-lg shadow-lg z-50">
+                <div className="p-3 border-b border-[#1f261e]">
+                  <p className="text-white text-sm font-medium">{displayName}</p>
+                  <p className="text-[#b5b5b5] text-xs truncate">{displayEmail}</p>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-[#b5b5b5] hover:text-white hover:bg-[#1a1f1a] transition-colors"
+                >
+                  <IoLogOutOutline className="w-5 h-5" />
+                  <span className="text-sm font-medium">Sign Out</span>
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         {/* Page Content */}
-        {children}
+        <AdminSearchContext.Provider value={{ searchQuery, setSearchQuery }}>
+          {children}
+        </AdminSearchContext.Provider>
       </div>
     </div>
   );
