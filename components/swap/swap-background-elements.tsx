@@ -20,7 +20,7 @@ export default function SwapBackgroundElements() {
         </div>
       </div>
 
-      {/* Chart Visual 1 - Middle Layer (z-10) - Behind chart card, above arrow */}
+  {/* Chart Visual 1 - Middle Layer (z-10) - Behind chart card, above arrow */}
       <div className="absolute bottom-[-45px] sm:bottom-[-55px] md:bottom-[-65px] lg:bottom-[-70px] xl:bottom-[-85px] 2xl:bottom-[-100px] left-0 lg:left-[-40px] xl:left-[-60px] 2xl:left-[-80px] z-10 pointer-events-none overflow-visible hidden lg:block">
         <div className="w-[240px] h-[200px] lg:w-[320px] lg:h-[280px] xl:w-[400px] xl:h-[360px] 2xl:w-[480px] 2xl:h-[400px]">
           <Image

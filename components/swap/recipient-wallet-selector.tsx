@@ -1,3 +1,15 @@
+// Recipient Wallet Selector
+// -------------------------
+// Lets the user choose where the assets should go:
+// - Primary wallet (default)
+// - A newly connected secondary wallet
+// - A manually entered address
+//
+// Design goals:
+// - Feel like a first-class "Send to" control in the swap card
+// - Be chain-aware (EVM vs Solana) for validation and connection
+// - Apply Relay-like rules without overcomplicating the UI
+
 "use client";
 
 import { useState, useCallback } from "react";
@@ -11,6 +23,7 @@ import type { WalletType } from "@/components/wallet/connect-wallet-modal";
 import type { WalletChain } from "@/lib/wallet/connection/types";
 import type { WalletProvider } from "@/lib/wallet/detection/types";
 import type { WalletConnectWallet } from "@/lib/wallet/services/wallet-explorer-service";
+import { useWallet } from "@/lib/wallet/hooks/useWallet";
 
 interface RecipientWalletSelectorProps {
   connectedAddress: string | null;
@@ -27,6 +40,7 @@ export default function RecipientWalletSelector({
   chainId,
   chainType,
 }: RecipientWalletSelectorProps) {
+  const { primaryWallet } = useWallet();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualAddress, setManualAddress] = useState("");
@@ -38,12 +52,18 @@ export default function RecipientWalletSelector({
   const [pendingWalletId, setPendingWalletId] = useState<string | null>(null);
   const [previousModalState, setPreviousModalState] = useState<'connect' | 'explorer' | null>(null);
   
-  // Determine chain from chainType or chainId
+  // Determine desired chain from chainType or chainId
   const getChain = (): WalletChain => {
     if (chainType === "Solana") return "solana";
     if (chainType === "EVM") return "ethereum";
     // Default to ethereum if unknown
     return "ethereum";
+  };
+
+  // Helper: check if a wallet ID is the same provider as the primary wallet
+  const isSameProviderAsPrimary = (walletId: string): boolean => {
+    if (!primaryWallet) return false;
+    return primaryWallet.provider?.toLowerCase() === walletId.toLowerCase();
   };
 
   // Check if wallet supports multiple chains
@@ -70,74 +90,101 @@ export default function RecipientWalletSelector({
     return 'ethereum';
   };
   
-  const handleWalletConnect = useCallback(async (walletInput: WalletType | WalletConnectWallet) => {
-    try {
-      // Handle WalletConnect wallet from explorer
-      if (typeof walletInput === 'object' && 'id' in walletInput && 'name' in walletInput) {
-        const wcWallet = walletInput as WalletConnectWallet;
-        
-        // Check if this is a multi-chain wallet
-        if (isMultiChainWallet(wcWallet)) {
-          setPendingWallet(wcWallet);
-          setPendingWalletId(wcWallet.id);
-          setPreviousModalState('explorer');
-          setIsChainSelectionOpen(true);
+  const handleWalletConnect = useCallback(
+    async (walletInput: WalletType | WalletConnectWallet) => {
+      try {
+        // Handle WalletConnect wallet from explorer
+        if (typeof walletInput === "object" && "id" in walletInput && "name" in walletInput) {
+          const wcWallet = walletInput as WalletConnectWallet;
+
+          // Relay-like rule: don't allow the same provider as the primary wallet
+          if (isSameProviderAsPrimary(wcWallet.id)) {
+            setManualAddressError(
+              "This wallet is already connected as your primary wallet. Please use a different wallet or paste an address."
+            );
+            return;
+          }
+
+          // Check if this is a multi-chain wallet
+          if (isMultiChainWallet(wcWallet)) {
+            setPendingWallet(wcWallet);
+            setPendingWalletId(wcWallet.id);
+            setPreviousModalState("explorer");
+            setIsChainSelectionOpen(true);
+            setIsExplorerOpen(false);
+            return;
+          }
+
+          // Single-chain wallet - determine chain and connect
+          const desiredChain = getChain();
+          const walletChain = getChainForWallet(wcWallet.id);
+          const chain: WalletChain =
+            desiredChain === "solana" && walletChain === "solana"
+              ? "solana"
+              : desiredChain === "ethereum" && walletChain === "ethereum"
+              ? "ethereum"
+              : walletChain;
+
+          const address = await connectSecondaryWallet(wcWallet.id, chain);
+          onRecipientChange(address);
           setIsExplorerOpen(false);
           return;
         }
-        
-        // Single-chain wallet - determine chain and connect
-        const chain = getChainForWallet(wcWallet.id);
-        const address = await connectSecondaryWallet(wcWallet.id, chain);
+
+        // Handle string wallet type
+        const type = walletInput as WalletType;
+
+        // For create/import, show instructions or redirect
+        if (type === "create" || type === "import") {
+          console.log("Create/import wallet not yet implemented");
+          return;
+        }
+
+        // Get wallet from supported wallets
+        const walletInfo = getWalletById(type);
+        if (!walletInfo) {
+          throw new Error(`Wallet "${type}" not found`);
+        }
+
+        // Relay-like rule: don't allow the same provider as the primary wallet
+        if (isSameProviderAsPrimary(walletInfo.id)) {
+          setManualAddressError(
+            "This wallet is already connected as your primary wallet. Please use a different wallet or paste an address."
+          );
+          return;
+        }
+
+        // Convert to WalletProvider to check chains
+        const walletProvider: WalletProvider = {
+          id: walletInfo.id,
+          name: walletInfo.name,
+          icon: walletInfo.icon,
+          supportedChains: walletInfo.supportedChains,
+          installed: true,
+        };
+
+        // Check if multi-chain wallet
+        if (isMultiChainWallet(walletProvider)) {
+          setPendingWallet(walletProvider);
+          setPendingWalletId(type);
+          setPreviousModalState("connect");
+          setIsChainSelectionOpen(true);
+          setIsModalOpen(false);
+          return;
+        }
+
+        // Single-chain wallet - connect immediately, favouring desired chain
+        const chain = getChain();
+        const address = await connectSecondaryWallet(type, chain);
         onRecipientChange(address);
-        setIsExplorerOpen(false);
-        return;
-      }
-
-      // Handle string wallet type
-      const type = walletInput as WalletType;
-      
-      // For create/import, show instructions or redirect
-      if (type === 'create' || type === 'import') {
-        console.log('Create/import wallet not yet implemented');
-        return;
-      }
-
-      // Get wallet from supported wallets
-      const walletInfo = getWalletById(type);
-      if (!walletInfo) {
-        throw new Error(`Wallet "${type}" not found`);
-      }
-
-      // Convert to WalletProvider to check chains
-      const walletProvider: WalletProvider = {
-        id: walletInfo.id,
-        name: walletInfo.name,
-        icon: walletInfo.icon,
-        supportedChains: walletInfo.supportedChains,
-        installed: true,
-      };
-
-      // Check if multi-chain wallet
-      if (isMultiChainWallet(walletProvider)) {
-        setPendingWallet(walletProvider);
-        setPendingWalletId(type);
-        setPreviousModalState('connect');
-        setIsChainSelectionOpen(true);
         setIsModalOpen(false);
-        return;
+      } catch (error: any) {
+        console.error("Error connecting secondary wallet:", error);
+        setManualAddressError(error?.message || "Failed to connect wallet");
       }
-
-      // Single-chain wallet - connect immediately
-      const chain = getChainForWallet(type);
-      const address = await connectSecondaryWallet(type, chain);
-      onRecipientChange(address);
-      setIsModalOpen(false);
-    } catch (error: any) {
-      console.error('Error connecting secondary wallet:', error);
-      setManualAddressError(error?.message || 'Failed to connect wallet');
-    }
-  }, []);
+    },
+    [getChain, isMultiChainWallet, isSameProviderAsPrimary, onRecipientChange]
+  );
 
   const handleChainSelect = useCallback(async (chain: WalletChain) => {
     if (!pendingWalletId) return;

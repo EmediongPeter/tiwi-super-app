@@ -164,7 +164,7 @@ export default function WalletExplorerModal({
           <div className="relative">
             <input
               type="text"
-              placeholder="Search through 644 wallets..."
+              placeholder="Search through 100+ wallets..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-4 py-3 pl-10 pr-10 bg-[#121712] border border-[#1f261e] rounded-xl text-sm text-white placeholder-[#b5b5b5] focus:outline-none focus:ring-2 focus:ring-[#b1f128] focus:border-transparent transition-all"

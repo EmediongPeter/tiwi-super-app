@@ -1,8 +1,11 @@
 "use client";
 
+import { useRef } from "react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import BalanceSkeleton from "@/components/ui/balance-skeleton";
+import { truncateAddress } from "@/lib/frontend/utils/wallet-display";
+import { ChevronDown } from "lucide-react";
 
 interface TokenInputProps {
   type: "from" | "to";
@@ -11,6 +14,7 @@ interface TokenInputProps {
     chain: string;
     icon: string;
     chainBadge?: string;
+    chainId?: number;
   };
   balance?: string;
   balanceLoading?: boolean;
@@ -21,6 +25,11 @@ interface TokenInputProps {
   onAmountChange?: (value: string) => void;
   disabled?: boolean;
   readOnlyAmount?: boolean;
+  walletLabel?: string;
+  walletIcon?: string | null;
+  walletAddress?: string | null;
+  onWalletClick?: () => void;
+  walletDropdown?: React.ReactNode;
 }
 
 export default function TokenInput({
@@ -35,26 +44,60 @@ export default function TokenInput({
   onAmountChange,
   disabled = false,
   readOnlyAmount = false,
+  walletLabel,
+  walletIcon,
+  walletAddress,
+  onWalletClick,
+  walletDropdown,
 }: TokenInputProps) {
   const isFrom = type === "from";
 
   return (
-    <div className="bg-[#0b0f0a] rounded-xl sm:rounded-2xl p-3.5 sm:p-4 lg:p-[18px] relative z-0 overflow-hidden">
+    <div className="bg-[#0b0f0a] rounded-xl sm:rounded-2xl p-3.5 sm:p-4 lg:p-[18px] relative overflow-visible z-0">
       <div className="flex items-start justify-between gap-3 sm:gap-4 min-w-0">
         <div className="flex flex-col gap-2.5 sm:gap-3 lg:gap-[13px]">
-          <p className="text-white font-semibold text-xs sm:text-sm">
-            {isFrom ? "From" : "To"}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-white font-semibold text-xs sm:text-sm">
+              {isFrom ? "From" : "To"}
+            </p>
+            {(walletLabel || walletAddress) && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={onWalletClick}
+                  className="text-[11px] sm:text-xs font-medium text-[#b1f128] flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+                >
+                  {walletIcon && (
+                    <Image
+                      src={walletIcon}
+                      alt="Wallet"
+                      width={16}
+                      height={16}
+                      className="w-4 h-4 rounded-full shrink-0"
+                      onError={(e) => {
+                        // Hide icon if it fails to load
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  )}
+                  <span className="truncate max-w-[90px] sm:max-w-[120px] text-right">
+                    {walletAddress ? truncateAddress(walletAddress) : walletLabel}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-[#b1f128]" />
+                </button>
+                {walletDropdown}
+              </div>
+            )}
+          </div>
           <button
             onClick={onTokenSelect}
             disabled={disabled}
-            className={`flex items-center gap-1.5 sm:gap-[9px] px-2 sm:px-3 py-2 sm:py-2.5 md:py-3 rounded-full transition-colors w-full justify-between min-w-[120px] sm:min-w-[160px] cursor-pointer ${
-              isFrom
+            className={`flex items-center gap-1.5 sm:gap-[9px] px-2 sm:px-3 py-2 sm:py-2.5 md:py-3 rounded-full transition-colors w-full justify-between min-w-[120px] sm:min-w-[160px] cursor-pointer ${isFrom
                 ? "bg-[#121712] hover:bg-[#1f261e]"
                 : "bg-[#156200] hover:bg-[#1a7a00]"
-            } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            {token ? ( 
+            {token ? (
               <>
                 <div className="relative h-8 w-8 sm:h-11 sm:w-11 shrink-0">
                   {token.icon && token.icon.trim() !== '' ? (
@@ -200,11 +243,10 @@ export default function TokenInput({
             onChange={(e) => onAmountChange?.(e.target.value)}
             placeholder="0.0"
             readOnly={readOnlyAmount}
-            className={`text-right text-[26px] sm:text-[29px] lg:text-[33px] leading-none mb-0.5 sm:mb-1 bg-transparent border-0 px-0 py-0 w-full min-w-0 ${
-              amount && amount !== ""
+            className={`text-right text-[26px] sm:text-[29px] lg:text-[33px] leading-none mb-0.5 sm:mb-1 bg-transparent border-0 px-0 py-0 w-full min-w-0 ${amount && amount !== ""
                 ? "text-white"
                 : "text-[#7c7c7c]"
-            }`}
+              }`}
           />
           <p className="text-[#7c7c7c] font-medium text-xs sm:text-sm text-right w-full truncate">
             {usdValue}

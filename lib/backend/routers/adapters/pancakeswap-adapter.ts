@@ -105,13 +105,13 @@ export class PancakeSwapAdapter extends BaseRouter {
         console.warn(`[PancakeSwapAdapter] Chain ${chainId} not supported by PancakeSwap V2`);
         return null;
       }
-
+      
       const chain = getChainConfig(chainId);
       if (!chain) {
         console.warn(`[PancakeSwapAdapter] Chain ${chainId} not configured`);
         return null;
       }
-
+      
       // Convert amount to BigInt once at the start
       const amountInBigInt = BigInt(params.fromAmount);
       const tokenIn = getAddress(params.fromToken);
@@ -119,11 +119,11 @@ export class PancakeSwapAdapter extends BaseRouter {
 
       // Try advanced routing first (graph-based)
       try {
-        const publicClient = createPublicClient({
+      const publicClient = createPublicClient({
           chain,
-          transport: http(),
-        });
-
+        transport: http(),
+      });
+      
         console.log('[PancakeSwapAdapter] Attempting advanced graph-based routing...');
         const route = await findBestRoute(tokenIn, tokenOut, amountInBigInt, chainId);
         
@@ -148,14 +148,14 @@ export class PancakeSwapAdapter extends BaseRouter {
             slippage,
             isFeeOnTransfer
           });
-
-          // Normalize to RouterRoute format
+      
+      // Normalize to RouterRoute format
           return this.normalizeRoute(
             chainId,
             chainId,
-            params.fromToken,
-            params.toToken,
-            params.fromAmount,
+        params.fromToken,
+        params.toToken,
+        params.fromAmount,
             route.expectedOutput.toString(),
             params.fromDecimals || 18,
             params.toDecimals || 18,
@@ -164,7 +164,7 @@ export class PancakeSwapAdapter extends BaseRouter {
             slippage,
             '0',
             '0',
-            routerAddress,
+        routerAddress,
             originalTokenIn,
             originalTokenOut,
             isFeeOnTransfer
@@ -352,23 +352,23 @@ export class PancakeSwapAdapter extends BaseRouter {
           const result = await fastRpcCall(async () => {
             return await publicClient.readContract({
               address: checksummedRouter,
-              abi: ROUTER_ABI,
-              functionName: 'getAmountsOut',
+          abi: ROUTER_ABI,
+          functionName: 'getAmountsOut',
               args: [testAmount, checksummedPath],
-            }) as bigint[];
+        }) as bigint[];
           }, 1000); // 1s timeout for quotes
           
           if (result && result.length > 0 && result[result.length - 1] > BigInt(0)) {
             return result;
-          }
-          return null;
+        }
+        return null;
         } catch (error: any) {
           const errorMsg = error?.message || error?.toString() || '';
           if (errorMsg.includes('Pancake: K') || errorMsg.includes('PancakeSwap: K') || 
               errorMsg.includes('constant product') || errorMsg.includes('K:') ||
               errorMsg.includes('timeout')) {
-            return null;
-          }
+        return null;
+      }
           throw error;
         }
       };
@@ -641,9 +641,9 @@ export class PancakeSwapAdapter extends BaseRouter {
       if (error?.message?.includes('INSUFFICIENT_OUTPUT_AMOUNT') || 
           error?.message?.includes('INSUFFICIENT_LIQUIDITY') ||
           error?.message?.includes('No route')) {
-        return null;
-      }
-      
+      return null;
+    }
+
       throw error;
     }
   }

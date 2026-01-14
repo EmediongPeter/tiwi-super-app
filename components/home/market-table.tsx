@@ -325,16 +325,16 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
                             }}
                             className="shrink-0"
                           >
-                            <Image
-                              src="/assets/icons/home/star.svg"
-                              alt="star"
-                              width={12}
-                              height={12}
+                          <Image
+                            src="/assets/icons/home/star.svg"
+                            alt="star"
+                            width={12}
+                            height={12}
                               className={`lg:w-4 lg:h-4 xl:w-5 xl:h-5 shrink-0 transition-opacity ${
                                 favourites.includes(`${token.token.chainId}-${token.token.address.toLowerCase()}`)
                                   ? 'opacity-100' : 'opacity-50'
                               }`}
-                            />
+                          />
                           </button>
                           <TokenImage
                             src={token.icon}

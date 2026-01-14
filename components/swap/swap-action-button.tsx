@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { parseNumber } from "@/lib/shared/utils/number";
 
 interface SwapActionButtonProps {
   activeTab: "swap" | "limit";
@@ -9,6 +10,7 @@ interface SwapActionButtonProps {
   onConnectClick?: () => void;
   isExecutingTransfer?: boolean;
   transferStatus?: string;
+  fromAmount?: string;
 }
 
 export default function SwapActionButton({
@@ -18,20 +20,24 @@ export default function SwapActionButton({
   onConnectClick,
   isExecutingTransfer = false,
   transferStatus,
+  fromAmount = "",
 }: SwapActionButtonProps) {
   const isLimit = activeTab === "limit";
+  const hasAmount = fromAmount && fromAmount.trim() !== "" && parseFloat(fromAmount) > 0;
 
   return (
     <div className="relative mt-3 sm:mt-4">
       {!isLimit && isConnected && (
         <Button
           onClick={onSwapClick}
-          disabled={isExecutingTransfer}
+          disabled={isExecutingTransfer || !hasAmount}
           className="w-full relative z-10 text-sm sm:text-base py-2.5 sm:py-3 lg:py-3"
         >
           {isExecutingTransfer 
             ? (transferStatus || "Processing...") 
-            : "Swap"}
+            : hasAmount
+            ? "Swap"
+            : "Enter Amount"}
         </Button>
       )}
       {!isLimit && !isConnected && (
@@ -39,7 +45,7 @@ export default function SwapActionButton({
           onClick={onConnectClick}
           className="w-full relative z-10 text-sm sm:text-base py-2.5 sm:py-3 lg:py-3"
         >
-          Connect
+          Connect Wallet
         </Button>
       )}
       {isLimit && isConnected && (
@@ -55,7 +61,7 @@ export default function SwapActionButton({
           onClick={onConnectClick}
           className="w-full relative z-10 text-sm sm:text-base py-2.5 sm:py-3 lg:py-3"
         >
-          Connect
+          Connect Wallet
         </Button>
       )}
       {/* Gradient Glow Below Button */}

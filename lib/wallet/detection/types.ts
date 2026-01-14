@@ -25,5 +25,6 @@ export interface WalletProvider {
   supportedChains: SupportedChain[];
   installed: boolean;
   imageId?: string;
+  homepage?: string;
 }
 

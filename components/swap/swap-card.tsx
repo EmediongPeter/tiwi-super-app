@@ -8,6 +8,8 @@ import LimitOrderFields from "./limit-order-fields";
 import SwapDetailsCard from "./swap-details-card";
 import SwapActionButton from "./swap-action-button";
 import RecipientWalletSelector from "./recipient-wallet-selector";
+import FromWalletDropdown from "./from-wallet-dropdown";
+import ToWalletDropdown from "./to-wallet-dropdown";
 import Skeleton from "@/components/ui/skeleton";
 import { parseNumber } from "@/lib/shared/utils/number";
 import { useSwapStore } from "@/lib/frontend/store/swap-store";
@@ -39,6 +41,9 @@ interface SwapCardProps {
   recipientAddress?: string | null;
   onRecipientChange?: (address: string | null) => void;
   connectedAddress?: string | null;
+  fromWalletIcon?: string | null;
+  toWalletIcon?: string | null;
+  onToWalletClick?: () => void;
   onTabChange?: (tab: "swap" | "limit") => void;
   onFromTokenSelect?: () => void;
   onToTokenSelect?: () => void;
@@ -71,6 +76,9 @@ export default function SwapCard({
   recipientAddress = null,
   onRecipientChange,
   connectedAddress = null,
+  fromWalletIcon = null,
+  toWalletIcon = null,
+  onToWalletClick,
   onTabChange,
   onFromTokenSelect,
   onToTokenSelect,
@@ -92,6 +100,11 @@ export default function SwapCard({
   // Expandable details state - used for both Swap and Limit tabs
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
 
+  // Wallet dropdown states
+  const [isFromWalletDropdownOpen, setIsFromWalletDropdownOpen] = useState(false);
+  const [isToWalletDropdownOpen, setIsToWalletDropdownOpen] = useState(false);
+  
+
   // Check if fromAmount is valid (non-zero number) for showing Limit-specific sections
   const hasValidFromAmount = parseNumber(fromAmount) > 0;
 
@@ -99,11 +112,25 @@ export default function SwapCard({
     setIsDetailsExpanded((prev) => !prev);
   };
 
+  const handleFromWalletClick = () => {
+    if (isConnected) {
+      // Toggle dropdown for connected wallets
+      setIsFromWalletDropdownOpen((prev) => !prev);
+    } else {
+      // Show connect wallet modal
+      onConnectClick?.();
+    }
+  };
+
+  const handleToWalletClick = () => {
+    setIsToWalletDropdownOpen((prev) => !prev);
+  };
+
   return (
     <div className="flex flex-col gap-2 sm:gap-2.5">
       <SwapTabs activeTab={activeTab} onTabChange={onTabChange} />
 
-      <div className="bg-[#010501] border border-[#1f261e] rounded-2xl lg:rounded-3xl p-4 sm:p-5 lg:p-6 relative z-30 overflow-hidden backdrop-blur-sm">
+      <div className="bg-[#010501] border border-[#1f261e] rounded-2xl lg:rounded-3xl p-4 sm:p-5 lg:p-6 relative z-30 overflow-visible backdrop-blur-sm">
         {/* Top Edge Gradient Glow */}
         <div className="absolute top-0 left-0 right-0 h-px bg-[linear-gradient(to_right,transparent_0%,rgba(177,241,40,0.4)_50%,transparent_100%)]"></div>
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[2px] bg-[#b1f128]/20 blur-[2px]"></div>
@@ -134,11 +161,26 @@ export default function SwapCard({
                 onMaxClick={onMaxClick}
                 onAmountChange={onFromAmountChange}
                 readOnlyAmount={false}
+                walletLabel={isConnected ? undefined : "Select wallet"}
+                walletIcon={fromWalletIcon}
+                walletAddress={isConnected ? connectedAddress : null}
+                onWalletClick={handleFromWalletClick}
+                walletDropdown={
+                  <FromWalletDropdown
+                    open={isFromWalletDropdownOpen}
+                    onClose={() => setIsFromWalletDropdownOpen(false)}
+                    onConnectNewWallet={onConnectClick || (() => {})}
+                    onSelectWallet={(address) => {
+                      // Future: switch active wallet
+                    }}
+                    currentAddress={isConnected ? connectedAddress : null}
+                  />
+                }
               />
             )}
 
             {/* Swap Arrow - Absolutely positioned between From and To sections */}
-            <div className="absolute left-1/2 -translate-x-1/2 z-20 md:top-[calc(50%-20px)] top-[calc(50%-15px)]">
+            <div className="absolute left-1/2 -translate-x-1/2 z-10 md:top-[calc(50%-20px)] top-[calc(50%-15px)]">
               <button
                 onClick={onSwapClick}
                 className="bg-[#1f261e] border-2 border-[#010501] p-1.5 sm:p-2 rounded-lg hover:bg-[#2a3229] transition-colors shadow-lg"
@@ -165,29 +207,33 @@ export default function SwapCard({
                 <Skeleton className="h-4 w-24" />
               </div>
             ) : (
-              <div className="space-y-2">
-                {/* Recipient Wallet Selector - Always visible in To section header */}
-                <div className="flex items-center justify-end px-2 -mb-1">
-                  <RecipientWalletSelector
-                    connectedAddress={connectedAddress}
-                    recipientAddress={recipientAddress}
-                    onRecipientChange={onRecipientChange || (() => {})}
+              <TokenInput
+                type="to"
+                token={toToken}
+                balance={toBalance}
+                balanceLoading={toBalanceLoading}
+                amount={toAmount}
+                usdValue={toUsdValue}
+                onTokenSelect={onToTokenSelect}
+                onAmountChange={onToAmountChange}
+                walletLabel={recipientAddress ? undefined : "Select wallet"}
+                walletIcon={toWalletIcon}
+                walletAddress={recipientAddress}
+                onWalletClick={handleToWalletClick}
+                walletDropdown={
+                  <ToWalletDropdown
+                    open={isToWalletDropdownOpen}
+                    onClose={() => setIsToWalletDropdownOpen(false)}
+                    onConnectNewWallet={onConnectClick || (() => {})}
+                    onAddressSelect={(address) => {
+                      onRecipientChange?.(address);
+                    }}
                     chainId={toToken?.chainId}
-                    chainType={toToken?.chainId === 7565164 ? "Solana" : toToken?.chainId ? "EVM" : undefined}
+                    currentRecipientAddress={recipientAddress}
                   />
-                </div>
-                <TokenInput
-                  type="to"
-                  token={toToken}
-                  balance={toBalance}
-                  balanceLoading={toBalanceLoading}
-                  amount={toAmount}
-                  usdValue={toUsdValue}
-                  onTokenSelect={onToTokenSelect}
-                  onAmountChange={onToAmountChange}
-                  readOnlyAmount
-                />
-              </div>
+                }
+                readOnlyAmount
+              />
             )}
           </div>
 
@@ -236,6 +282,7 @@ export default function SwapCard({
             onSwapClick={onSwapClick}
             onConnectClick={onConnectClick}
             isExecutingTransfer={isExecutingTransfer}
+            fromAmount={fromAmount}
           />
         </div>
 
@@ -244,6 +291,7 @@ export default function SwapCard({
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-[2px] bg-[#b1f128]/20 blur-[2px]"></div>
         <div className="absolute -bottom-px left-1/2 -translate-x-1/2 w-1/2 h-[3px] bg-[#b1f128]/10 blur-sm"></div>
       </div>
+
     </div>
   );
 }

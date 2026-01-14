@@ -452,7 +452,7 @@ export abstract class EVMDEXExecutor {
         slippagePercent = parseFloat(route.slippage);
         console.log('[EVM DEX] Using quote recommended slippage:', slippagePercent);
       } else {
-        // Calculate dynamic slippage (matching tiwi-test logic)
+      // Calculate dynamic slippage (matching tiwi-test logic)
         // For low-cap/low-liquidity pairs, start with minimum 3% slippage
         if (isLowLiquidity) {
           slippagePercent = 3; // Minimum 3% for low-cap pairs
@@ -538,7 +538,7 @@ export abstract class EVMDEXExecutor {
       } else if (amountOutMin > BigInt(100)) {
         amountOutMin = (amountOutMin / BigInt(100)) * BigInt(100);
       }
-
+      
       console.log('[EVM DEX] Final slippage calculation:', {
         actualAmountOut: actualAmountOut.toString(),
         amountOutMin: amountOutMin.toString(),
