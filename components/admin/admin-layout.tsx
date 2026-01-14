@@ -11,7 +11,6 @@ import {
   IoWalletOutline,
   IoWaterOutline,
   IoAlertCircleOutline,
-  IoDownloadOutline,
   IoDocumentTextOutline,
   IoSearchOutline,
   IoPersonOutline,
@@ -41,7 +40,6 @@ export default function AdminLayout({
     { icon: IoWalletOutline, label: "Staking Pools", href: "/admin/staking-pools", key: "staking-pools" },
     { icon: IoWaterOutline, label: "Liquidity Pools", href: "/admin/liquidity-pools", key: "liquidity-pools" },
     { icon: IoAlertCircleOutline, label: "Create Adverts", href: "/admin/adverts", key: "create-adverts" },
-    { icon: IoDownloadOutline, label: "Download App", href: "#", key: "download-app" },
     { icon: IoDocumentTextOutline, label: "Support Hub", href: "/admin/support-hub", key: "support-hub" },
   ];
 

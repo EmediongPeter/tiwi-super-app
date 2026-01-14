@@ -163,6 +163,147 @@ export default function SettingsPage() {
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
   const [userBugReports, setUserBugReports] = useState<BugReport[]>([]);
   const [isLoadingBugReports, setIsLoadingBugReports] = useState(false);
+  
+  // FAQ state
+  interface FAQ {
+    id: string;
+    question: string;
+    answer: string;
+    category: string;
+    createdAt: string;
+    updatedAt: string;
+  }
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
+  const [isLoadingFAQs, setIsLoadingFAQs] = useState(false);
+  
+  // Live Status state
+  interface LiveStatus {
+    id: string;
+    service: string;
+    status: 'operational' | 'degraded' | 'down' | 'maintenance';
+    updatedAt: string;
+  }
+  const [liveStatuses, setLiveStatuses] = useState<LiveStatus[]>([]);
+  const [isLoadingLiveStatuses, setIsLoadingLiveStatuses] = useState(false);
+  
+  // Tutorial state
+  interface Tutorial {
+    id: string;
+    title: string;
+    description: string;
+    category: string;
+    link: string;
+    thumbnailUrl?: string;
+    createdAt: string;
+    updatedAt: string;
+  }
+  const [tutorials, setTutorials] = useState<Tutorial[]>([]);
+  const [isLoadingTutorials, setIsLoadingTutorials] = useState(false);
+  
+  // Fetch FAQs from API
+  const fetchFAQs = async () => {
+    setIsLoadingFAQs(true);
+    try {
+      const response = await fetch("/api/v1/faqs");
+      if (response.ok) {
+        const data = await response.json();
+        setFaqs(data.faqs || []);
+      } else {
+        console.error("Failed to fetch FAQs");
+      }
+    } catch (error) {
+      console.error("Error fetching FAQs:", error);
+    } finally {
+      setIsLoadingFAQs(false);
+    }
+  };
+  
+  // Fetch Tutorials from API
+  const fetchTutorials = async () => {
+    setIsLoadingTutorials(true);
+    try {
+      const response = await fetch("/api/v1/tutorials");
+      if (response.ok) {
+        const data = await response.json();
+        setTutorials(data.tutorials || []);
+      } else {
+        console.error("Failed to fetch tutorials");
+      }
+    } catch (error) {
+      console.error("Error fetching tutorials:", error);
+    } finally {
+      setIsLoadingTutorials(false);
+    }
+  };
+  
+  // Fetch Live Statuses from API
+  const fetchLiveStatuses = async () => {
+    setIsLoadingLiveStatuses(true);
+    try {
+      const response = await fetch("/api/v1/live-status");
+      if (response.ok) {
+        const data = await response.json();
+        setLiveStatuses(data.statuses || []);
+      } else {
+        console.error("Failed to fetch live statuses");
+      }
+    } catch (error) {
+      console.error("Error fetching live statuses:", error);
+    } finally {
+      setIsLoadingLiveStatuses(false);
+    }
+  };
+  
+  // Fetch FAQs when FAQs view is active
+  useEffect(() => {
+    if (currentView === "faqs") {
+      fetchFAQs();
+    }
+  }, [currentView]);
+  
+  // Fetch Tutorials when tutorials view is active
+  useEffect(() => {
+    if (currentView === "tutorials") {
+      fetchTutorials();
+    }
+  }, [currentView]);
+  
+  // Fetch Live Statuses when live-status view is active
+  useEffect(() => {
+    if (currentView === "live-status") {
+      fetchLiveStatuses();
+    }
+  }, [currentView]);
+  
+  // Helper functions for live status display
+  const getStatusColor = (status: LiveStatus['status']) => {
+    switch (status) {
+      case "operational":
+        return "bg-[#4ade80] text-[#010501]";
+      case "degraded":
+      case "maintenance":
+        return "bg-yellow-500 text-[#010501]";
+      case "down":
+        return "bg-[#ff5c5c] text-white";
+      default:
+        return "bg-[#7c7c7c] text-white";
+    }
+  };
+  
+  const getStatusLabel = (status: LiveStatus['status']) => {
+    switch (status) {
+      case "operational":
+        return "Operational";
+      case "degraded":
+        return "Degraded";
+      case "down":
+        return "Down";
+      case "maintenance":
+        return "Maintenance";
+      default:
+        return status;
+    }
+  };
 
   const wallet = useWallet();
   const walletAddress = wallet.address || "0xDB...T432";
@@ -1905,33 +2046,31 @@ export default function SettingsPage() {
                   Live Status
                 </h2>
 
-                <div className="space-y-4">
-                  {[
-                    { label: "Swap", status: "Operational", color: "green" },
-                    { label: "Liquidity", status: "Degraded", color: "yellow" },
-                    { label: "Bridge", status: "Operational", color: "green" },
-                    { label: "Governance", status: "Operational", color: "green" },
-                    { label: "Nodes", status: "Down", color: "red" },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center justify-between py-4"
-                    >
-                      <span className="text-base text-[#B5B5B5]">{item.label}</span>
-                      <span
-                        className={`px-4 py-2 rounded-full text-sm font-medium ${
-                          item.color === "green"
-                            ? "bg-[#B1F128] text-[#010501]"
-                            : item.color === "yellow"
-                            ? "bg-yellow-500 text-[#010501]"
-                            : "bg-red-500 text-white"
-                        }`}
+                {isLoadingLiveStatuses ? (
+                  <div className="text-center py-12">
+                    <p className="text-[#B5B5B5]">Loading live statuses...</p>
+                  </div>
+                ) : liveStatuses.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-[#B5B5B5]">No live statuses available.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {liveStatuses.map((status) => (
+                      <div
+                        key={status.id}
+                        className="flex items-center justify-between py-4 px-4 bg-[#010501] rounded-xl border border-[#1f261e]"
                       >
-                        {item.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                        <span className="text-base text-[#B5B5B5]">{status.service}</span>
+                        <span
+                          className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(status.status)}`}
+                        >
+                          {getStatusLabel(status.status)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1957,36 +2096,75 @@ export default function SettingsPage() {
                     type="text"
                     value={faqSearch}
                     onChange={(e) => setFaqSearch(e.target.value)}
-                    placeholder="Search"
+                    placeholder="Search FAQs by question, answer, or category..."
                     className="w-full bg-[#010501] border border-[#1f261e] rounded-xl px-4 py-3 text-white placeholder-[#6E7873] outline-none focus:ring-2 focus:ring-[#B1F128] focus:border-[#B1F128]"
                   />
 
-                  {[
-                    "Is TIVI Protocol open source?",
-                    "Can I pay gas without native tokens?",
-                    "Which chains are supported?",
-                    "What are the lending limits?",
-                    "Can I stake NFTs?",
-                    "How do merchants use TIVI Pay?",
-                  ].map((question) => (
-                    <button
-                      key={question}
-                      onClick={() =>
-                        setExpandedFaq(
-                          expandedFaq === question ? null : question
+                  {isLoadingFAQs ? (
+                    <div className="text-center py-12">
+                      <p className="text-[#B5B5B5]">Loading FAQs...</p>
+                    </div>
+                  ) : (() => {
+                    // Filter FAQs based on search term
+                    const searchTerm = faqSearch.toLowerCase().trim();
+                    const filteredFAQs = searchTerm
+                      ? faqs.filter((faq) => 
+                          faq.question.toLowerCase().includes(searchTerm) ||
+                          faq.answer.toLowerCase().includes(searchTerm) ||
+                          faq.category.toLowerCase().includes(searchTerm)
                         )
-                      }
-                      className="w-full flex items-center justify-between py-4 px-4 bg-[#010501] rounded-xl border border-[#1f261e] hover:bg-[#121712] transition-colors text-left"
-                    >
-                      <span className="text-base text-[#B5B5B5]">{question}</span>
-                      <IoChevronDown
-                        size={20}
-                        className={`text-[#B5B5B5] opacity-60 transition-transform ${
-                          expandedFaq === question ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-                  ))}
+                      : faqs;
+
+                    if (filteredFAQs.length === 0) {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-[#B5B5B5]">
+                            {searchTerm ? "No FAQs found matching your search." : "No FAQs available."}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return filteredFAQs.map((faq) => (
+                      <div
+                        key={faq.id}
+                        className="bg-[#010501] rounded-xl border border-[#1f261e] overflow-hidden"
+                      >
+                        <button
+                          onClick={() =>
+                            setExpandedFaq(
+                              expandedFaq === faq.id ? null : faq.id
+                            )
+                          }
+                          className="w-full flex items-center justify-between py-4 px-4 hover:bg-[#121712] transition-colors text-left"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="text-base text-[#B5B5B5] font-medium">
+                                {faq.question}
+                              </span>
+                              <span className="px-2 py-0.5 bg-[#0b0f0a] border border-[#1f261e] rounded text-[#7c7c7c] text-xs">
+                                {faq.category}
+                              </span>
+                            </div>
+                          </div>
+                          <IoChevronDown
+                            size={20}
+                            className={`text-[#B5B5B5] opacity-60 transition-transform flex-shrink-0 ml-2 ${
+                              expandedFaq === faq.id ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                        {expandedFaq === faq.id && (
+                          <div className="px-4 pb-4 pt-2 border-t border-[#1f261e]">
+                            <p className="text-sm text-[#B5B5B5] leading-relaxed whitespace-pre-wrap">
+                              {faq.answer}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
             )}
@@ -2013,38 +2191,80 @@ export default function SettingsPage() {
                     type="text"
                     value={tutorialSearch}
                     onChange={(e) => setTutorialSearch(e.target.value)}
-                    placeholder="Search"
+                    placeholder="Search tutorials..."
                     className="w-full bg-[#010501] border border-[#1f261e] rounded-xl px-4 py-3 text-white placeholder-[#6E7873] outline-none focus:ring-2 focus:ring-[#B1F128] focus:border-[#B1F128]"
                   />
 
-                  <div className="flex gap-4 overflow-x-auto pb-2">
-                    {[
-                      { title: "How to swap", desc: "Learn the basics of...", link: "https://docs.tiwi.com/swap" },
-                      { title: "Add liquidity", desc: "Learn the basics of...", link: "https://docs.tiwi.com/liquidity" },
-                      { title: "Create a pool", desc: "Learn the basics of...", link: "https://docs.tiwi.com/create-pool" },
-                      { title: "Share a pool", desc: "Learn the basics of...", link: "https://docs.tiwi.com/share-pool" },
-                    ].map((tutorial, index) => (
-                      <a
-                        key={index}
-                        href={tutorial.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="min-w-[200px] bg-[#010501] rounded-xl border border-[#1f261e] overflow-hidden hover:border-[#B1F128] transition-colors cursor-pointer"
-                      >
-                        <div className="w-full h-32 bg-[#121712] flex items-center justify-center">
-                          <span className="text-[#6E7873] text-sm">Thumbnail</span>
-                        </div>
-                        <div className="p-4">
-                          <h3 className="text-white font-medium mb-1">
-                            {tutorial.title}
-                          </h3>
-                          <p className="text-sm text-[#B5B5B5]">
-                            {tutorial.desc}
+                  {isLoadingTutorials ? (
+                    <div className="text-center py-12">
+                      <p className="text-[#B5B5B5]">Loading tutorials...</p>
+                    </div>
+                  ) : (() => {
+                    // Filter tutorials based on search term
+                    const searchTerm = tutorialSearch.toLowerCase().trim();
+                    const filteredTutorials = searchTerm
+                      ? tutorials.filter((tutorial) => {
+                          const titleMatch = tutorial.title?.toLowerCase().includes(searchTerm) || false;
+                          const descMatch = tutorial.description?.toLowerCase().includes(searchTerm) || false;
+                          const categoryMatch = tutorial.category?.toLowerCase().includes(searchTerm) || false;
+                          return titleMatch || descMatch || categoryMatch;
+                        })
+                      : tutorials;
+
+                    if (filteredTutorials.length === 0) {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-[#B5B5B5]">
+                            {searchTerm ? "No tutorials found matching your search." : "No tutorials available."}
                           </p>
                         </div>
-                      </a>
-                    ))}
-                  </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex gap-4 overflow-x-auto pb-2">
+                        {filteredTutorials.map((tutorial) => (
+                          <a
+                            key={tutorial.id}
+                            href={tutorial.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-w-[200px] bg-[#010501] rounded-xl border border-[#1f261e] overflow-hidden hover:border-[#B1F128] transition-colors cursor-pointer flex flex-col"
+                          >
+                            {/* Thumbnail */}
+                            {tutorial.thumbnailUrl ? (
+                              <div className="w-full h-32 bg-[#121712] overflow-hidden">
+                                <img
+                                  src={tutorial.thumbnailUrl}
+                                  alt={tutorial.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <div className="w-full h-32 bg-[#121712] flex items-center justify-center">
+                                <span className="text-[#6E7873] text-sm">No Image</span>
+                              </div>
+                            )}
+                            
+                            {/* Content */}
+                            <div className="p-4 flex-1 flex flex-col">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 className="text-white font-medium text-sm flex-1">
+                                  {tutorial.title}
+                                </h3>
+                                <span className="px-2 py-0.5 bg-[#0b0f0a] border border-[#1f261e] rounded text-[#7c7c7c] text-xs whitespace-nowrap">
+                                  {tutorial.category}
+                                </span>
+                              </div>
+                              <p className="text-xs text-[#B5B5B5] line-clamp-2 flex-1">
+                                {tutorial.description}
+                              </p>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
