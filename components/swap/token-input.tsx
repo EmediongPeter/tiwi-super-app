@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import BalanceSkeleton from "@/components/ui/balance-skeleton";
 import { truncateAddress } from "@/lib/frontend/utils/wallet-display";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Clipboard } from "lucide-react";
 
 interface TokenInputProps {
   type: "from" | "to";
@@ -53,7 +53,7 @@ export default function TokenInput({
   const isFrom = type === "from";
 
   return (
-    <div className="bg-[#0b0f0a] rounded-xl sm:rounded-2xl p-3.5 sm:p-4 lg:p-[18px] relative overflow-visible z-0">
+    <div className="bg-[#0b0f0a] rounded-xl sm:rounded-2xl p-3.5 sm:p-4 lg:p-[18px] relative overflow-visible">
       <div className="flex items-start justify-between gap-3 sm:gap-4 min-w-0">
         <div className="flex flex-col gap-2.5 sm:gap-3 lg:gap-[13px]">
           <div className="flex items-center justify-between gap-2">
@@ -64,10 +64,19 @@ export default function TokenInput({
               <div className="relative">
                 <button
                   type="button"
-                  onClick={onWalletClick}
-                  className="text-[11px] sm:text-xs font-medium text-[#b1f128] flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+                  data-wallet-trigger="true"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onWalletClick();
+                  }}
+                  className={`text-[11px] sm:text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity ${
+                    // If walletAddress exists but no walletIcon, it's a pasted address (yellow)
+                    walletAddress && !walletIcon
+                      ? "text-[#fbbf24]"
+                      : "text-[#b1f128]"
+                  }`}
                 >
-                  {walletIcon && (
+                  {walletIcon ? (
                     <Image
                       src={walletIcon}
                       alt="Wallet"
@@ -79,11 +88,18 @@ export default function TokenInput({
                         e.currentTarget.style.display = 'none';
                       }}
                     />
-                  )}
+                  ) : walletAddress ? (
+                    // Show clipboard icon for pasted addresses
+                    <Clipboard className="w-4 h-4 shrink-0" />
+                  ) : null}
                   <span className="truncate max-w-[90px] sm:max-w-[120px] text-right">
                     {walletAddress ? truncateAddress(walletAddress) : walletLabel}
                   </span>
-                  <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-[#b1f128]" />
+                  <ChevronDown className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
+                    walletAddress && !walletIcon
+                      ? "text-[#fbbf24]"
+                      : "text-[#b1f128]"
+                  }`} />
                 </button>
                 {walletDropdown}
               </div>

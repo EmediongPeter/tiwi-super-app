@@ -39,7 +39,7 @@ export default function FromWalletDropdown({
 
   return (
     <WalletDropdown open={open} onClose={onClose} className="top-full mt-1.5">
-      <div className="py-2 z-1000">
+      <div className="py-2">
         {/* Connected Wallets Section */}
         {connectedWallets.length > 0 && (
           <div className="px-2">
