@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { SettingsView } from "./types";
 import { useState } from "react";
+import WalletsList from "./wallets-list";
 
 interface AccountDetailsProps {
   walletName: string;
@@ -148,6 +149,9 @@ export default function AccountDetails({
                 ))}
               </div>
             </div>
+
+            {/* My Wallets (local + external) */}
+            <WalletsList />
           </div>
         </div>
 

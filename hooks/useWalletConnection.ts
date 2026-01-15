@@ -12,6 +12,7 @@ import { useConnect, useDisconnect, useConfig } from "wagmi";
 import { getAccount } from "@wagmi/core";
 import { connectWallet as connectWalletConnector } from "@/lib/wallet/connection/connector";
 import { useWalletStore } from "@/lib/wallet/state/store";
+import { useWalletManagerStore } from "@/lib/wallet/state/wallet-manager-store";
 
 interface UseWalletConnectionReturn {
   isModalOpen: boolean;
@@ -82,6 +83,28 @@ export function useWalletConnection(): UseWalletConnectionReturn {
   const [pendingWallet, setPendingWallet] = useState<WalletProvider | WalletConnectWallet | null>(null);
   const [pendingWalletId, setPendingWalletId] = useState<string | null>(null);
   const [previousModalState, setPreviousModalState] = useState<'connect' | 'explorer' | null>(null);
+
+  const addOrUpdateManagedWallet = useWalletManagerStore((s) => s.addOrUpdateWallet);
+  const setActiveManagedWallet = useWalletManagerStore((s) => s.setActiveWallet);
+
+  // Register a wallet address with the TIWI backend (public address + source only)
+  const registerWalletAddress = useCallback(async (address: string | null | undefined, source: string) => {
+    if (!address) return;
+    try {
+      await fetch("/api/v1/wallets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address,
+          source,
+        }),
+      });
+    } catch (error) {
+      console.warn("[useWalletConnection] Failed to register wallet address:", error);
+    }
+  }, []);
 
   const openModal = useCallback(() => {
     setIsModalOpen(true);
@@ -167,7 +190,10 @@ export function useWalletConnection(): UseWalletConnectionReturn {
               };
               
               useWalletStore.getState().setAccount(account);
-              
+
+              // Register MetaMask wallet address for analytics (public info only)
+              registerWalletAddress(account.address, wcWallet.id);
+
               setIsToastOpen(true);
               setIsExplorerOpen(false);
               return;
@@ -182,7 +208,22 @@ export function useWalletConnection(): UseWalletConnectionReturn {
         } else {
           await wallet.connect(wcWallet.id, chain);
         }
-        
+
+        // Register explorer wallet connection & update wallet manager
+        const primary = useWalletStore.getState().primaryWallet;
+        if (primary?.address) {
+          const managedId = `${wcWallet.id}:${primary.address.toLowerCase()}`;
+          addOrUpdateManagedWallet({
+            id: managedId,
+            address: primary.address,
+            source: 'walletconnect',
+            isLocal: false,
+            label: wcWallet.name,
+          });
+          setActiveManagedWallet(managedId);
+          registerWalletAddress(primary.address, 'walletconnect');
+        }
+
         setIsToastOpen(true);
         setIsExplorerOpen(false);
         return;
@@ -191,10 +232,12 @@ export function useWalletConnection(): UseWalletConnectionReturn {
       // Handle string wallet type
       const type = walletInput as WalletType;
       
-      // For create/import, show instructions or redirect
+      // For create/import, redirect to Settings views
       if (type === 'create' || type === 'import') {
-        // TODO: Show create/import wallet UI or redirect
-        console.log('Create/import wallet not yet implemented');
+        if (typeof window !== "undefined") {
+          const view = type === "create" ? "add-new-wallet" : "import-wallet";
+          window.location.href = `/settings?view=${encodeURIComponent(view)}`;
+        }
         return;
       }
 
@@ -298,6 +341,20 @@ export function useWalletConnection(): UseWalletConnectionReturn {
             
             // Use the store's setAccount method directly
             useWalletStore.getState().setAccount(account);
+
+            // Update wallet manager (Phase 1 multi-wallet)
+            const managedId = `${walletId}:${address.toLowerCase()}`;
+            addOrUpdateManagedWallet({
+              id: managedId,
+              address,
+              source: 'metamask',
+              isLocal: false,
+              label: undefined,
+            });
+            setActiveManagedWallet(managedId);
+
+            // Register direct MetaMask connection
+            registerWalletAddress(account.address, walletId);
             
             setIsToastOpen(true);
             setIsModalOpen(false);
@@ -317,6 +374,30 @@ export function useWalletConnection(): UseWalletConnectionReturn {
         await wallet.connect(walletId, chain);
       }
       
+      // Update wallet manager and register generic wallet connection
+      const primaryAfterConnect = useWalletStore.getState().primaryWallet;
+      if (primaryAfterConnect?.address) {
+        const lowerId = walletId.toLowerCase();
+        const source: 'metamask' | 'walletconnect' | 'coinbase' | 'rabby' | 'phantom' | 'other' =
+          lowerId.includes('metamask') ? 'metamask'
+          : lowerId.includes('walletconnect') ? 'walletconnect'
+          : lowerId.includes('coinbase') ? 'coinbase'
+          : lowerId.includes('rabby') ? 'rabby'
+          : lowerId.includes('phantom') ? 'phantom'
+          : 'other';
+
+        const managedId = `${source}:${primaryAfterConnect.address.toLowerCase()}`;
+        addOrUpdateManagedWallet({
+          id: managedId,
+          address: primaryAfterConnect.address,
+          source,
+          isLocal: false,
+          label: undefined,
+        });
+        setActiveManagedWallet(managedId);
+        registerWalletAddress(primaryAfterConnect.address, source);
+      }
+
       setIsToastOpen(true);
       setIsModalOpen(false);
     } catch (error: any) {

@@ -7,6 +7,7 @@ import { formatUnits, parseUnits, isAddress } from "viem";
 
 import Image from "next/image";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
+import { useActiveWalletAddress } from "@/lib/wallet/hooks/useActiveWalletAddress";
 import { useWallet } from "@/lib/wallet/hooks/useWallet";
 import { usePortfolioBalance } from "@/hooks/usePortfolioBalance";
 import { useWalletBalances } from "@/hooks/useWalletBalances";
@@ -30,6 +31,11 @@ import {
   getPublicClient,
   SOLANA_CHAIN_ID 
 } from "@/lib/wallet/utils/transfer";
+import { useWalletManagerStore } from "@/lib/wallet/state/wallet-manager-store";
+import { getEncryptedPrivateKey } from "@/lib/wallet/state/local-keystore";
+import { decryptWalletData } from "@/lib/wallet/utils/wallet-encryption";
+import { privateKeyToAccount } from "viem/accounts";
+import { createLocalWalletClient } from "@/lib/frontend/utils/viem-clients";
 import { getCanonicalChain, CHAIN_REGISTRY } from "@/lib/backend/registry/chains";
 import { useTokensQuery } from "@/hooks/useTokensQuery";
 import type { Token } from "@/lib/frontend/types/tokens";
@@ -322,11 +328,23 @@ function WalletPageDesktop() {
   const [receiveTokenSearchQuery, setReceiveTokenSearchQuery] = useState<string>('');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   
-  // Wagmi hooks for wallet interaction
+  // Wagmi hooks for wallet interaction (external wallets)
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { address: wagmiAddress } = useAccount();
   const chainId = useChainId();
+
+  // Active wallet (local or external)
+  const activeAddress = useActiveWalletAddress();
+  const { activeWalletId, wallets: managedWallets } = useWalletManagerStore((s) => ({
+    activeWalletId: s.activeWalletId,
+    wallets: s.wallets,
+  }));
+  const activeManagedWallet = useMemo(
+    () => managedWallets.find((w) => w.id === activeWalletId) || null,
+    [managedWallets, activeWalletId]
+  );
+  const isLocalActiveWallet = !!activeManagedWallet?.isLocal;
   
   // Get wallet info for chain detection
   const wallet = useWallet();
@@ -360,7 +378,7 @@ function WalletPageDesktop() {
     };
   }, []);
 
-  // Get connected wallet address
+  // Get connected wallet address (for UI / legacy)
   const { connectedAddress } = useWalletConnection();
 
   // Balance visibility state
@@ -374,42 +392,42 @@ function WalletPageDesktop() {
     data: balanceData,
     isLoading: balanceLoading,
     error: balanceError
-  } = usePortfolioBalance(connectedAddress);
+  } = usePortfolioBalance(activeAddress);
 
   // Fetch wallet token balances
   const {
     balances: walletTokens,
     isLoading: tokensLoading,
     error: tokensError
-  } = useWalletBalances(connectedAddress);
+  } = useWalletBalances(activeAddress);
 
   // Fetch wallet transactions
   const {
     transactions,
     isLoading: transactionsLoading,
     error: transactionsError
-  } = useWalletTransactions(connectedAddress, { limit: 50 });
+  } = useWalletTransactions(activeAddress, { limit: 50 });
 
   // Fetch wallet NFTs
   const {
     nfts,
     isLoading: nftsLoading,
     error: nftsError
-  } = useWalletNFTs(connectedAddress);
+  } = useWalletNFTs(activeAddress);
 
   // Fetch unified activities (token transactions + NFT activities)
   const {
     activities: unifiedActivities,
     isLoading: activitiesLoading,
     error: activitiesError
-  } = useUnifiedActivities(connectedAddress);
+  } = useUnifiedActivities(activeAddress);
 
   // Fetch NFT activity when an NFT is selected (for NFT detail view)
   const {
     activities,
     isLoading: selectedNFTActivitiesLoading
   } = useNFTActivity(
-    connectedAddress,
+    activeAddress,
     selectedNft?.contractAddress || null,
     selectedNft?.tokenId || null,
     selectedNft?.chainId || null
@@ -836,7 +854,7 @@ function WalletPageDesktop() {
   }, [recipientAddress, sendAmount, displayToken]);
 
   const handleConfirmSend = useCallback(async () => {
-    if (!walletClient || !displayToken || !recipientAddress || !sendAmount) {
+    if (!displayToken || !recipientAddress || !sendAmount) {
       setSendError('Missing required information');
       return;
     }
@@ -849,11 +867,69 @@ function WalletPageDesktop() {
       const amount = parseUnits(sendAmount, decimals);
       const isNative = isNativeToken(displayToken.address);
 
+      let clientToUse = walletClient;
+
+      // If active wallet is local, use local signer instead of external wallet
+      if (isLocalActiveWallet) {
+        if (!activeAddress) {
+          setSendError('Active wallet address not available');
+          setIsSending(false);
+          return;
+        }
+
+        const encrypted = getEncryptedPrivateKey(activeAddress);
+        if (!encrypted) {
+          setSendError('This local wallet is not fully set up on this device.');
+          setIsSending(false);
+          return;
+        }
+
+        const password = typeof window !== 'undefined'
+          ? window.prompt('Enter your TIWI wallet password to sign this transaction')
+          : null;
+        if (!password) {
+          setSendError('Password is required to sign the transaction.');
+          setIsSending(false);
+          return;
+        }
+
+        let privateKey: `0x${string}`;
+        try {
+          const decrypted = await decryptWalletData(encrypted, password);
+          privateKey = decrypted as `0x${string}`;
+        } catch (e: any) {
+          console.error('[Send] Failed to decrypt local wallet key:', e);
+          setSendError('Incorrect password or corrupted wallet data.');
+          setIsSending(false);
+          return;
+        }
+
+        try {
+          const account = privateKeyToAccount(privateKey);
+          // Ensure account is defined before creating client
+          if (!account) {
+            throw new Error('Local account could not be created');
+          }
+          clientToUse = createLocalWalletClient(chainId, account);
+        } catch (e: any) {
+          console.error('[Send] Failed to create local signer:', e);
+          setSendError('Failed to create local signer for this wallet.');
+          setIsSending(false);
+          return;
+        }
+      }
+
+      if (!clientToUse) {
+        setSendError('No wallet client available. Please connect a wallet.');
+        setIsSending(false);
+        return;
+      }
+
       let hash: `0x${string}`;
       if (isNative) {
-        hash = await transferNativeToken(walletClient, recipientAddress.trim(), amount);
+        hash = await transferNativeToken(clientToUse, recipientAddress.trim(), amount);
       } else {
-        hash = await transferERC20Token(walletClient, displayToken.address, recipientAddress.trim(), amount);
+        hash = await transferERC20Token(clientToUse, displayToken.address, recipientAddress.trim(), amount);
       }
 
       setTxHash(hash);
@@ -873,7 +949,16 @@ function WalletPageDesktop() {
       setSendError(error?.message || 'Failed to send transaction');
       setIsSending(false);
     }
-  }, [walletClient, displayToken, recipientAddress, sendAmount, publicClient]);
+  }, [
+    walletClient,
+    displayToken,
+    recipientAddress,
+    sendAmount,
+    publicClient,
+    isLocalActiveWallet,
+    activeAddress,
+    chainId,
+  ]);
 
   // Calculate USD value of send amount
   const sendAmountUSD = useMemo(() => {
@@ -1728,7 +1813,7 @@ function WalletPageDesktop() {
 
                             <button 
                               onClick={handleConfirmSend}
-                              disabled={isSending || !walletClient}
+                              disabled={isSending || (!walletClient && !isLocalActiveWallet)}
                               className="cursor-pointer w-full rounded-full bg-[#B1F128] py-2 text-base font-semibold text-[#010501] disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {isSending ? 'Sending...' : txHash ? 'Transaction Sent!' : 'Confirm'}
