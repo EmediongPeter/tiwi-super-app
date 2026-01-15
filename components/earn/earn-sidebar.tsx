@@ -2,8 +2,13 @@
 
 import RecommendedPools from "./recommended-pools";
 import { Megaphone } from "lucide-react";
+import type { StakingPool } from "@/data/mock-staking-pools";
 
-export default function EarnSidebar() {
+interface EarnSidebarProps {
+  onPoolClick?: (pool: StakingPool) => void;
+}
+
+export default function EarnSidebar({ onPoolClick }: EarnSidebarProps) {
   return (
     <div className="flex flex-col gap-4 items-center justify-center px-0 py-4 h-full w-full">
       {/* Promotional Banner */}
@@ -24,7 +29,7 @@ export default function EarnSidebar() {
       </div>
 
       {/* Recommended Pools */}
-      <RecommendedPools />
+      <RecommendedPools onPoolClick={onPoolClick} />
 
       {/* Create Pool Button */}
       <button className="bg-[#081f02] flex items-center justify-center px-6 py-4 relative rounded-full shrink-0 w-full cursor-pointer hover:opacity-90 transition-opacity">

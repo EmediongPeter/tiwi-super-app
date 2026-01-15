@@ -134,3 +134,4 @@ function getCoinGeckoImageId(symbol: string): number | null {
   return imageIds[symbol.toLowerCase()] || null;
 }
 
+

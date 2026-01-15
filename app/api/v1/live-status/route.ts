@@ -56,13 +56,14 @@ const defaultServices = [
 ];
 
 // Initialize store with default services if empty
+// All services are hardcoded to 'maintenance' status until live endpoints are ready
 if (liveStatusStore.size === 0) {
   defaultServices.forEach((service) => {
     const id = service.toLowerCase().replace(/\s+/g, '-');
     liveStatusStore.set(id, {
       id,
       service,
-      status: 'operational',
+      status: 'maintenance',
       updatedAt: new Date().toISOString(),
     });
   });
@@ -77,7 +78,26 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const service = searchParams.get('service');
     
+    // Ensure store is initialized with all default services in maintenance status
+    if (liveStatusStore.size === 0) {
+      defaultServices.forEach((svc) => {
+        const id = svc.toLowerCase().replace(/\s+/g, '-');
+        liveStatusStore.set(id, {
+          id,
+          service: svc,
+          status: 'maintenance',
+          updatedAt: new Date().toISOString(),
+        });
+      });
+    }
+    
     let statuses: LiveStatus[] = Array.from(liveStatusStore.values());
+    
+    // Hardcode all statuses to 'maintenance' until live endpoints are ready
+    statuses = statuses.map((s) => ({
+      ...s,
+      status: 'maintenance' as const,
+    }));
     
     // Filter by service if provided
     if (service) {
@@ -111,148 +131,38 @@ export async function GET(req: NextRequest) {
 // ============================================================================
 // POST Handler - Create or update live status
 // ============================================================================
+// DISABLED: Status updates are disabled until live endpoints are ready
+// All services are hardcoded to 'maintenance' status
 
 export async function POST(req: NextRequest) {
-  try {
-    const body: CreateLiveStatusRequest = await req.json();
-    
-    if (!body.service || !body.status) {
-      return NextResponse.json(
-        { error: 'Service and status are required' },
-        { status: 400 }
-      );
-    }
-    
-    // Validate status
-    const validStatuses = ['operational', 'degraded', 'down', 'maintenance'];
-    if (!validStatuses.includes(body.status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      );
-    }
-    
-    // Generate ID from service name
-    const id = body.service.toLowerCase().replace(/\s+/g, '-');
-    
-    // Create or update status
-    const status: LiveStatus = {
-      id,
-      service: body.service,
-      status: body.status,
-      updatedAt: new Date().toISOString(),
-      updatedBy: 'admin', // In production, get from auth context
-    };
-    
-    liveStatusStore.set(id, status);
-    
-    return NextResponse.json({
-      success: true,
-      status,
-    });
-  } catch (error: any) {
-    console.error('[API] /api/v1/live-status POST error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Failed to create/update live status' },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    { error: 'Status updates are disabled. All services are in maintenance mode until live endpoints are ready.' },
+    { status: 403 }
+  );
 }
 
 // ============================================================================
 // PATCH Handler - Update existing live status
 // ============================================================================
+// DISABLED: Status updates are disabled until live endpoints are ready
+// All services are hardcoded to 'maintenance' status
 
 export async function PATCH(req: NextRequest) {
-  try {
-    const body: UpdateLiveStatusRequest = await req.json();
-    
-    if (!body.id) {
-      return NextResponse.json(
-        { error: 'Status ID is required' },
-        { status: 400 }
-      );
-    }
-    
-    const existingStatus = liveStatusStore.get(body.id);
-    if (!existingStatus) {
-      return NextResponse.json(
-        { error: 'Live status not found' },
-        { status: 404 }
-      );
-    }
-    
-    // Validate status if provided
-    if (body.status) {
-      const validStatuses = ['operational', 'degraded', 'down', 'maintenance'];
-      if (!validStatuses.includes(body.status)) {
-        return NextResponse.json(
-          { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-          { status: 400 }
-        );
-      }
-    }
-    
-    // Update status
-    const updatedStatus: LiveStatus = {
-      ...existingStatus,
-      ...(body.service && { service: body.service }),
-      ...(body.status && { status: body.status }),
-      updatedAt: new Date().toISOString(),
-      updatedBy: 'admin', // In production, get from auth context
-    };
-    
-    liveStatusStore.set(body.id, updatedStatus);
-    
-    return NextResponse.json({
-      success: true,
-      status: updatedStatus,
-    });
-  } catch (error: any) {
-    console.error('[API] /api/v1/live-status PATCH error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Failed to update live status' },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    { error: 'Status updates are disabled. All services are in maintenance mode until live endpoints are ready.' },
+    { status: 403 }
+  );
 }
 
 // ============================================================================
 // DELETE Handler - Remove live status
 // ============================================================================
+// DISABLED: Status deletion is disabled until live endpoints are ready
 
 export async function DELETE(req: NextRequest) {
-  try {
-    const searchParams = req.nextUrl.searchParams;
-    const id = searchParams.get('id');
-    
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Status ID is required' },
-        { status: 400 }
-      );
-    }
-    
-    const existingStatus = liveStatusStore.get(id);
-    if (!existingStatus) {
-      return NextResponse.json(
-        { error: 'Live status not found' },
-        { status: 404 }
-      );
-    }
-    
-    liveStatusStore.delete(id);
-    
-    return NextResponse.json({
-      success: true,
-      message: 'Live status deleted successfully',
-    });
-  } catch (error: any) {
-    console.error('[API] /api/v1/live-status DELETE error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Failed to delete live status' },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    { error: 'Status deletion is disabled. All services are in maintenance mode until live endpoints are ready.' },
+    { status: 403 }
+  );
 }
 

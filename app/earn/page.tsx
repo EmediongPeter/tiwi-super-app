@@ -10,49 +10,119 @@ import EmptyState from "@/components/earn/empty-state";
 import ComingSoonState from "@/components/earn/coming-soon-state";
 import StakingCardSkeleton from "@/components/earn/staking-card-skeleton";
 import StakingDetailView from "@/components/earn/staking-detail-view";
-import {
-  AVAILABLE_STAKING_POOLS,
-  USER_STAKES,
-  ACTIVE_POSITIONS,
-  type StakingPool,
-} from "@/data/mock-staking-pools";
+import { useWalletConnection } from "@/hooks/useWalletConnection";
+import type { StakingPool } from "@/data/mock-staking-pools";
 
 type EarnTab = "Staking" | "Farming" | "Lend & Borrow" | "NFT Staking";
 type ActionButton = "Stake" | "Active Positions" | "My Stakes";
 
-// Simulate API call based on active tab and button
-const simulateApiCall = (
+// Fetch staking pools from API
+const fetchStakingPools = async (
   activeTab: EarnTab,
-  activeButton: ActionButton
+  activeButton: ActionButton,
+  userWallet: string | null
 ): Promise<StakingPool[]> => {
-  return new Promise((resolve) => {
-    // Simulate network delay
-    setTimeout(() => {
       // For non-Staking tabs, return empty array (will show Coming Soon)
       if (activeTab !== "Staking") {
-        resolve([]);
-        return;
-      }
+    return [];
+  }
 
-      // For Staking tab, handle based on active button
-      switch (activeButton) {
-        case "Stake":
-          // Return available staking pools
-          resolve(AVAILABLE_STAKING_POOLS);
-          break;
-        case "Active Positions":
-          // Return empty array to show empty state
-          resolve(ACTIVE_POSITIONS);
-          break;
-        case "My Stakes":
-          // Return user's staked tokens
-          resolve(USER_STAKES);
-          break;
-        default:
-          resolve([]);
+  // For "Stake" button, fetch active pools from admin database
+  if (activeButton === "Stake") {
+    try {
+      const response = await fetch("/api/v1/staking-pools?status=active");
+      if (!response.ok) {
+        console.error("Failed to fetch staking pools:", response.statusText);
+        return [];
       }
-    }, 1500);
-  });
+      const data = await response.json();
+      const pools = data.pools || [];
+      
+      // Map API response to UI StakingPool format
+      return pools.map((pool: any) => ({
+        id: pool.id,
+        tokenSymbol: pool.tokenSymbol || "Unknown",
+        tokenName: pool.tokenName || pool.tokenSymbol || "Unknown Token",
+        apy: pool.apy ? `~${pool.apy.toFixed(2)}%` : "N/A",
+        tokenIcon: pool.tokenLogo || "/assets/logos/twc-token.svg",
+        tvl: undefined, // Can be added later if needed
+        apr: pool.apy ? `${pool.apy.toFixed(2)}%` : undefined,
+        totalStaked: undefined, // Can be added later if needed
+        limits: pool.minStakeAmount && pool.maxStakeAmount 
+          ? `${pool.minStakeAmount}-${pool.maxStakeAmount} ${pool.tokenSymbol || ""}`
+          : pool.minStakeAmount 
+            ? `Min: ${pool.minStakeAmount} ${pool.tokenSymbol || ""}`
+            : undefined,
+      }));
+    } catch (error) {
+      console.error("Error fetching staking pools:", error);
+      return [];
+    }
+  }
+
+  // For "Active Positions" - fetch user's active stakes only
+  if (activeButton === "Active Positions") {
+    if (!userWallet) {
+      return []; // No wallet connected
+    }
+    try {
+      const response = await fetch(`/api/v1/user-stakes?userWallet=${encodeURIComponent(userWallet)}&status=active`);
+      if (!response.ok) {
+        console.error("Failed to fetch active positions:", response.statusText);
+        return [];
+      }
+      const data = await response.json();
+      const stakes = data.stakes || [];
+      
+      // Map user stakes to UI StakingPool format
+      return stakes.map((stake: any) => ({
+        id: stake.id,
+        tokenSymbol: stake.pool?.tokenSymbol || "Unknown",
+        tokenName: stake.pool?.tokenName || stake.pool?.tokenSymbol || "Unknown Token",
+        apy: stake.pool?.apy ? `~${stake.pool.apy.toFixed(2)}%` : "N/A",
+        tokenIcon: stake.pool?.tokenLogo || "/assets/logos/twc-token.svg",
+        stakedAmount: `${stake.stakedAmount} ${stake.pool?.tokenSymbol || ""}`,
+        rewardsEarned: `${stake.rewardsEarned} ${stake.pool?.tokenSymbol || ""}`,
+        lockPeriod: stake.lockPeriodDays ? `${stake.lockPeriodDays} days` : undefined,
+      }));
+    } catch (error) {
+      console.error("Error fetching active positions:", error);
+      return [];
+    }
+  }
+
+  // For "My Stakes" - fetch all user's stakes (active, completed, withdrawn)
+  if (activeButton === "My Stakes") {
+    if (!userWallet) {
+      return []; // No wallet connected
+    }
+    try {
+      const response = await fetch(`/api/v1/user-stakes?userWallet=${encodeURIComponent(userWallet)}`);
+      if (!response.ok) {
+        console.error("Failed to fetch my stakes:", response.statusText);
+        return [];
+      }
+      const data = await response.json();
+      const stakes = data.stakes || [];
+      
+      // Map user stakes to UI StakingPool format
+      return stakes.map((stake: any) => ({
+        id: stake.id,
+        tokenSymbol: stake.pool?.tokenSymbol || "Unknown",
+        tokenName: stake.pool?.tokenName || stake.pool?.tokenSymbol || "Unknown Token",
+        apy: stake.pool?.apy ? `~${stake.pool.apy.toFixed(2)}%` : "N/A",
+        tokenIcon: stake.pool?.tokenLogo || "/assets/logos/twc-token.svg",
+        stakedAmount: `${stake.stakedAmount} ${stake.pool?.tokenSymbol || ""}`,
+        rewardsEarned: `${stake.rewardsEarned} ${stake.pool?.tokenSymbol || ""}`,
+        lockPeriod: stake.lockPeriodDays ? `${stake.lockPeriodDays} days` : undefined,
+      }));
+    } catch (error) {
+      console.error("Error fetching my stakes:", error);
+      return [];
+    }
+  }
+
+  return [];
 };
 
 // Empty state messages for each action button
@@ -82,6 +152,7 @@ const getEmptyStateMessages = (button: ActionButton) => {
 };
 
 export default function EarnPage() {
+  const { connectedAddress } = useWalletConnection();
   const [activeTab, setActiveTab] = useState<EarnTab>("Staking");
   const [activeButton, setActiveButton] = useState<ActionButton>("Stake");
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -89,19 +160,27 @@ export default function EarnPage() {
   const [selectedPool, setSelectedPool] = useState<StakingPool | null>(null);
   const [showDetailView, setShowDetailView] = useState<boolean>(false);
 
-  // Fetch pools when active tab or button changes
+  // Fetch pools when active tab, button, or wallet address changes
   useEffect(() => {
     setIsLoading(true);
-    simulateApiCall(activeTab, activeButton)
+    fetchStakingPools(activeTab, activeButton, connectedAddress)
       .then((data) => {
         setPools(data);
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, [activeTab, activeButton]);
+  }, [activeTab, activeButton, connectedAddress]);
 
   const handlePoolClick = (pool: StakingPool) => {
+    // Switch to Staking tab if not already on it
+    if (activeTab !== "Staking") {
+      setActiveTab("Staking");
+    }
+    // Switch to Stake button to show available pools
+    if (activeButton !== "Stake") {
+      setActiveButton("Stake");
+    }
     setSelectedPool(pool);
     setShowDetailView(true);
   };
@@ -184,7 +263,7 @@ export default function EarnPage() {
 
             {/* Right Sidebar - Desktop Only - fixed width, scales down on smaller screens */}
             <aside className="border-[#1f261e] border-b-0 border-l border-r-0 border-solid border-t-0 flex flex-col gap-4 items-center justify-start px-4 py-4 shrink-0 w-[280px] lg:w-[300px] xl:w-[320px] 2xl:w-[350px] self-stretch">
-              <EarnSidebar />
+              <EarnSidebar onPoolClick={handlePoolClick} />
             </aside>
           </div>
         </div>

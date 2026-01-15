@@ -212,24 +212,10 @@ export default function Navbar() {
               </>
             ) : isFullyConnected ? (
               <>
-                {/* Notifications Icon with Badge */}
-                <button
-                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                  className="relative bg-[#081f02] p-3 rounded-full hover:opacity-90 transition-opacity cursor-pointer"
-                  aria-label="Notifications"
-                >
-                  <IoNotificationsOutline className="w-6 h-6 text-[#b1f128]" />
-                  {liveNotificationsCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-[#ff5c5c] text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                      {liveNotificationsCount > 9 ? "9+" : liveNotificationsCount}
-                    </span>
-                  )}
-                </button>
-
                 {/* Share Knowledge Icon (Referrals) - Green border */}
                 <button
                   onClick={handleReferrals}
-                  className="bg-[#0d3600] border-[3px] border-[#b1f128] p-3 rounded-full hover:opacity-90 transition-opacity cursor-pointer"
+                  className="bg-[#081f02] p-3 rounded-full hover:opacity-90 transition-opacity cursor-pointer"
                   aria-label="Referrals"
                 >
                   <Image
@@ -239,6 +225,20 @@ export default function Navbar() {
                     height={24}
                     className="w-6 h-6"
                   />
+                </button>
+
+                {/* Notifications Icon with Badge */}
+                <button
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className="relative bg-[#081f02] p-3 rounded-full hover:opacity-90 transition-opacity cursor-pointer"
+                  aria-label="Notifications"
+                >
+                  <IoNotificationsOutline className="w-6 h-6 text-white" />
+                  {liveNotificationsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-[#ff5c5c] text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                      {liveNotificationsCount > 9 ? "9+" : liveNotificationsCount}
+                    </span>
+                  )}
                 </button>
                 
                 {/* Settings Icon */}
@@ -323,7 +323,7 @@ export default function Navbar() {
                   className="relative bg-[#081f02] p-2.5 rounded-full hover:opacity-90 transition-opacity"
                   aria-label="Notifications"
                 >
-                  <IoNotificationsOutline className="w-5 h-5 text-[#b1f128]" />
+                  <IoNotificationsOutline className="w-5 h-5 text-white" />
                   {liveNotificationsCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-[#ff5c5c] text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
                       {liveNotificationsCount > 9 ? "9+" : liveNotificationsCount}

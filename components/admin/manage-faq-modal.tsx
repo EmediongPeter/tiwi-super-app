@@ -40,14 +40,22 @@ export default function ManageFAQModal({
   const categoryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (item) {
-      setQuestion(item.question || "");
-      setAnswer(item.answer || "");
-      setCategory(item.category || "General");
+    if (open) {
+      if (item) {
+        setQuestion(item.question || "");
+        setAnswer(item.answer || "");
+        setCategory(item.category || "General");
+      } else {
+        setQuestion("");
+        setAnswer("");
+        setCategory("General");
+      }
     } else {
+      // Reset when modal closes
       setQuestion("");
       setAnswer("");
       setCategory("General");
+      setShowCategoryDropdown(false);
     }
   }, [item, open]);
 
@@ -62,10 +70,50 @@ export default function ManageFAQModal({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSubmit = () => {
-    // Here you would save to API
-    console.log("Saving FAQ:", { question, answer, category });
-    onOpenChange(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!question || !answer) {
+      alert("Please fill in both question and answer");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const url = "/api/v1/faqs";
+      const method = item ? "PATCH" : "POST";
+      const body = item
+        ? { id: item.id, question, answer, category }
+        : { question, answer, category };
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (response.ok) {
+        // Reset form
+        setQuestion("");
+        setAnswer("");
+        setCategory("General");
+        onOpenChange(false);
+        // Trigger refresh in parent component
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("faqUpdated"));
+        }
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to save FAQ");
+      }
+    } catch (error) {
+      console.error("Error saving FAQ:", error);
+      alert("Failed to save FAQ. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -166,6 +214,7 @@ export default function ManageFAQModal({
     </Dialog>
   );
 }
+
 
 
 
