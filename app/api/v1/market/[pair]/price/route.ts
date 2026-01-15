@@ -16,14 +16,15 @@ import { getCanonicalChain } from '@/lib/backend/registry/chains';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { pair: string } }
+  { params }: { params: Promise<{ pair: string }> }
 ) {
   try {
+    const { pair } = await params;
     const searchParams = req.nextUrl.searchParams;
     const chainIdParam = searchParams.get('chainId');
     
     // Parse pair (e.g., "WBNB-USDT" or "WBNB/USDT")
-    const normalized = params.pair.replace("/", "-").replace("_", "-").toUpperCase();
+    const normalized = pair.replace("/", "-").replace("_", "-").toUpperCase();
     const parts = normalized.split("-");
     
     if (parts.length < 2) {
