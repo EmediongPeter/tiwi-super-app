@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, ReactNode } from "react";
+import React from "react";
 
 interface WalletDropdownProps {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   className?: string;
+  triggerRef?: React.RefObject<HTMLElement>;
 }
 
 export default function WalletDropdown({
@@ -14,6 +16,7 @@ export default function WalletDropdown({
   onClose,
   children,
   className = "",
+  triggerRef,
 }: WalletDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -22,10 +25,20 @@ export default function WalletDropdown({
     if (!open) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
+      const target = event.target as HTMLElement;
       
       // Don't close if clicking inside dropdown
       if (dropdownRef.current && dropdownRef.current.contains(target)) {
+        return;
+      }
+      
+      // Don't close if clicking on the trigger button (toggle behavior)
+      if (triggerRef?.current && triggerRef.current.contains(target)) {
+        return;
+      }
+      
+      // Also check for data attribute on button or its parents
+      if (target.closest('[data-wallet-trigger="true"]')) {
         return;
       }
       
@@ -46,14 +59,14 @@ export default function WalletDropdown({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [open, onClose]);
+  }, [open, onClose, triggerRef]);
 
   if (!open) return null;
 
   return (
     <div
       ref={dropdownRef}
-      className={`absolute z-[99999] ${className}`}
+      className={`absolute z-30 ${className}`}
       style={{ isolation: 'isolate' }}
     >
       <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[400px] min-w-max">

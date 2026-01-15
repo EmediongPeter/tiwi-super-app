@@ -93,10 +93,12 @@ export default function PasteAddressModal({
     if (typeof window === "undefined") return;
 
     try {
-      const trimmed = addr.trim().toLowerCase();
+      const trimmed = addr.trim();
+      // Store the original case address for display, but use lowercase for deduplication
       const current = recentAddresses.map((a) => a.toLowerCase());
-      const filtered = current.filter((a) => a !== trimmed);
-      const updated = [trimmed, ...filtered].slice(0, MAX_RECENT_ADDRESSES);
+      const filtered = current.filter((a) => a !== trimmed.toLowerCase());
+      // Store original case address (not lowercase) so we can display it properly
+      const updated = [trimmed, ...recentAddresses.filter((a) => a.toLowerCase() !== trimmed.toLowerCase())].slice(0, MAX_RECENT_ADDRESSES);
       setRecentAddresses(updated);
       localStorage.setItem(RECENT_ADDRESSES_KEY, JSON.stringify(updated));
     } catch (error) {
@@ -133,13 +135,33 @@ export default function PasteAddressModal({
   };
 
   const handleRecentAddressClick = (addr: string) => {
-    if (validateAddress(addr)) {
-      setAddress(addr);
-      setError(null);
-      // Optionally auto-save or just fill the input
-    } else {
-      setError("This address is not compatible with the selected token's chain");
+    // Use the full address (not truncated) to update the input
+    const fullAddress = addr.trim();
+    
+    // Update the input box with the full address immediately
+    setAddress(fullAddress);
+    
+    // Clear any previous errors
+    setError(null);
+    
+    // Validate the address format
+    if (!isValidAddress(fullAddress)) {
+      setError(
+        chainId === 7565164
+          ? "Invalid Solana address format"
+          : "Invalid EVM address format"
+      );
+      return;
     }
+    
+    // Check chain compatibility
+    if (chainId && !isAddressChainCompatible(fullAddress, chainId)) {
+      setError("This address is not compatible with the selected token's chain");
+      return;
+    }
+    
+    // If valid, clear error (user can then click Save when ready)
+    setError(null);
   };
 
   const handleRemoveRecentAddress = (addrToRemove: string, e: React.MouseEvent) => {
@@ -154,7 +176,7 @@ export default function PasteAddressModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="bg-[#0b0f0a] border border-[#1f261e] text-white max-w-md w-[90vw] sm:w-full"
+        className="bg-[#0b0f0a] border border-[#1f261e] text-white max-w-sm w-[90vw] sm:max-w-sm!"
         showCloseButton={false}
       >
         <DialogHeader className="flex flex-row items-center justify-between mb-6">
@@ -163,10 +185,10 @@ export default function PasteAddressModal({
           </DialogTitle>
           <button
             onClick={() => onOpenChange(false)}
-            className="p-1.5 rounded-full hover:bg-[#121712] transition-colors border border-[#1f261e]"
+            className="p-1.5 rounded-full hover:bg-[#121712] transition-colors border border-[#1f261e] outline-none"
             aria-label="Close"
           >
-            <X className="w-4 h-4 text-white" />
+            <X className="w-4 h-4 text-white cursor-pointer" />
           </button>
         </DialogHeader>
 
@@ -199,17 +221,16 @@ export default function PasteAddressModal({
               <h3 className="text-sm font-medium text-[#b5b5b5] mb-3">Recent addresses</h3>
               <div className="flex flex-wrap gap-2">
                 {recentAddresses.map((addr) => {
-                  const isCompatible = isAddressChainCompatible(addr, chainId);
+                  const isCompatible = chainId ? isAddressChainCompatible(addr, chainId) : true;
                   return (
                     <button
                       key={addr}
                       type="button"
                       onClick={() => handleRecentAddressClick(addr)}
-                      disabled={!isCompatible}
-                      className={`group flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+                      className={`group flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
                         isCompatible
-                          ? "bg-[#121712] border-[#1f261e] hover:bg-[#1f261e] hover:border-[#b1f128]/30 cursor-pointer"
-                          : "bg-[#121712] border-[#1f261e] opacity-50 cursor-not-allowed"
+                          ? "bg-[#121712] border-[#1f261e] hover:bg-[#1f261e] hover:border-[#b1f128]/30"
+                          : "bg-[#121712] border-[#1f261e] opacity-70 hover:opacity-90"
                       }`}
                     >
                       <Wallet className="w-4 h-4 text-[#7c7c7c] shrink-0" />

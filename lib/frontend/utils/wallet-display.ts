@@ -72,9 +72,17 @@ export function isAddressChainCompatible(
   address: string | null,
   tokenChainId?: number
 ): boolean {
-  if (!address || !tokenChainId) return false;
+  // If no address, not compatible
+  if (!address) return false;
+  
+  // If no chainId provided, we can't determine compatibility, so return true
+  // (let the user decide, or validate elsewhere)
+  if (!tokenChainId) return true;
 
   const addressType = getAddressTypeLocal(address);
+  
+  // If address type is invalid, not compatible
+  if (addressType === 'invalid') return false;
   
   // Solana chain
   if (tokenChainId === SOLANA_CHAIN_ID) {

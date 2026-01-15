@@ -130,7 +130,7 @@ export default function SwapCard({
     <div className="flex flex-col gap-2 sm:gap-2.5">
       <SwapTabs activeTab={activeTab} onTabChange={onTabChange} />
 
-      <div className="bg-[#010501] border border-[#1f261e] rounded-2xl lg:rounded-3xl p-4 sm:p-5 lg:p-6 relative z-30 overflow-visible backdrop-blur-sm">
+      <div className="bg-[#010501] border border-[#1f261e] rounded-2xl lg:rounded-3xl p-4 sm:p-5 lg:p-6 relative overflow-visible backdrop-blur-sm">
         {/* Top Edge Gradient Glow */}
         <div className="absolute top-0 left-0 right-0 h-px bg-[linear-gradient(to_right,transparent_0%,rgba(177,241,40,0.4)_50%,transparent_100%)]"></div>
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[2px] bg-[#b1f128]/20 blur-[2px]"></div>
@@ -180,7 +180,7 @@ export default function SwapCard({
             )}
 
             {/* Swap Arrow - Absolutely positioned between From and To sections */}
-            <div className="absolute left-1/2 -translate-x-1/2 z-10 md:top-[calc(50%-20px)] top-[calc(50%-15px)]">
+            <div className="absolute left-1/2 -translate-x-1/2 md:top-[calc(50%-20px)] top-[calc(50%-15px)] z-10">
               <button
                 onClick={onSwapClick}
                 className="bg-[#1f261e] border-2 border-[#010501] p-1.5 sm:p-2 rounded-lg hover:bg-[#2a3229] transition-colors shadow-lg"
