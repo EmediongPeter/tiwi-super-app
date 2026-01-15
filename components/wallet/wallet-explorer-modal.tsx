@@ -18,17 +18,37 @@ interface WalletExplorerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onWalletConnect?: (wallet: WalletConnectWallet | string) => void;
+  excludeProviders?: string[]; // Provider IDs to exclude (already connected)
 }
 
 export default function WalletExplorerModal({
   open,
   onOpenChange,
   onWalletConnect,
+  excludeProviders = [],
 }: WalletExplorerModalProps) {
   const { topWallets, searchResults, isLoading, isSearching, error, search, clearSearch } = useWalletExplorer();
   const { installedWallets } = useWalletDetection();
   const [searchQuery, setSearchQuery] = useState("");
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+  
+  const isDisplayingSearch = searchQuery.trim() && !isSearching;
+  const apiWallets = searchQuery.trim() ? searchResults : topWallets;
+  
+  // Filter out connected providers from installed wallets
+  const filteredInstalledWallets = installedWallets.filter(
+    wallet => !excludeProviders.includes(wallet.id)
+  );
+  
+  // Filter out connected providers from API wallets
+  const filterApiWallets = (wallets: (WalletProvider | WalletConnectWallet)[]) => {
+    return wallets.filter(wallet => {
+      const walletId = 'id' in wallet ? wallet.id : wallet.id;
+      return !excludeProviders.includes(walletId);
+    });
+  };
+  
+  const filteredApiWallets = filterApiWallets(apiWallets);
 
   // Clear search when modal closes
   useEffect(() => {
@@ -64,8 +84,6 @@ export default function WalletExplorerModal({
     };
   }, [searchQuery]);
 
-  const isDisplayingSearch = searchQuery.trim() && !isSearching;
-  const apiWallets = searchQuery.trim() ? searchResults : topWallets;
 
   const handleWalletClick = (wallet: WalletProvider | WalletConnectWallet) => {
     // Check if it's a WalletProvider (installed wallet)
@@ -221,7 +239,7 @@ export default function WalletExplorerModal({
           )}
 
           {/* Empty State */}
-          {!isLoading && !isSearching && !error && isDisplayingSearch && apiWallets.length === 0 && installedWallets.length === 0 && (
+          {!isLoading && !isSearching && !error && isDisplayingSearch && filteredApiWallets.length === 0 && filteredInstalledWallets.length === 0 && (
             <div className="text-center py-12">
               <div className="text-4xl mb-3">🔍</div>
               <p className="text-sm font-medium text-white mb-1">No wallets found</p>
@@ -238,11 +256,11 @@ export default function WalletExplorerModal({
           )}
 
           {/* Installed Wallets Section */}
-          {!isLoading && !isSearching && installedWallets.length > 0 && (
+          {!isLoading && !isSearching && filteredInstalledWallets.length > 0 && (
             <div className="mb-6">
               <h3 className="font-semibold text-white text-base sm:text-lg mb-4">Installed Wallets</h3>
               <div className="space-y-2">
-                {installedWallets.map((wallet) => (
+                {filteredInstalledWallets.map((wallet) => (
                   <button
                     key={wallet.id}
                     onClick={() => handleWalletClick(wallet)}
@@ -276,9 +294,9 @@ export default function WalletExplorerModal({
           )}
 
           {/* API Wallets Section */}
-          {!isLoading && !isSearching && !error && apiWallets.length > 0 && (
+          {!isLoading && !isSearching && !error && filteredApiWallets.length > 0 && (
             <div>
-              {installedWallets.length > 0 && (
+              {filteredInstalledWallets.length > 0 && (
                 <h3 className="font-semibold text-white text-base sm:text-lg mb-4">
                   {isDisplayingSearch ? 'Search Results' : 'Popular Wallets'}
                 </h3>

@@ -57,9 +57,9 @@ export default function TokenInput({
       <div className="flex items-start justify-between gap-3 sm:gap-4 min-w-0">
         <div className="flex flex-col gap-2.5 sm:gap-3 lg:gap-[13px]">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-white font-semibold text-xs sm:text-sm">
-              {isFrom ? "From" : "To"}
-            </p>
+          <p className="text-white font-semibold text-xs sm:text-sm">
+            {isFrom ? "From" : "To"}
+          </p>
             {(walletLabel || walletAddress) && (
               <div className="relative">
                 <button
@@ -111,9 +111,9 @@ export default function TokenInput({
             className={`flex items-center gap-1.5 sm:gap-[9px] px-2 sm:px-3 py-2 sm:py-2.5 md:py-3 rounded-full transition-colors w-full justify-between min-w-[120px] sm:min-w-[160px] cursor-pointer ${isFrom
                 ? "bg-[#121712] hover:bg-[#1f261e]"
                 : "bg-[#156200] hover:bg-[#1a7a00]"
-              } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+            } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            {token ? (
+            {token ? ( 
               <>
                 <div className="relative h-8 w-8 sm:h-11 sm:w-11 shrink-0">
                   {token.icon && token.icon.trim() !== '' ? (
@@ -262,7 +262,7 @@ export default function TokenInput({
             className={`text-right text-[26px] sm:text-[29px] lg:text-[33px] leading-none mb-0.5 sm:mb-1 bg-transparent border-0 px-0 py-0 w-full min-w-0 ${amount && amount !== ""
                 ? "text-white"
                 : "text-[#7c7c7c]"
-              }`}
+            }`}
           />
           <p className="text-[#7c7c7c] font-medium text-xs sm:text-sm text-right w-full truncate">
             {usdValue}

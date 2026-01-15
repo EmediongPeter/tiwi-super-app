@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useWallet } from "@/lib/wallet/hooks/useWallet";
 import { getWalletIconFromAccount, truncateAddress } from "@/lib/frontend/utils/wallet-display";
 import WalletDropdown from "./wallet-dropdown";
+import { generateWalletId as genWalletId } from "@/lib/wallet/state/types";
 
 interface FromWalletDropdownProps {
   open: boolean;
@@ -20,13 +21,22 @@ export default function FromWalletDropdown({
   onSelectWallet,
   currentAddress,
 }: FromWalletDropdownProps) {
-  const { primaryWallet } = useWallet();
+  const { 
+    connectedWallets, 
+    activeWallet, 
+    activeWalletId,
+    setActiveWallet,
+  } = useWallet();
 
-  // For now, we only have primary wallet, but this structure supports multiple wallets
-  const connectedWallets = primaryWallet ? [primaryWallet] : [];
-
-  const handleWalletSelect = (wallet: typeof primaryWallet) => {
-    if (wallet && onSelectWallet) {
+  const handleWalletSelect = (wallet: typeof connectedWallets[0]) => {
+    if (!wallet) return;
+    
+    // Set as active wallet
+    const walletId = genWalletId(wallet);
+    setActiveWallet(walletId);
+    
+    // Callback for parent component
+    if (onSelectWallet) {
       onSelectWallet(wallet.address);
     }
     onClose();
@@ -46,7 +56,9 @@ export default function FromWalletDropdown({
             {connectedWallets.map((wallet) => {
               if (!wallet) return null;
               const walletIcon = getWalletIconFromAccount(wallet);
-              const isActive = currentAddress?.toLowerCase() === wallet.address.toLowerCase();
+              const walletId = genWalletId(wallet);
+              const isActive = activeWalletId === walletId || 
+                (currentAddress?.toLowerCase() === wallet.address.toLowerCase());
 
               return (
                 <button
@@ -103,16 +115,7 @@ export default function FromWalletDropdown({
             <span className="text-white text-sm font-medium">Connect a new wallet</span>
           </button>
         </div>
-
-        {/* Empty State */}
-        {connectedWallets.length === 0 && (
-          <div className="px-4 py-6 text-center">
-            <p className="text-white font-semibold text-sm mb-1">No wallets connected</p>
-            <p className="text-[#7c7c7c] text-xs">Connect a wallet to start swapping</p>
-          </div>
-        )}
       </div>
     </WalletDropdown>
   );
 }
-

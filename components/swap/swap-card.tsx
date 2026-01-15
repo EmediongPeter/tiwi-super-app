@@ -13,6 +13,7 @@ import ToWalletDropdown from "./to-wallet-dropdown";
 import Skeleton from "@/components/ui/skeleton";
 import { parseNumber } from "@/lib/shared/utils/number";
 import { useSwapStore } from "@/lib/frontend/store/swap-store";
+import { ArrowUpDown } from 'lucide-react';
 
 interface Token {
   symbol: string;
@@ -54,6 +55,7 @@ interface SwapCardProps {
   onMaxClick?: () => void;
   onSwapClick?: () => void;
   onConnectClick?: () => void;
+  onConnectFromSection?: () => void; // Handler for connecting from "From" section (uses connectAdditionalWallet)
   isConnected?: boolean;
   isExecutingTransfer?: boolean;
 }
@@ -89,6 +91,7 @@ export default function SwapCard({
   onMaxClick,
   onSwapClick,
   onConnectClick,
+  onConnectFromSection,
   isConnected = false,
   isExecutingTransfer = false,
 }: SwapCardProps) {
@@ -117,7 +120,7 @@ export default function SwapCard({
       // Toggle dropdown for connected wallets
       setIsFromWalletDropdownOpen((prev) => !prev);
     } else {
-      // Show connect wallet modal
+      // Show connect wallet modal (will use regular connect for first wallet)
       onConnectClick?.();
     }
   };
@@ -169,7 +172,7 @@ export default function SwapCard({
                   <FromWalletDropdown
                     open={isFromWalletDropdownOpen}
                     onClose={() => setIsFromWalletDropdownOpen(false)}
-                    onConnectNewWallet={onConnectClick || (() => {})}
+                    onConnectNewWallet={onConnectFromSection || onConnectClick || (() => {})}
                     onSelectWallet={(address) => {
                       // Future: switch active wallet
                     }}
@@ -186,13 +189,7 @@ export default function SwapCard({
                 className="bg-[#1f261e] border-2 border-[#010501] p-1.5 sm:p-2 rounded-lg hover:bg-[#2a3229] transition-colors shadow-lg"
                 aria-label="Swap tokens"
               >
-                <Image
-                  src="/assets/icons/arrow-up-down.svg"
-                  alt="Swap"
-                  width={24}
-                  height={24}
-                  className="[&_path]:stroke-[#b1f128] w-5 h-5 sm:w-6 sm:h-6"
-                />
+                <ArrowUpDown width={24} height={24} className="w-5 h-5 sm:w-6 sm:h-6 [&_path]:stroke-[#b1f128]" />
               </button>
             </div>
 
@@ -296,3 +293,6 @@ export default function SwapCard({
   );
 }
 
+/**
+ * 
+ */

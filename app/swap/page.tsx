@@ -7,6 +7,8 @@ import SwapBackgroundElements from "@/components/swap/swap-background-elements";
 import { useWalletConnection } from "@/hooks/useWalletConnection";
 import { useWallet } from "@/lib/wallet/hooks/useWallet";
 import ConnectWalletModal from "@/components/wallet/connect-wallet-modal";
+import WalletExplorerModal from "@/components/wallet/wallet-explorer-modal";
+import ChainSelectionModal from "@/components/wallet/chain-selection-modal";
 import WalletConnectedToast from "@/components/wallet/wallet-connected-toast";
 import TokenSelectorModal from "@/components/swap/token-selector-modal";
 import { getWalletIconFromAccount, isWalletChainCompatible, isAddressChainCompatible } from "@/lib/frontend/utils/wallet-display";
@@ -86,14 +88,30 @@ export default function SwapPage() {
   // Wallet connection state
   const {
     isModalOpen,
+    isExplorerOpen,
+    isChainSelectionOpen,
     isToastOpen,
     connectedAddress,
+    pendingWallet,
     openModal,
     closeModal,
+    openExplorer,
+    closeExplorer,
     connectWallet,
+    selectChain,
     closeToast,
+    handleChainModalBack,
   } = useWalletConnection();
-  const { primaryWallet, secondaryWallet, secondaryAddress } = useWallet();
+  const { 
+    primaryWallet, 
+    secondaryWallet, 
+    secondaryAddress,
+    connectedWallets,
+    connectAdditionalWallet,
+    isProviderConnected,
+    error: walletError,
+    clearError: clearWalletError,
+  } = useWallet();
 
   // Get wallet icons
   const fromWalletIcon = getWalletIconFromAccount(primaryWallet);
@@ -161,6 +179,7 @@ export default function SwapPage() {
   // Local UI state for wallet/address modals
   const [isFromWalletModalOpen, setIsFromWalletModalOpen] = useState(false);
   const [isToAddressModalOpen, setIsToAddressModalOpen] = useState(false);
+  const [isConnectingFromSection, setIsConnectingFromSection] = useState(false);
   
   // Show error toast when quote error occurs
   useEffect(() => {
@@ -742,8 +761,61 @@ export default function SwapPage() {
     }
   };
 
+  // Get connected provider IDs for filtering
+  const connectedProviders = connectedWallets.map(w => w.provider);
+  
   const handleConnectClick = () => {
+    setIsConnectingFromSection(false);
     openModal();
+  };
+  
+  // Handler for connecting additional wallet from "From" section
+  const handleConnectFromSection = () => {
+    setIsConnectingFromSection(true);
+    openModal();
+  };
+  
+  // Helper to determine chain from wallet ID
+  const getChainForWallet = (walletId: string): 'ethereum' | 'solana' => {
+    const solanaOnlyWallets = ['solflare', 'glow', 'slope', 'nightly', 'jupiter', 'phantom'];
+    if (solanaOnlyWallets.some(w => walletId.toLowerCase().includes(w.toLowerCase()))) {
+      return 'solana';
+    }
+    return 'ethereum';
+  };
+  
+  // Unified wallet connection handler
+  const handleWalletConnect = async (walletType: any) => {
+    try {
+      if (isConnectingFromSection && connectedWallets.length > 0) {
+        // Connecting from "From" section with existing wallets - use connectAdditionalWallet
+        let walletId: string;
+        let chain: 'ethereum' | 'solana' = 'ethereum';
+        
+        if (typeof walletType === 'string') {
+          // Simple wallet ID string
+          walletId = walletType;
+          chain = getChainForWallet(walletId);
+        } else if (walletType && typeof walletType === 'object') {
+          // WalletConnectWallet object
+          walletId = walletType.id || walletType.name?.toLowerCase() || '';
+          chain = getChainForWallet(walletId);
+        } else {
+          throw new Error('Invalid wallet type');
+        }
+        
+        await connectAdditionalWallet(walletId, chain, true);
+        setIsConnectingFromSection(false);
+        closeModal();
+      } else {
+        // Regular connection (first wallet or from other places)
+        await connectWallet(walletType);
+        setIsConnectingFromSection(false);
+      }
+    } catch (error) {
+      console.error('[SwapPage] Error connecting wallet:', error);
+      setIsConnectingFromSection(false);
+    }
   };
 
 
@@ -909,6 +981,7 @@ export default function SwapPage() {
               onMaxClick={handleMaxClick}
               onSwapClick={handleSwapClick}
               onConnectClick={handleConnectClick}
+              onConnectFromSection={handleConnectFromSection}
               isConnected={!!connectedAddress}
               isExecutingTransfer={isExecutingTransfer || isExecutingSwap}
             />
@@ -919,9 +992,39 @@ export default function SwapPage() {
       {/* Connect Wallet Modal */}
       <ConnectWalletModal
         open={isModalOpen}
-        onOpenChange={closeModal}
-        onWalletConnect={connectWallet}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsConnectingFromSection(false);
+          }
+          closeModal();
+        }}
+        onWalletConnect={handleWalletConnect}
+        onOpenExplorer={openExplorer}
+        excludeProviders={connectedProviders}
       />
+
+      {/* Wallet Explorer Modal */}
+      <WalletExplorerModal
+        open={isExplorerOpen}
+        onOpenChange={closeExplorer}
+        onWalletConnect={handleWalletConnect}
+        excludeProviders={connectedProviders}
+      />
+
+      {/* Chain Selection Modal */}
+      {pendingWallet && (
+        <ChainSelectionModal
+          open={isChainSelectionOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              handleChainModalBack();
+            }
+          }}
+          wallet={pendingWallet}
+          onChainSelect={selectChain}
+          onBack={handleChainModalBack}
+        />
+      )}
 
       {/* Wallet Connected Toast */}
       {connectedAddress && (
@@ -954,6 +1057,21 @@ export default function SwapPage() {
           open={isErrorToastOpen}
           onOpenChange={setIsErrorToastOpen}
           duration={10000} // 10 seconds for routing errors
+        />
+      )}
+
+      {/* Wallet Connection Error Toast */}
+      {walletError && (
+        <ErrorToast
+          title="Wallet connection error"
+          message={walletError}
+          open={!!walletError}
+          onOpenChange={(open) => {
+            if (!open) {
+              clearWalletError();
+            }
+          }}
+          duration={6000}
         />
       )}
 
