@@ -178,7 +178,42 @@ export class RouteService {
     }
     
     // 5. Select best route
-    const bestRoute = selectBestRoute(routes);
+    let bestRoute = selectBestRoute(routes);
+    
+    // 5a. If no route found, try enhanced system as fallback
+    if (!bestRoute) {
+      try {
+        const { getRouteServiceEnhancer } = await import('@/lib/backend/routing/integration');
+        const enhancer = getRouteServiceEnhancer();
+        
+        const enhancedResponse = await enhancer.enhanceRoute(
+          request,
+          {
+            route: null,
+            alternatives: undefined,
+            timestamp: Date.now(),
+            expiresAt: Date.now() + 60000,
+          },
+          {
+            enableUniversalRouting: true,
+            preferUniversalRouting: false, // Use existing if better
+          }
+        );
+        
+        if (enhancedResponse.route) {
+          // Use enhanced route
+          bestRoute = enhancedResponse.route;
+          // Add enhanced route to alternatives list if there are other routes
+          if (enhancedResponse.alternatives && enhancedResponse.alternatives.length > 0) {
+            routes.push(...enhancedResponse.alternatives);
+          }
+          console.log('[RouteService] Enhanced routing system found a route');
+        }
+      } catch (enhancedError: any) {
+        console.warn('[RouteService] Enhanced routing fallback failed:', enhancedError);
+        // Continue with existing error handling
+      }
+    }
     
     if (!bestRoute) {
       // All routers failed - provide detailed error message
@@ -198,11 +233,11 @@ export class RouteService {
       // Build user-friendly error message
       let errorMessage: string;
       if (hasNoRouteError) {
-        errorMessage = `No swap route available for this token pair. We tried ${routerNames}, but none of them support this swap.`;
+        errorMessage = `No swap route available for this token pair. We tried ${routerNames} and the enhanced routing system, but none of them support this swap.`;
       } else if (hasLiquidityError) {
-        errorMessage = `Insufficient liquidity for this swap. We tried ${routerNames}, but there isn't enough liquidity available.`;
+        errorMessage = `Insufficient liquidity for this swap. We tried ${routerNames} and the enhanced routing system, but there isn't enough liquidity available.`;
       } else {
-        errorMessage = `Unable to find a swap route. We tried ${routerNames}, but all attempts failed.`;
+        errorMessage = `Unable to find a swap route. We tried ${routerNames} and the enhanced routing system, but all attempts failed.`;
       }
       
       throw new Error(errorMessage);

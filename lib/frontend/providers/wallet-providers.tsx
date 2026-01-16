@@ -4,6 +4,7 @@
  * Wallet Providers Wrapper
  * 
  * Wraps WagmiProvider in a client component to avoid serialization issues
+ * Also includes LiFi SDK provider for cross-chain swaps
  */
 
 import { WagmiProvider } from 'wagmi';
@@ -12,6 +13,7 @@ import { useState, type ReactNode } from 'react';
 import { createConfig, http } from 'wagmi';
 import { mainnet, arbitrum, optimism, polygon, base, bsc } from 'wagmi/chains';
 import { metaMask, walletConnect, injected } from 'wagmi/connectors';
+import { LiFiSDKProvider } from './lifi-sdk-provider';
 
 // WalletConnect Project ID (you'll need to get this from WalletConnect Cloud)
 // For now, using a placeholder - replace with your actual project ID
@@ -59,7 +61,9 @@ export function WalletProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <WagmiProvider config={wagmiConfig}>
-        {children}
+        <LiFiSDKProvider>
+          {children}
+        </LiFiSDKProvider>
       </WagmiProvider>
     </QueryClientProvider>
   );

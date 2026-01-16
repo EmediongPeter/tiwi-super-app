@@ -10,6 +10,7 @@ import { LiFiExecutor } from './executors/lifi-executor';
 import { JupiterExecutor } from './executors/jupiter-executor';
 import { PancakeSwapExecutor } from './executors/pancakeswap-executor';
 import { UniswapExecutor } from './executors/uniswap-executor';
+import { MultiStepExecutor } from './executors/multi-step-executor';
 import { SwapExecutionError, SwapErrorCode } from './types';
 
 /**
@@ -23,11 +24,13 @@ export class SwapExecutor {
 
   constructor() {
     // Initialize all router executors
+    // Note: MultiStepExecutor should be last as it handles universal routes
     this.executors = [
       new LiFiExecutor(),
       new JupiterExecutor(),
       new PancakeSwapExecutor(),
       new UniswapExecutor(),
+      new MultiStepExecutor(), // Handles universal routes and multi-step swaps
     ];
   }
 
