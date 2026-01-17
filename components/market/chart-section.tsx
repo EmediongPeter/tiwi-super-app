@@ -3,10 +3,10 @@
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { TradingViewChart } from "@/components/charts/tradingview-chart";
-import { ResolutionString } from "@/charting_library/charting_library/charting_library";
 import { fetchTokens } from "@/lib/frontend/api/tokens";
 import type { Token } from "@/lib/frontend/types/tokens";
 import OverviewSection from "./overview-section";
+import { ResolutionString } from "@/public/charts/charting_library/datafeed-api";
 
 interface ChartSectionProps {
   pair: string; // e.g., "BTC/USDT" or "WBNB/USDT"

@@ -19,10 +19,10 @@
 
 import { useEffect, useRef } from 'react';
 // @ts-ignore - TradingView library types
-import { widget } from '@/charting_library';
-import type { IChartingLibraryWidget } from '@/charting_library/charting_library';
+import { widget } from '@/public/charts/charting_library';
+import type { IChartingLibraryWidget } from '@/public/charts/charting_library/charting_library';
 import { TradingViewDatafeed } from '@/lib/frontend/charts/tradingview-datafeed';
-import { ResolutionString } from '@/charting_library/charting_library/charting_library';
+import { ResolutionString } from '@/public/charts/charting_library/charting_library';
 import { formatPriceForChart } from '@/lib/shared/utils/price-formatting-subscript';
 
 // ============================================================================

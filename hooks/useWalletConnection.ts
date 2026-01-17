@@ -402,7 +402,8 @@ export function useWalletConnection(): UseWalletConnectionReturn {
       setIsModalOpen(false);
     } catch (error: any) {
       console.error('Error connecting wallet:', error);
-      // Error is already set in store
+      // Re-throw so UI components (e.g. ConnectWalletModal) can show a toast
+      throw (error instanceof Error ? error : new Error(String(error)));
     }
   }, [wallet, wagmiConfig, wagmiConnect, wagmiConnectors]);
 

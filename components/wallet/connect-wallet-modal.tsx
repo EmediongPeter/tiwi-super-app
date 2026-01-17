@@ -15,6 +15,7 @@ import type { WalletProvider } from "@/lib/wallet/detection/types";
 import { getWalletIconUrl } from "@/lib/wallet/services/wallet-explorer-service";
 import AddNewWallet from "@/components/settings/add-new-wallet";
 import ImportWallet from "@/components/settings/import-wallet";
+import ErrorToast from "@/components/ui/error-toast";
 
 export type WalletType =
   | "metamask"
@@ -27,8 +28,9 @@ export type WalletType =
 interface ConnectWalletModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onWalletConnect?: (walletType: WalletType) => void;
+  onWalletConnect?: (walletType: WalletType) => Promise<void> | void;
   onOpenExplorer?: () => void; // Callback to open wallet explorer
+  excludeProviders?: string[]; // Provider IDs to exclude (already connected)
 }
 
 // Predefined 4 wallets to show when no wallets are installed
@@ -39,14 +41,19 @@ export default function ConnectWalletModal({
   onOpenChange,
   onWalletConnect,
   onOpenExplorer,
+  excludeProviders = [],
 }: ConnectWalletModalProps) {
   const { installedWallets, isDetecting } = useWalletDetection();
   const [flow, setFlow] = useState<"connect" | "create" | "import">("connect");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isErrorToastOpen, setIsErrorToastOpen] = useState(false);
 
-  // Get top 4 wallets to display
+  // Get top 4 wallets to display, excluding already connected providers
   const getDisplayWallets = (): WalletProvider[] => {
+    let wallets: WalletProvider[] = [];
+    
     if (installedWallets.length > 0) {
-      // Show top 4 installed wallets
+      // Show installed wallets as-is (we no longer hide providers that are already connected)
       return installedWallets.slice(0, 4);
     }
     
@@ -70,12 +77,21 @@ export default function ConnectWalletModal({
 
   const displayWallets = getDisplayWallets();
 
-  const handleWalletClick = (wallet: WalletProvider) => {
+  const handleWalletClick = async (wallet: WalletProvider) => {
     // Check if wallet is installed
     if (wallet.installed) {
-      // Wallet is installed, connect it
-      onWalletConnect?.(wallet.id);
-      onOpenChange(false);
+      if (!onWalletConnect) return;
+      try {
+        await onWalletConnect(wallet.id);
+        // Only close the modal if connection succeeded
+        onOpenChange(false);
+      } catch (error: any) {
+        const message =
+          (error instanceof Error ? error.message : String(error)) ||
+          "Failed to connect wallet.";
+        setErrorMessage(message);
+        setIsErrorToastOpen(true);
+      }
     } else {
       // Wallet is not installed, redirect to install URL
       const walletInfo = getWalletById(wallet.id);
@@ -100,11 +116,12 @@ export default function ConnectWalletModal({
   const showConnectFlow = flow === "connect";
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        showCloseButton={false}
-        className="bg-[#0b0f0a] border border-[#1f261e] rounded-2xl sm:rounded-3xl p-0 max-w-[calc(100vw-2rem)] sm:max-w-[550px] w-full overflow-hidden"
-      >
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent
+          showCloseButton={false}
+          className="bg-[#0b0f0a] border border-[#1f261e] rounded-2xl sm:rounded-3xl p-0 max-w-[calc(100vw-2rem)] sm:max-w-[550px] w-full overflow-hidden"
+        >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 shrink-0 w-full border-b border-[#1f261e]">
           <DialogTitle className="font-bold leading-normal relative shrink-0 text-2xl text-left text-white m-0">
@@ -226,7 +243,17 @@ export default function ConnectWalletModal({
             />
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {errorMessage && (
+        <ErrorToast
+          title="Wallet connection error"
+          message={errorMessage}
+          open={isErrorToastOpen}
+          onOpenChange={setIsErrorToastOpen}
+        />
+      )}
+    </>
   );
 }

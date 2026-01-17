@@ -5,7 +5,7 @@ import { TradingViewChart } from "@/components/charts/tradingview-chart";
 import Skeleton from "@/components/ui/skeleton";
 import type { Token } from "@/lib/frontend/types/tokens";
 import { DEFAULT_FROM_TOKEN, DEFAULT_TO_TOKEN } from "@/app/swap/page";
-import { ResolutionString } from "@/charting_library/charting_library/charting_library";
+import { ResolutionString } from "@/public/charts/charting_library/datafeed-api";
 import { formatUSDPrice, formatQuotePrice } from "@/lib/shared/utils/price-formatting-subscript";
 
 interface TradingChartProps {
@@ -149,7 +149,7 @@ export default function TradingChart({
             quoteChainId={toToken!.chainId}
             height="100%"
             theme="dark"
-            interval="15" as ResolutionString
+            interval={"15" as ResolutionString}
             onError={handleChartError}
             onReady={handleChartReady}
             className="w-full h-full"

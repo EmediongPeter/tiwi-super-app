@@ -1,80 +1,33 @@
-/**
- * Test script to fetch token decimals using viem
- * Testing with TIWI CAT (TWC) token on BNB Chain
- */
-
-import { createPublicClient, http, type Address } from 'viem';
-import { bsc } from 'viem/chains';
-
-// TWC Token address on BNB Chain
-const TWC_ADDRESS = '0xAC0FbE32C7f6b7bE3E9822787F1B4D2864b74444' as Address;
-
-// ERC-20 decimals() function ABI
-const ERC20_DECIMALS_ABI = [
-  {
-    inputs: [],
-    name: 'decimals',
-    outputs: [{ internalType: 'uint8', name: '', type: 'uint8' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-async function testFetchDecimals() {
-  try {
-    console.log('🔍 Testing viem method to fetch token decimals...');
-    console.log('Token Address:', TWC_ADDRESS);
-    console.log('Chain: BNB Chain (56)');
+// utils/multi-hop/pancakeswap.ts
+export async function findPancakeSwapRoute(
+  fromToken: Address,
+  toToken: Address,
+  amountIn: bigint
+): Promise<{path: Address[]; amountOut: bigint}> {
+  
+  // Hardcoded intermediaries for BSC (expand as needed)
+  const intermediaries = [
+    '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+    '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+  ];
+  
+  // Try direct first
+  const direct = await tryDirectSwap(fromToken, toToken, amountIn);
+  if (direct) return direct;
+  
+  // Try 2-hop: A → Intermediary → B
+  for (const mid of intermediaries) {
+    const route1 = await tryDirectSwap(fromToken, mid, amountIn);
+    if (!route1) continue;
     
-    // Create public client for BNB Chain
-    const publicClient = createPublicClient({
-      chain: bsc,
-      transport: http(),
-    });
-    
-    console.log('\n📡 Calling decimals() function on contract...');
-    
-    // Call decimals() function on the ERC-20 contract
-    const decimals = await publicClient.readContract({
-      address: TWC_ADDRESS,
-      abi: ERC20_DECIMALS_ABI,
-      functionName: 'decimals',
-    });
-    
-    const decimalsNumber = Number(decimals);
-    
-    console.log('✅ Success!');
-    console.log('Raw response:', decimals);
-    console.log('Decimals:', decimalsNumber);
-    console.log('\n📊 Result:');
-    console.log(`TWC token has ${decimalsNumber} decimals`);
-    
-    // Test with a sample amount conversion
-    if (decimalsNumber > 0) {
-      const sampleAmount = '21192370965782895321475'; // Example raw amount
-      const humanReadable = (BigInt(sampleAmount) / BigInt(10 ** decimalsNumber)).toString();
-      console.log(`\n🧮 Sample conversion test:`);
-      console.log(`Raw amount: ${sampleAmount}`);
-      console.log(`Human-readable (with ${decimalsNumber} decimals): ${humanReadable}`);
+    const route2 = await tryDirectSwap(mid, toToken, route1.amountOut);
+    if (route2) {
+      return {
+        path: [fromToken, mid, toToken],
+        amountOut: route2.amountOut
+      };
     }
-    
-    return decimalsNumber;
-  } catch (error: any) {
-    console.error('❌ Error fetching decimals:', error);
-    console.error('Error message:', error?.message);
-    console.error('Error details:', error);
-    throw error;
   }
+  
+  throw new Error('No route found');
 }
-
-// Run the test
-testFetchDecimals()
-  .then((decimals) => {
-    console.log('\n✅ Test completed successfully!');
-    console.log(`Final result: ${decimals} decimals`);
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('\n❌ Test failed!');
-    process.exit(1);
-  });
