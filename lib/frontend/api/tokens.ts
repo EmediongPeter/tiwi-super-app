@@ -20,6 +20,7 @@ export interface FetchTokensParams {
   query?: string;
   limit?: number;
   address?: string;  // Token contract address for specific token lookup
+  category?: 'hot' | 'new' | 'gainers' | 'losers'; // Market categories
   source?: 'market' | 'default';  // Data source: 'market' for DexScreener market data, 'default' for regular fetching
 }
 
@@ -33,7 +34,7 @@ export interface FetchTokensParams {
  * @returns Promise resolving to transformed tokens
  */
 export async function fetchTokens(params: FetchTokensParams = {}): Promise<Token[]> {
-  const { chains, query, limit, address, source } = params;
+  const { chains, query, limit, address, category, source } = params;
   
   // Build API URL
   const url = new URL('/api/v1/tokens', window.location.origin);
@@ -48,6 +49,9 @@ export async function fetchTokens(params: FetchTokensParams = {}): Promise<Token
   if (address && address.trim()) {
     url.searchParams.set('address', address.trim());
   }
+  if (category) {
+    url.searchParams.set('category', category);
+  }
   if (limit) {
     url.searchParams.set('limit', limit.toString());
   }
@@ -57,6 +61,7 @@ export async function fetchTokens(params: FetchTokensParams = {}): Promise<Token
   
   try {
     const response = await fetch(url.toString());
+    console.log("🚀 ~ fetchTokens ~ url:", url)
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -112,7 +117,9 @@ function transformToken(backendToken: NormalizedToken): Token {
     name: backendToken.name,
     symbol: backendToken.symbol,
     address: backendToken.address,
+    // Prefer backend logoURI and expose it both as logoURI and legacy logo field
     logo: cleanImageUrl(backendToken.logoURI || ''),
+    logoURI: backendToken.logoURI ? cleanImageUrl(backendToken.logoURI) : undefined,
     chain,
     chainId: backendToken.chainId,
     decimals: backendToken.decimals, // Required: from token data (enriched by TokenService from blockchain)

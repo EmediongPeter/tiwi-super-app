@@ -105,8 +105,8 @@ export function formatTokenForHomepage(token: Token): HomepageToken {
   
   return {
     symbol: token.symbol,
-    // Use logoURI if available; if not, leave empty so the UI can render a letter placeholder
-    icon: token.logoURI || '',
+    // Prefer logoURI (from backend) but fall back to legacy logo field
+    icon: token.logoURI || token.logo || '',
     price: formatPrice(tokenPrice),
     change: priceChange.change,
     changePositive: priceChange.positive,

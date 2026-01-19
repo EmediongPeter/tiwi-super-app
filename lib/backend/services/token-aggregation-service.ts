@@ -13,7 +13,7 @@
 
 import { getProviderRegistry } from '@/lib/backend/providers/registry';
 import { getCanonicalChainByProviderId, getCanonicalChain } from '@/lib/backend/registry/chains';
-import { resolveChain } from '@/lib/backend/registry/chain-resolver';
+import { resolveChain, isChainSupported, ALLOWED_CHAIN_IDS } from '@/lib/backend/registry/chain-resolver';
 import { calculateSimilarity } from '@/lib/shared/utils/search';
 import { mixTokensWithPriority } from '@/lib/backend/utils/token-mixer';
 import { getTokenEnrichmentService } from './token-enrichment-service';
@@ -27,6 +27,12 @@ import type { BaseTokenProvider } from '@/lib/backend/providers/base';
 
 export class TokenAggregationService {
   private registry = getProviderRegistry();
+  // Cap how many chains we fan out to per request to avoid hammering providers
+  private static readonly MAX_CHAIN_FANOUT = 12;
+  // Order to prioritize when trimming chain fanout (most important first)
+  private static readonly PRIORITY_ORDER: number[] = [
+    56, 1, 137, 42161, 10, 8453, 43114, 7565164, // major market chains
+  ];
 
   /**
    * Search tokens across providers
@@ -46,10 +52,8 @@ export class TokenAggregationService {
     
     console.log(`[TokenAggregationService] searchTokens called with:`, { chainIds, query, limit });
     
-    // Determine which chains to search
-    const chainsToSearch = chainIds && chainIds.length > 0 
-      ? chainIds 
-      : []; // If no chains specified, we'll need to handle this differently
+    // Determine which chains to search (filter + dedupe + cap fanout)
+    const chainsToSearch = this.buildChainList(chainIds);
     
     if (chainsToSearch.length === 0) {
       // No chains specified: search all supported chains
@@ -257,6 +261,38 @@ export class TokenAggregationService {
       console.error(`[TokenAggregationService] Error fetching from ${provider.name}:`, error);
       return [];
     }
+  }
+
+  /**
+   * Build a safe, capped chain list:
+   * - Filter to allowed chains
+   * - Dedupe
+   * - Prioritize major chains
+   * - Cap fanout to avoid upstream rate limits
+   */
+  private buildChainList(chainIds?: number[]): number[] {
+    const input = chainIds ?? [];
+    const filtered = input.filter((id) => isChainSupported(id) && ALLOWED_CHAIN_IDS.has(id));
+    const deduped = Array.from(new Set(filtered));
+
+    // If empty, nothing to do
+    if (deduped.length === 0) return [];
+
+    // Prioritize using the predefined order, then append the rest
+    const priority = TokenAggregationService.PRIORITY_ORDER.filter((id) => deduped.includes(id));
+    const remaining = deduped.filter((id) => !priority.includes(id));
+    const ordered = [...priority, ...remaining];
+
+    if (ordered.length > TokenAggregationService.MAX_CHAIN_FANOUT) {
+      const trimmed = ordered.slice(0, TokenAggregationService.MAX_CHAIN_FANOUT);
+      console.warn(
+        `[TokenAggregationService] Trimming chain fanout from ${ordered.length} to ${trimmed.length} to avoid rate limits`,
+        trimmed
+      );
+      return trimmed;
+    }
+
+    return ordered;
   }
 
   /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { TABLE_TOKENS } from "@/lib/home/mock-data";
 import { TokenImage } from "@/components/home/token-image";
@@ -12,10 +12,10 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { fetchTokens } from "@/lib/frontend/api/tokens";
 import { formatTokenForHomepage, type HomepageToken, formatPrice } from "@/lib/home/token-formatter";
 import type { Token } from "@/lib/frontend/types/tokens";
 import { TableSkeleton } from "@/components/home/table-skeleton";
+import { useTokensQuery } from "@/hooks/useTokensQuery";
 
 type TabKey = "Favourite" | "Hot" | "New" | "Gainers" | "Losers";
 type SortKey = 'volume' | 'liquidity' | 'performance' | 'none';
@@ -29,7 +29,6 @@ interface MarketTableProps {
 
 export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'none', onSortChange }: MarketTableProps) {
   const [tokens, setTokens] = useState<HomepageToken[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [favourites, setFavourites] = useState<string[]>([]);
   const leftTableRef = useRef<HTMLTableElement | null>(null);
   const rightTableRef = useRef<HTMLTableElement | null>(null);
@@ -49,127 +48,139 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
     }
   }, []);
 
-  // Fetch tokens based on active tab
+  // Map tabs to market categories
+  const categoryMap: Record<TabKey, 'hot' | 'new' | 'gainers' | 'losers' | null> = {
+    Hot: 'hot',
+    New: 'new',
+    Gainers: 'gainers',
+    Losers: 'losers',
+    Favourite: null,
+  };
+
+  const activeCategory = categoryMap[activeTab];
+
+  // Category-based tokens (Hot/New/Gainers/Losers) - fetched via TanStack Query
+  const {
+    data: categoryTokens = [],
+    isLoading: isCategoryLoading,
+    error: categoryError,
+  } = useTokensQuery({
+    params: activeCategory
+      ? { category: activeCategory, limit: 100, source: "market" }
+      : undefined,
+    enabled: !!activeCategory,
+    staleTime: 60_000,
+  });
+    console.log("🚀 ~ MarketTable ~ categoryTokens:", categoryTokens)
+
+  // Favourite tokens fetched separately (address-based for now)
+  const [favouriteTokens, setFavouriteTokens] = useState<Token[]>([]);
+  const [isFavouriteLoading, setIsFavouriteLoading] = useState(false);
+
   useEffect(() => {
-    const loadTokens = async () => {
-      setIsLoading(true);
+    if (activeTab !== "Favourite") return;
+
+    const loadFavouriteTokens = async () => {
+      setIsFavouriteLoading(true);
       try {
-        let fetchedTokens: Token[] = [];
-        
-        // Map tab to category
-        const categoryMap: Record<TabKey, string | undefined> = {
-          'Hot': 'hot',
-          'New': 'new',
-          'Gainers': 'gainers',
-          'Losers': 'losers',
-          'Favourite': undefined, // Favourites handled separately
-        };
+        const stored = localStorage.getItem("favouriteTokens");
+        const favouriteIds: string[] = stored ? JSON.parse(stored) : [];
 
-        const category = categoryMap[activeTab];
-        
-        if (category) {
-          // Fetch by category
-          const url = new URL('/api/v1/tokens', window.location.origin);
-          url.searchParams.set('category', category);
-          url.searchParams.set('limit', '100'); // Get more for filtering
-          
-          const response = await fetch(url.toString());
-          if (response.ok) {
-            const data = await response.json();
-            fetchedTokens = data.tokens || [];
-          }
-        } else if (activeTab === 'Favourite') {
-          // For favourites, get favourite token IDs from localStorage
-          const stored = localStorage.getItem('favouriteTokens');
-          const favouriteIds = stored ? JSON.parse(stored) : [];
-          
-          if (favouriteIds.length > 0) {
-            // Fetch tokens by addresses
-            const tokensPromises = favouriteIds.map(async (id: string) => {
-              const [chainId, address] = id.split('-');
-              try {
-                const url = new URL('/api/v1/tokens', window.location.origin);
-                url.searchParams.set('address', address);
-                url.searchParams.set('chains', chainId);
-                const response = await fetch(url.toString());
-                if (response.ok) {
-                  const data = await response.json();
-                  return data.tokens?.[0];
-                }
-              } catch (e) {
-                console.error(`[MarketTable] Error fetching token ${id}:`, e);
-              }
-              return null;
-            });
-            
-            const results = await Promise.all(tokensPromises);
-            fetchedTokens = results.filter(Boolean) as Token[];
-          }
-        } else {
-          // Default: fetch hot tokens
-          const url = new URL('/api/v1/tokens', window.location.origin);
-          url.searchParams.set('category', 'hot');
-          url.searchParams.set('limit', '100');
-          
-          const response = await fetch(url.toString());
-          if (response.ok) {
-            const data = await response.json();
-            fetchedTokens = data.tokens || [];
-          }
+        if (favouriteIds.length === 0) {
+          setFavouriteTokens([]);
+          return;
         }
 
-        // Apply search filter
-        if (searchQuery.trim()) {
-          const query = searchQuery.toLowerCase();
-          fetchedTokens = fetchedTokens.filter(token =>
-            token.symbol.toLowerCase().includes(query) ||
-            token.name.toLowerCase().includes(query) ||
-            token.address.toLowerCase().includes(query)
-          );
-        }
-
-        // Format tokens for homepage
-        // Ensure price is available - the API returns priceUSD which should be mapped to price
-        let formattedTokens = fetchedTokens.map(token => {
-          // Debug: Log to check if price exists
-          if (!token.price) {
-            console.warn('[MarketTable] Token missing price:', token.symbol, token);
+        const tokensPromises = favouriteIds.map(async (id: string) => {
+          const [chainId, address] = id.split("-");
+          try {
+            const url = new URL("/api/v1/tokens", window.location.origin);
+            url.searchParams.set("address", address);
+            url.searchParams.set("chains", chainId);
+            url.searchParams.set("limit", "1");
+            const response = await fetch(url.toString());
+            if (response.ok) {
+              const data = await response.json();
+              return data.tokens?.[0] as Token | undefined;
+            }
+          } catch (e) {
+            console.error(`[MarketTable] Error fetching favourite token ${id}:`, e);
           }
-          return formatTokenForHomepage(token);
+          return null;
         });
 
-        // Apply sorting
-        if (sortBy !== 'none') {
-          formattedTokens = [...formattedTokens].sort((a, b) => {
-            switch (sortBy) {
-              case 'volume':
-                return (b.token.volume24h || 0) - (a.token.volume24h || 0);
-              case 'liquidity':
-                return (b.token.liquidity || 0) - (a.token.liquidity || 0);
-              case 'performance':
-                // Performance = price change (24h)
-                return (b.token.priceChange24h || 0) - (a.token.priceChange24h || 0);
-              default:
-                return 0;
-            }
-          });
-        }
-
-        setTokens(formattedTokens.slice(0, 30)); // Limit to 30 for display
+        const results = await Promise.all(tokensPromises);
+        setFavouriteTokens(results.filter(Boolean) as Token[]);
       } catch (error) {
-        console.error('[MarketTable] Error fetching tokens:', error);
-        // Fallback to mock data on error
-        setTokens(TABLE_TOKENS.map(t => ({
-          ...t,
-          token: {} as Token,
-        })));
+        console.error("[MarketTable] Error fetching favourite tokens:", error);
+        setFavouriteTokens([]);
       } finally {
-        setIsLoading(false);
+        setIsFavouriteLoading(false);
       }
     };
 
-    loadTokens();
-  }, [activeTab, searchQuery, sortBy]);
+    loadFavouriteTokens();
+  }, [activeTab]);
+
+  // Derive base token list for the active tab
+  const rawTokens: Token[] = useMemo(() => {
+    if (activeTab === "Favourite") {
+      return favouriteTokens;
+    }
+    return categoryTokens as Token[];
+  }, [activeTab, categoryTokens, favouriteTokens]);
+
+  // Compute loading state
+  const isLoading = activeTab === "Favourite" ? isFavouriteLoading : isCategoryLoading;
+
+  // Transform, filter, and sort tokens for homepage display
+  const homepageTokens: HomepageToken[] = useMemo(() => {
+    let working: Token[] = [...rawTokens];
+
+    // Client-side search
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      working = working.filter((token) => {
+        const symbol = token.symbol?.toLowerCase() || "";
+        const name = token.name?.toLowerCase() || "";
+        const address = token.address?.toLowerCase() || "";
+        return (
+          symbol.includes(query) ||
+          name.includes(query) ||
+          address.includes(query)
+        );
+      });
+    }
+
+    // Map to homepage tokens
+    let formatted = working.map((token) => formatTokenForHomepage(token));
+
+    // Sorting (volume, liquidity, performance)
+    if (sortBy !== "none") {
+      formatted = [...formatted].sort((a, b) => {
+        switch (sortBy) {
+          case "volume":
+            return (b.token.volume24h || 0) - (a.token.volume24h || 0);
+          case "liquidity":
+            return (b.token.liquidity || 0) - (a.token.liquidity || 0);
+          case "performance":
+            return (
+              (b.token.priceChange24h || 0) - (a.token.priceChange24h || 0)
+            );
+          default:
+            return 0;
+        }
+      });
+    }
+
+    // Limit to 30 rows for display
+    return formatted.slice(0, 30);
+  }, [rawTokens, searchQuery, sortBy]);
+
+  // Keep existing state-driven code paths using `tokens`
+  useEffect(() => {
+    setTokens(homepageTokens);
+  }, [homepageTokens]);
 
   // Measure left table row heights and apply to right table rows
   const syncRowHeights = () => {
@@ -335,17 +346,18 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
                               localStorage.setItem('favouriteTokens', JSON.stringify(newFavourites));
                             }}
                             className="shrink-0"
+                            aria-label="Toggle favourite"
                           >
-                          <Image
-                            src="/assets/icons/home/star.svg"
-                            alt="star"
-                            width={12}
-                            height={12}
-                              className={`lg:w-4 lg:h-4 xl:w-5 xl:h-5 shrink-0 transition-opacity ${
-                                favourites.includes(`${token.token.chainId}-${token.token.address.toLowerCase()}`)
-                                  ? 'opacity-100' : 'opacity-50'
-                              }`}
-                          />
+                            <Image
+                              src={favourites.includes(`${token.token.chainId}-${token.token.address.toLowerCase()}`)
+                                ? "/assets/icons/wallet/star18.svg"
+                                : "/assets/icons/home/star.svg"
+                              }
+                              alt="star"
+                              width={16}
+                              height={16}
+                              className="w-4 h-4 lg:w-4 lg:h-4 xl:w-5 xl:h-5 shrink-0"
+                            />
                           </button>
                           <TokenImage
                             src={token.icon}

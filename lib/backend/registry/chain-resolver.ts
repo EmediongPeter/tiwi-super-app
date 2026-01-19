@@ -23,16 +23,34 @@ import type { CanonicalChain } from '@/lib/backend/types/backend-tokens';
  * Priority EVM chain IDs that LiFi supports
  * These chains are dynamically resolvable even if not in static registry
  */
-export const PRIORITY_EVM_CHAINS = new Set([
-  1, 42161, 8453, 792703809, 2741, 888888888, 69000, 33139, 466, 42170,
-  7897, 43114, 8333, 80094, 8253038, 81457, 56, 60808, 288, 42220,
-  21000000, 25, 7560, 666666666, 9286185, 5064014, 747, 984122, 33979,
-  100, 1625, 43419, 43111, 999, 1337, 57073, 747474, 59144, 1135, 169,
-  5000, 1088, 34443, 143, 2818, 42018, 10, 1424, 9745, 98866, 137, 1101,
-  7869, 1380012617, 690, 2020, 1996, 534352, 1329, 360, 5031, 1868, 146,
-  9286186, 988, 1514, 55244, 5330, 1923, 510003, 167000, 728126428, 130,
-  480, 660279, 543210, 48900, 324, 7777777
+/**
+ * Full allow-list provided by product for supported chains across the app.
+ * Keep this as the single source of truth for "isChainSupported".
+ */
+export const ALLOWED_CHAIN_IDS = new Set<number>([
+  1, 56, 137, 42161, 10,
+  8453, 43114, 7565164, 792703809, 2741,
+  888888888, 69000, 33139, 466, 42170,
+  7897, 8333, 80094, 8253038, 81457,
+  60808, 288, 42220, 21000000, 25,
+  7560, 666666666, 9286185, 5064014, 747,
+  984122, 33979, 100, 1625, 43419,
+  43111, 999, 1337, 57073, 747474,
+  59144, 1135, 169, 5000, 1088,
+  34443, 143, 2818, 42018, 1424,
+  9745, 98866, 1101, 7869, 1380012617,
+  690, 2020, 1996, 534352, 1329,
+  360, 5031, 1868, 146, 9286186,
+  988, 1514, 55244, 5330, 1923,
+  510003, 167000, 728126428, 130, 480,
+  660279, 543210, 48900, 324, 7777777,
 ]);
+
+/**
+ * Priority chains (ordered) for fan-out and prefetch use-cases.
+ * Start with major market chains to reduce blast radius on upstream APIs.
+ */
+export const PRIORITY_EVM_CHAINS = new Set<number>(ALLOWED_CHAIN_IDS);
 
 // ============================================================================
 // Chain Resolution Cache
@@ -180,13 +198,9 @@ export async function resolveChains(chainIds: number[]): Promise<Map<number, Can
  * @returns true if chain is supported
  */
 export function isChainSupported(chainId: number): boolean {
-  // Check static registry
-  if (getCanonicalChain(chainId)) {
-    return true;
-  }
-  
-  // Check priority list
-  return PRIORITY_EVM_CHAINS.has(chainId);
+  // Check static registry OR allow-list
+  if (getCanonicalChain(chainId)) return true;
+  return ALLOWED_CHAIN_IDS.has(chainId);
 }
 
 /**

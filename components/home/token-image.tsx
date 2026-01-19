@@ -63,7 +63,7 @@ export function TokenImage({
             height={height}
             className={`${className} ${
               isLoading ? "opacity-0" : "opacity-100"
-            } transition-opacity rounded-full`}
+            } transition-opacity rounded-full object-contain`}
             onError={handleError}
             onLoad={handleLoad}
             unoptimized

@@ -16,6 +16,7 @@ import { MOCK_TOKENS } from '@/lib/backend/data/mock-tokens';
 import { getFeaturedTokens, getFeaturedTokensForChains } from '@/lib/backend/data/featured-tokens';
 import { DexScreenerProvider } from '@/lib/backend/providers/dexscreener';
 import { OneInchProvider } from '@/lib/backend/providers/oneinch';
+import { getPoolMarketService } from '@/lib/backend/services/pool-market-service';
 
 // Initialize providers (must be called before using aggregation service)
 import '@/lib/backend/providers/init';
@@ -28,6 +29,7 @@ export class TokenService {
   private lifiProvider: LiFiProvider;
   private dexScreenerProvider: DexScreenerProvider;
   private aggregationService = getTokenAggregationService();
+  private poolMarketService = getPoolMarketService();
 
   constructor() {
     this.lifiProvider = new LiFiProvider();
@@ -125,75 +127,27 @@ export class TokenService {
 
   /**
    * Get tokens by category (Hot, New, Gainers, Losers)
-   * Uses 1inch API for categories, then enriches with DexScreener data
+   * NEW IMPLEMENTATION:
+   * - Uses CoinGecko Onchain pool endpoints (via PoolMarketService)
+   *   to get pool-based market data and normalize it into tokens.
+   * - This replaces the old 1inch-based implementation for categories.
    */
   async getTokensByCategory(
     category: 'hot' | 'new' | 'gainers' | 'losers',
     limit: number = 30
   ): Promise<NormalizedToken[]> {
     try {
-      const oneinchProvider = new OneInchProvider();
-      const dexscreenerProvider = new DexScreenerProvider();
-      
-      // Map category to 1inch category
-      const categoryMap: Record<string, 'MOST_VIEWED' | 'GAINERS' | 'TRENDING' | 'LISTING_NEW'> = {
-        'hot': 'MOST_VIEWED',
-        'gainers': 'GAINERS',
-        'new': 'LISTING_NEW',
-        'losers': 'TRENDING', // 1inch doesn't have losers, use TRENDING and filter
-      };
-      
-      const oneinchCategory = categoryMap[category] || 'TRENDING';
-      
-      // Fetch from 1inch
-      const oneinchTokens = await oneinchProvider.fetchTrendingTokens(oneinchCategory, limit * 2);
-      
-      if (oneinchTokens.length === 0) {
-        // Fallback to DexScreener if 1inch fails
-        return this.getTokensByCategoryFromDexScreener(category, limit);
+      // Primary path: CoinGecko onchain pools via PoolMarketService
+      const tokens = await this.poolMarketService.getTokensByCategory(category, limit);
+      if (tokens.length > 0) {
+        return tokens;
       }
-      
-      // Enrich with DexScreener data (for holders/traders, price, liquidity)
-      const enrichedTokens = await this.enrichTokensWithDexScreener(oneinchTokens);
-      
-      // Filter losers if needed (1inch doesn't have losers category)
-      let filteredTokens = enrichedTokens;
-      if (category === 'losers') {
-        filteredTokens = enrichedTokens
-          .filter(t => (t.priceChange24h || 0) < 0)
-          .sort((a, b) => (a.priceChange24h || 0) - (b.priceChange24h || 0));
-      } else if (category === 'gainers') {
-        // Ensure only positive changes
-        filteredTokens = enrichedTokens
-          .filter(t => (t.priceChange24h || 0) > 0)
-          .sort((a, b) => (b.priceChange24h || 0) - (a.priceChange24h || 0));
-      } else if (category === 'hot') {
-        // Sort by volume
-        filteredTokens = enrichedTokens.sort((a, b) => (b.volume24h || 0) - (a.volume24h || 0));
-      }
-      
-      // Normalize tokens
-      const normalizedTokens: NormalizedToken[] = [];
-      for (const token of filteredTokens.slice(0, limit)) {
-        const chain = typeof token.chainId === 'number' ? getCanonicalChain(token.chainId) : null;
-        if (chain) {
-          const normalized = oneinchProvider.normalizeToken(token, chain);
-          // Preserve enriched data - prioritize DexScreener image URL
-          normalized.volume24h = token.volume24h;
-          normalized.priceChange24h = token.priceChange24h;
-          normalized.liquidity = token.liquidity;
-          normalized.holders = token.holders;
-          normalized.priceUSD = token.priceUSD || normalized.priceUSD;
-          // Prioritize DexScreener image URL (from enrichment) over 1inch logoURI
-          normalized.logoURI = token.logoURI || normalized.logoURI;
-          normalizedTokens.push(normalized);
-        }
-      }
-      
-      return normalizedTokens;
+
+      // Fallback 1: existing DexScreener category logic (legacy)
+      return this.getTokensByCategoryFromDexScreener(category, limit);
     } catch (error: any) {
       console.error('[TokenService] Error fetching tokens by category:', error);
-      // Fallback to DexScreener
+      // Fallback 2: DexScreener-only implementation as last resort
       return this.getTokensByCategoryFromDexScreener(category, limit);
     }
   }

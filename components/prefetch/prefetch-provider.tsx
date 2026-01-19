@@ -61,6 +61,34 @@ export function PrefetchProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // Prefetch market tokens by category for homepage market table
+    const prefetchMarketCategory = async (
+      category: 'hot' | 'new' | 'gainers' | 'losers'
+    ) => {
+      try {
+        await queryClient.prefetchQuery({
+          queryKey: getTokensQueryKey({
+            category,
+            limit: 100,
+            source: 'market',
+          }),
+          queryFn: () =>
+            fetchTokens({
+              category,
+              limit: 100,
+              source: 'market',
+            }),
+        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Prefetch] Market category ${category} tokens prefetched`);
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[Prefetch] Failed to prefetch market category ${category}:`, error);
+        }
+      }
+    };
+
     // Prefetch tokens for a specific chain
     const prefetchChainTokens = async (chainId: number) => {
       try {
@@ -122,6 +150,19 @@ export function PrefetchProvider({ children }: { children: React.ReactNode }) {
       setTimeout(() => {
         prefetchAllChainsTokens();
       }, 100);
+
+      // 150ms: Prefetch market categories for homepage table
+      setTimeout(() => {
+        const categories: Array<'hot' | 'new' | 'gainers' | 'losers'> = [
+          'hot',
+          'new',
+          'gainers',
+          'losers',
+        ];
+        categories.forEach((category) => {
+          prefetchMarketCategory(category);
+        });
+      }, 150);
 
       // Get popular chains by priority
       const { high, medium, low } = getPopularChainsByPriority();
