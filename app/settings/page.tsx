@@ -11,7 +11,10 @@ import { HiExclamationTriangle } from "react-icons/hi2";
 import { SettingsView } from "@/components/settings/types";
 import MobileSettingsView from "@/components/settings/mobile-settings-view";
 import DesktopSettingsView from "@/components/settings/desktop-settings-view";
+import AddNewWallet from "@/components/settings/add-new-wallet";
 import { useWallet } from "@/lib/wallet/hooks/useWallet";
+import { useActiveWalletAddress } from "@/lib/wallet/hooks/useActiveWalletAddress";
+import { useSearchParams, useRouter } from "next/navigation";
 import type { BugReport } from "@/lib/shared/types/bug-reports";
 
 const chainIcons = [
@@ -98,6 +101,8 @@ const connectedDevices = [
 ];
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [currentView, setCurrentView] = useState<SettingsView>("main");
   const [walletName, setWalletName] = useState("Wallet 1");
   const [newWalletName, setNewWalletName] = useState("");
@@ -306,8 +311,9 @@ export default function SettingsPage() {
   };
 
   const wallet = useWallet();
-  const walletAddress = wallet.address || "0xDB...T432";
-  const fullWalletAddress = wallet.address || "0xdeadbeef1234567890abcdef1234567890ab";
+  const activeAddress = useActiveWalletAddress();
+  const walletAddress = activeAddress || wallet.address || "0xDB...T432";
+  const fullWalletAddress = activeAddress || wallet.address || "0xdeadbeef1234567890abcdef1234567890ab";
   const privateKey = "0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab";
   const dropdownRef = useRef<HTMLDivElement>(null);
   const screenshotInputRef = useRef<HTMLInputElement>(null);
@@ -569,7 +575,14 @@ export default function SettingsPage() {
       <div className="md:hidden">
         <MobileSettingsView
           currentView={currentView}
-          onViewChange={setCurrentView}
+          onViewChange={(view) => {
+            setCurrentView(view);
+            try {
+              const params = new URLSearchParams(searchParams?.toString() || "");
+              params.set("view", view);
+              router.replace(`/settings?${params.toString()}`);
+            } catch {}
+          }}
           onGoBack={handleGoBack}
           walletName={walletName}
           walletAddress={walletAddress}
@@ -669,7 +682,14 @@ export default function SettingsPage() {
 
           <DesktopSettingsView
             currentView={currentView}
-            onViewChange={setCurrentView}
+            onViewChange={(view) => {
+              setCurrentView(view);
+              try {
+                const params = new URLSearchParams(searchParams?.toString() || "");
+                params.set("view", view);
+                router.replace(`/settings?${params.toString()}`);
+              } catch {}
+            }}
             walletName={walletName}
             walletAddress={walletAddress}
             chainIcons={chainIconsList}
@@ -2150,7 +2170,7 @@ export default function SettingsPage() {
                           </div>
                           <IoChevronDown
                             size={20}
-                            className={`text-[#B5B5B5] opacity-60 transition-transform flex-shrink-0 ml-2 ${
+                            className={`text-[#B5B5B5] opacity-60 transition-transform shrink-0 ml-2 ${
                               expandedFaq === faq.id ? "rotate-180" : ""
                             }`}
                           />
@@ -2698,40 +2718,14 @@ export default function SettingsPage() {
 
             {/* Add New Wallet */}
             {currentView === "add-new-wallet" && (
-              <div className="bg-[#0B0F0A] rounded-2xl rounded-l-none border border-[#1f261e] p-6 md:p-8 max-w-2xl mx-auto h-full">
-                <div className="flex justify-end mb-6">
-                  <button
-                    onClick={handleGoBack}
-                    className="flex items-center gap-2 text-[#B1F128] border border-[#B1F128] px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#081F02] transition-colors"
-                  >
-                    <IoArrowBack size={16} />
-                    Go Back
-                  </button>
-                </div>
-
-                <h2 className="text-2xl font-semibold text-white mb-6">
-                  Add New Wallet
-                </h2>
-
-                <div className="space-y-6">
-                  <p className="text-sm text-[#B5B5B5]">
-                    Create a new wallet to manage your assets securely. You'll
-                    be able to generate a new seed phrase and set up your
-                    wallet.
-                  </p>
-
-                  <div className="flex flex-col gap-4">
-                    <button className="w-full bg-[#B1F128] text-[#010501] font-semibold py-4 px-6 rounded-full hover:opacity-90 transition-opacity flex items-center justify-center gap-3">
-                      <FiPlus size={20} />
-                      Create New Wallet
-                    </button>
-
-                    <p className="text-xs text-center text-[#6E7873]">
-                      By creating a wallet, you agree to our Terms & Conditions
-                      and Privacy Policy.
-                    </p>
-                  </div>
-                </div>
+              <div className="rounded-2xl rounded-l-none h-full">
+                <AddNewWallet
+                  onGoBack={handleGoBack}
+                  onWalletCreated={(address) => {
+                    // Wallet created successfully - could show notification or update UI
+                    console.log("Wallet created:", address);
+                  }}
+                />
               </div>
             )}
 

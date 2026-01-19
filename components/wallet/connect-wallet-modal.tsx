@@ -13,6 +13,8 @@ import { useWalletDetection } from "@/lib/wallet/hooks/useWalletDetection";
 import { getWalletById } from "@/lib/wallet/detection/detector";
 import type { WalletProvider } from "@/lib/wallet/detection/types";
 import { getWalletIconUrl } from "@/lib/wallet/services/wallet-explorer-service";
+import AddNewWallet from "@/components/settings/add-new-wallet";
+import ImportWallet from "@/components/settings/import-wallet";
 import ErrorToast from "@/components/ui/error-toast";
 
 export type WalletType =
@@ -42,6 +44,7 @@ export default function ConnectWalletModal({
   excludeProviders = [],
 }: ConnectWalletModalProps) {
   const { installedWallets, isDetecting } = useWalletDetection();
+  const [flow, setFlow] = useState<"connect" | "create" | "import">("connect");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isErrorToastOpen, setIsErrorToastOpen] = useState(false);
 
@@ -103,9 +106,18 @@ export default function ConnectWalletModal({
     onOpenExplorer?.();
   };
 
+  const handleClose = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setFlow("connect");
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const showConnectFlow = flow === "connect";
+
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent
           showCloseButton={false}
           className="bg-[#0b0f0a] border border-[#1f261e] rounded-2xl sm:rounded-3xl p-0 max-w-[calc(100vw-2rem)] sm:max-w-[550px] w-full overflow-hidden"
@@ -113,10 +125,14 @@ export default function ConnectWalletModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 shrink-0 w-full border-b border-[#1f261e]">
           <DialogTitle className="font-bold leading-normal relative shrink-0 text-2xl text-left text-white m-0">
-            Connect Wallet
+            {flow === "connect"
+              ? "Connect Wallet"
+              : flow === "create"
+              ? "Create New Wallet"
+              : "Import Wallet"}
           </DialogTitle>
           <button
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleClose(false)}
             className="cursor-pointer relative shrink-0 size-8 hover:opacity-80 transition-opacity"
             aria-label="Close modal"
           >
@@ -132,87 +148,100 @@ export default function ConnectWalletModal({
 
         {/* Content */}
         <div className="flex flex-col gap-10 items-start px-6 py-0 shrink-0 w-full pb-10 max-h-[70vh] overflow-y-auto wallet-modal-scrollbar">
-          {/* Primary Wallet Options */}
-          <div className="flex flex-col gap-2 items-start relative shrink-0 w-full">
-            <WalletOptionCard
-              icon="/assets/icons/wallet/wallet-04.svg"
-              title="Create New Wallet"
-              description="Set up a brand new wallet in minutes."
-              onClick={() => {
-                onWalletConnect?.("create");
-                onOpenChange(false);
+          {showConnectFlow ? (
+            <>
+              {/* Primary Wallet Options */}
+              <div className="flex flex-col gap-2 items-start relative shrink-0 w-full">
+                <WalletOptionCard
+                  icon="/assets/icons/wallet/wallet-04.svg"
+                  title="Create New Wallet"
+                  description="Set up a brand new wallet in minutes."
+                  onClick={() => setFlow("create")}
+                />
+                <WalletOptionCard
+                  icon="/assets/icons/wallet/cloud-download.svg"
+                  title="Import Wallet"
+                  description="Use your existing seed phrase or private key."
+                  onClick={() => setFlow("import")}
+                />
+              </div>
+
+              {/* Connect External Wallets Section */}
+              <div className="flex flex-col gap-6 items-start relative shrink-0 w-full">
+                {/* Divider with text */}
+                <div className="flex gap-4 items-center relative shrink-0 w-full">
+                  <div className="flex-1 h-px bg-[#1f261e]"></div>
+                  <p className="font-medium leading-normal relative shrink-0 text-base text-[#b5b5b5]">
+                    Connect External Wallets
+                  </p>
+                  <div className="flex-1 h-px bg-[#1f261e]"></div>
+                </div>
+
+                {/* Wallet Icons Row */}
+                <div className="flex gap-4 items-start relative shrink-0 w-full">
+                  {isDetecting ? (
+                    <div className="text-[#b5b5b5] text-sm">Detecting wallets...</div>
+                  ) : (
+                    <>
+                      {displayWallets.map((wallet) => {
+                        let iconUrl = "/assets/icons/wallet/wallet-04.svg";
+
+                        try {
+                          if (
+                            wallet.imageId &&
+                            typeof wallet.imageId === "string" &&
+                            wallet.imageId.trim() !== ""
+                          ) {
+                            iconUrl = getWalletIconUrl(wallet.imageId, "sm");
+                          }
+                        } catch (error) {
+                          console.error("[ConnectWalletModal] Error generating icon URL:", {
+                            walletId: wallet.id,
+                            walletName: wallet.name,
+                            imageId: wallet.imageId,
+                            error: error instanceof Error ? error.message : String(error),
+                          });
+                        }
+
+                        return (
+                          <ExternalWalletIcon
+                            key={wallet.id}
+                            icon={iconUrl}
+                            name={wallet.name}
+                            onClick={() => handleWalletClick(wallet)}
+                          />
+                        );
+                      })}
+
+                      {/* 100+ Button */}
+                      <button
+                        onClick={handleMoreClick}
+                        className="bg-[#121712] flex items-center justify-center overflow-hidden p-4 rounded-xl shrink-0 hover:bg-[#1a1f1a] transition-colors cursor-pointer border border-[#1f261e] hover:border-[#b1f128]"
+                        aria-label="View more wallets"
+                        style={{ minHeight: "80px", minWidth: "80px" }}
+                      >
+                        <span className="font-medium text-[#b5b5b5] hover:text-[#b1f128] text-sm transition-colors">
+                          100+
+                        </span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : flow === "create" ? (
+            <AddNewWallet
+              onGoBack={() => setFlow("connect")}
+              onWalletCreated={() => {
+                // Optionally close modal after creation
+                handleClose(false);
               }}
             />
-            <WalletOptionCard
-              icon="/assets/icons/wallet/cloud-download.svg"
-              title="Import Wallet"
-              description="Use your existing seed phrase or private key."
-              onClick={() => {
-                onWalletConnect?.("import");
-                onOpenChange(false);
-              }}
+          ) : (
+            <ImportWallet
+              onGoBack={() => setFlow("connect")}
             />
-          </div>
-
-          {/* Connect External Wallets Section */}
-          <div className="flex flex-col gap-6 items-start relative shrink-0 w-full">
-            {/* Divider with text */}
-            <div className="flex gap-4 items-center relative shrink-0 w-full">
-              <div className="flex-1 h-px bg-[#1f261e]"></div>
-              <p className="font-medium leading-normal relative shrink-0 text-base text-[#b5b5b5]">
-                Connect External Wallets
-              </p>
-              <div className="flex-1 h-px bg-[#1f261e]"></div>
-            </div>
-
-            {/* Wallet Icons Row */}
-            <div className="flex gap-4 items-start relative shrink-0 w-full">
-              {isDetecting ? (
-                <div className="text-[#b5b5b5] text-sm">Detecting wallets...</div>
-              ) : (
-                <>
-                  {displayWallets.map((wallet) => {
-                    // Use imageId to get icon from WalletConnect Explorer API, fallback to default
-                    let iconUrl = '/assets/icons/wallet/wallet-04.svg';
-                    
-                    try {
-                      if (wallet.imageId && typeof wallet.imageId === 'string' && wallet.imageId.trim() !== '') {
-                        iconUrl = getWalletIconUrl(wallet.imageId, 'sm');
-                      }
-                    } catch (error) {
-                      console.error('[ConnectWalletModal] Error generating icon URL:', {
-                        walletId: wallet.id,
-                        walletName: wallet.name,
-                        imageId: wallet.imageId,
-                        error: error instanceof Error ? error.message : String(error),
-                      });
-                    }
-                    
-                    return (
-              <ExternalWalletIcon
-                        key={wallet.id}
-                        icon={iconUrl}
-                        name={wallet.name}
-                        onClick={() => handleWalletClick(wallet)}
-              />
-                    );
-                  })}
-                  
-                  {/* 100+ Button */}
-                  <button
-                    onClick={handleMoreClick}
-                    className="bg-[#121712] flex items-center justify-center overflow-hidden p-4 rounded-xl shrink-0 hover:bg-[#1a1f1a] transition-colors cursor-pointer border border-[#1f261e] hover:border-[#b1f128]"
-                    aria-label="View more wallets"
-                    style={{ minHeight: '80px', minWidth: '80px' }}
-                  >
-                    <span className="font-medium text-[#b5b5b5] hover:text-[#b1f128] text-sm transition-colors">
-                      100+
-                    </span>
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+          )}
         </div>
         </DialogContent>
       </Dialog>

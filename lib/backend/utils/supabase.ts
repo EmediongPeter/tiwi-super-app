@@ -29,6 +29,26 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
 export interface Database {
   public: {
     Tables: {
+      user_wallets: {
+        Row: {
+          id: string;
+          wallet_address: string;
+          source: 'local' | 'metamask' | 'walletconnect' | 'coinbase' | 'rabby' | 'phantom' | 'other';
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          wallet_address: string;
+          source: 'local' | 'metamask' | 'walletconnect' | 'coinbase' | 'rabby' | 'phantom' | 'other';
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          wallet_address?: string;
+          source?: 'local' | 'metamask' | 'walletconnect' | 'coinbase' | 'rabby' | 'phantom' | 'other';
+          created_at?: string;
+        };
+      };
       referral_codes: {
         Row: {
           id: string;
