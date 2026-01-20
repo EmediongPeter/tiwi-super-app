@@ -35,9 +35,10 @@ export function formatCurrency(value: string | undefined): string {
 /**
  * Format token amount to prevent wrapping
  * Limits to max 6 decimal places, removes trailing zeros
+ * Uses compact notation: K (thousands), M (millions), B (billions), T (trillions)
  * @param amount - Token amount string (e.g., "0.000337227178712815")
  * @param maxDecimals - Maximum decimal places (default: 6)
- * @returns Formatted amount string (e.g., "0.000337")
+ * @returns Formatted amount string (e.g., "0.000337", "1.5K", "6.89B")
  */
 export function formatTokenAmount(amount: string | undefined, maxDecimals: number = 6): string {
   if (!amount || amount === '0' || amount === '0.00') return '0.00';
@@ -45,16 +46,22 @@ export function formatTokenAmount(amount: string | undefined, maxDecimals: numbe
   const num = parseFloat(amount);
   if (isNaN(num)) return '0.00';
   
-  // If number is very large (>= 1 billion), use compact notation
-  if (num >= 1e9) {
-    return num.toLocaleString('en-US', {
-      maximumFractionDigits: 2,
-      notation: 'compact',
-      compactDisplay: 'short',
-    });
+  // Use compact notation for large numbers
+  if (num >= 1e12) {
+    // Trillions
+    return `${(num / 1e12).toFixed(2)}T`;
+  } else if (num >= 1e9) {
+    // Billions
+    return `${(num / 1e9).toFixed(2)}B`;
+  } else if (num >= 1e6) {
+    // Millions
+    return `${(num / 1e6).toFixed(2)}M`;
+  } else if (num >= 1e3) {
+    // Thousands
+    return `${(num / 1e3).toFixed(2)}K`;
   }
   
-  // Format with max decimals
+  // Format with max decimals for smaller numbers
   const formatted = num.toFixed(maxDecimals);
   
   // Remove trailing zeros but keep at least one decimal place if needed
@@ -66,6 +73,49 @@ export function formatTokenAmount(amount: string | undefined, maxDecimals: numbe
   }
   
   return trimmed;
+}
+
+/**
+ * Parse formatted token amount back to raw number string
+ * Handles K, M, B, T suffixes (case-insensitive)
+ * @param formatted - Formatted amount string (e.g., "1.5K", "6.89B", "1500")
+ * @returns Raw number string (e.g., "1500", "6890000000", "1500")
+ */
+export function parseFormattedAmount(formatted: string): string {
+  if (!formatted || formatted.trim() === '') return '0';
+  
+  const trimmed = formatted.trim().toUpperCase();
+  
+  // Check for suffixes
+  if (trimmed.endsWith('T')) {
+    const num = parseFloat(trimmed.slice(0, -1));
+    if (!isNaN(num)) {
+      return (num * 1e12).toString();
+    }
+  } else if (trimmed.endsWith('B')) {
+    const num = parseFloat(trimmed.slice(0, -1));
+    if (!isNaN(num)) {
+      return (num * 1e9).toString();
+    }
+  } else if (trimmed.endsWith('M')) {
+    const num = parseFloat(trimmed.slice(0, -1));
+    if (!isNaN(num)) {
+      return (num * 1e6).toString();
+    }
+  } else if (trimmed.endsWith('K')) {
+    const num = parseFloat(trimmed.slice(0, -1));
+    if (!isNaN(num)) {
+      return (num * 1e3).toString();
+    }
+  }
+  
+  // No suffix, try to parse as regular number
+  const num = parseFloat(trimmed);
+  if (!isNaN(num)) {
+    return num.toString();
+  }
+  
+  return '0';
 }
 
 /**

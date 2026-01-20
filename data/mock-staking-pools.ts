@@ -16,10 +16,15 @@ export interface StakingPool {
   totalStaked?: string;
   limits?: string;
   // Contract and chain info
-  contractAddress?: string; // Smart contract address
+  contractAddress?: string; // Smart contract address (factory address or single pool contract)
   chainId?: number; // Chain ID
   tokenAddress?: string; // Staking token address
   decimals?: number; // Token decimals
+  poolId?: number | string; // Pool ID from factory contract (if using factory)
+  factoryAddress?: string; // Factory contract address (if using factory)
+  // Staking limits
+  minStakeAmount?: number; // Minimum stake amount
+  maxStakeAmount?: number; // Maximum stake amount (optional)
   // Additional fields for "My Stakes"
   stakedAmount?: string;
   rewardsEarned?: string;

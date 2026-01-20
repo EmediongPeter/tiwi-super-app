@@ -1,10 +1,11 @@
 /**
  * TIWI Staking Pool Contract Types
  * 
- * TypeScript types for the TiwiStakingPool smart contract
+ * TypeScript types for the TiwiStakingPool and TiwiStakingPoolFactory smart contracts
  */
 
 import type { Address } from 'viem';
+import TIWI_STAKING_POOL_FACTORY_ABI from './abis/TiwiStakingPoolFactory.json';
 
 export interface TiwiStakingPoolUserInfo {
   amount: bigint;
@@ -168,3 +169,42 @@ export const TIWI_STAKING_POOL_ABI = [
     type: 'event',
   },
 ] as const;
+
+// ============================================================================
+// Factory Contract Types
+// ============================================================================
+
+export interface FactoryPoolConfig {
+  poolId: bigint;
+  stakingToken: Address;
+  rewardToken: Address;
+  poolOwner: Address;  // Owner/Admin who created this pool (connected wallet)
+  poolReward: bigint;
+  rewardDurationSeconds: bigint;
+  maxTvl: bigint;
+  rewardPerSecond: bigint;
+  startTime: bigint;
+  endTime: bigint;
+  active: boolean;
+  createdAt: bigint;
+}
+
+export interface FactoryPoolState {
+  totalStaked: bigint;
+  accRewardPerShare: bigint;
+  lastRewardTime: bigint;
+}
+
+export interface FactoryUserInfo {
+  amount: bigint;
+  rewardDebt: bigint;
+  stakeTime: bigint;
+  pending: bigint;
+}
+
+export interface FactoryPoolInfo {
+  config: FactoryPoolConfig;
+  state: FactoryPoolState;
+}
+
+export const TIWI_STAKING_POOL_FACTORY_ABI_ARRAY = TIWI_STAKING_POOL_FACTORY_ABI as readonly any[];

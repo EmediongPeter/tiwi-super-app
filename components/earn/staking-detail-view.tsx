@@ -1,19 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import { ArrowLeft, RefreshCw, X, Zap, AlertTriangle } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTokenBalance } from "@/hooks/useTokenBalance";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
+import { formatTokenAmount, formatCurrency, parseFormattedAmount } from "@/lib/shared/utils/portfolio-formatting";
 import { useWallet } from "@/lib/wallet/hooks/useWallet";
+import { useActiveWalletAddress } from "@/lib/wallet/hooks/useActiveWalletAddress";
 import { useChainId } from "wagmi";
-import { formatUnits } from "viem";
+import { formatUnits, parseUnits, Address } from "viem";
 import { useStaking } from "@/hooks/useStaking";
+import { useFactoryStaking } from "@/hooks/useFactoryStaking";
 import TransactionToast from "./transaction-toast";
 import type { StakingPool } from "@/data/mock-staking-pools";
-import { Address } from "viem";
+import { calculateAPRFromPoolConfig } from "@/lib/shared/utils/staking-rewards";
 
 interface StakingDetailViewProps {
   pool: StakingPool;
@@ -32,20 +36,121 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
   const [txHash, setTxHash] = useState<string | undefined>();
   const [txChainId, setTxChainId] = useState<number | undefined>();
 
-  const { balance, isLoading: balanceLoading, refetch: refetchBalance } = useTokenBalance(pool.tokenSymbol);
+  // Use the same wallet address hook as portfolio (works for both local and external wallets)
+  const activeAddress = useActiveWalletAddress();
   const { isConnected, address } = useWallet();
   const chainId = useChainId();
   
-  // Use staking hook if contract address is available
-  const staking = useStaking({
+  // Use the same wallet balances method as portfolio for accurate balance
+  const tokenAddress = pool.tokenAddress;
+  // TWC token is on BSC (chain ID 56) - ensure we use the correct chain
+  const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
+  const isTWC = tokenAddress?.toLowerCase() === TWC_ADDRESS.toLowerCase();
+  const poolChainId = isTWC ? 56 : (pool.chainId || chainId);
+  
+  // Fetch all wallet balances (EXACT same as portfolio)
+  const { 
+    balances: walletTokens,
+    isLoading: balanceLoading,
+    error: balanceError,
+    refetch: refetchTokenBalance 
+  } = useWalletBalances(activeAddress);
+  
+  // Find the specific token in the balances - EXACT same logic as portfolio
+  // Portfolio finds tokens by matching address and chainId from walletTokens array
+  const foundToken = useMemo(() => {
+    if (!tokenAddress || !walletTokens || walletTokens.length === 0) {
+      return null;
+    }
+    
+    const tokenAddressLower = tokenAddress.toLowerCase();
+    
+    // Find token by address and chainId (EXACT same as portfolio)
+    const token = walletTokens.find((token: any) => 
+      token.address?.toLowerCase() === tokenAddressLower && 
+      token.chainId === poolChainId
+    );
+    
+    return token || null;
+  }, [walletTokens, tokenAddress, poolChainId]);
+  
+  // Extract balance values - EXACT same as portfolio
+  // Portfolio uses: token.balanceFormatted directly from WalletToken
+  const tokenBalanceFormatted = foundToken?.balanceFormatted || '0.00';
+  const tokenUsdValue = foundToken?.usdValue || '0.00';
+  
+  // Format balance like portfolio (uses compact notation for large numbers like "6.89B")
+  // Portfolio uses: formatTokenAmount(token.balanceFormatted, 6)
+  const displayBalance = formatTokenAmount(tokenBalanceFormatted, 6);
+  
+  // Format USD value like portfolio
+  // Portfolio uses: formatCurrency(token.usdValue)
+  const displayUsdValue = formatCurrency(tokenUsdValue);
+  
+  // Use balanceFormatted for calculations (same as portfolio)
+  // Portfolio uses balanceFormatted directly - it's already a human-readable number string
+  const decimals = pool.decimals || 18;
+  
+  // Parse balanceFormatted for calculations
+  // balanceFormatted is already a number string like "6893232532.312375042" (no commas)
+  const tokenBalanceNum = parseFloat(tokenBalanceFormatted) || 0;
+  
+  
+  // Use factory staking hook if pool has poolId or factory address
+  // Try to find poolId by matching token address with factory pools
+  const poolId = (pool as any).poolId; // Pool ID from factory contract (if stored in DB)
+  const factoryAddress = (pool as any).factoryAddress || pool.contractAddress; // Factory contract address
+  
+  // If we have factory address but no poolId, we could fetch all pools and match by token address
+  // For now, we'll use poolId if available, otherwise fall back to single contract
+  const factoryStaking = useFactoryStaking({
+    factoryAddress: factoryAddress as Address | undefined,
+    poolId: poolId ? Number(poolId) : undefined,
+    stakingTokenAddress: pool.tokenAddress as Address | undefined,
+    decimals: decimals,
+    enabled: !!factoryAddress && !!pool.tokenAddress,
+  });
+
+  // Use single contract staking if no poolId (legacy pools)
+  const singleStaking = useStaking({
     contractAddress: pool.contractAddress as Address | undefined,
     stakingTokenAddress: pool.tokenAddress as Address | undefined,
-    decimals: pool.decimals || 18,
-    enabled: !!pool.contractAddress && !!pool.tokenAddress,
+    decimals: decimals,
+    enabled: !!pool.contractAddress && !!pool.tokenAddress && !poolId,
   });
+
+  // Use factory staking if available, otherwise fall back to single contract
+  const staking = poolId ? {
+    userInfo: factoryStaking.userInfo,
+    pendingReward: factoryStaking.pendingReward,
+    totalStaked: factoryStaking.poolInfo?.state.totalStaked || null,
+    isPending: factoryStaking.isPending,
+    isLoading: factoryStaking.isLoading,
+    isError: factoryStaking.isError,
+    error: factoryStaking.error,
+    depositTxHash: factoryStaking.depositTxHash,
+    withdrawTxHash: factoryStaking.withdrawTxHash,
+    claimTxHash: factoryStaking.claimTxHash,
+    deposit: (amt: string) => factoryStaking.deposit(Number(poolId), amt),
+    withdraw: (amt: string) => factoryStaking.withdraw(Number(poolId), amt),
+    claim: () => factoryStaking.claim(Number(poolId)),
+    approve: (amt?: string) => factoryStaking.approve(Number(poolId), amt),
+    allowance: factoryStaking.allowance,
+    needsApproval: (amt: string) => factoryStaking.needsApproval(Number(poolId), amt),
+    refetch: () => {
+      refetchTokenBalance();
+      factoryStaking.refetch();
+    },
+  } : {
+    ...singleStaking,
+    refetch: () => {
+      refetchTokenBalance();
+      singleStaking.refetch();
+    },
+  };
   
   // Determine if we need approval
-  const needsApproval = pool.contractAddress && pool.tokenAddress && amount 
+  const needsApproval = (poolId || pool.contractAddress) && pool.tokenAddress && amount 
     ? staking.needsApproval(amount)
     : false;
   
@@ -53,33 +158,84 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
   const currentTxHash = staking.depositTxHash || staking.withdrawTxHash || staking.claimTxHash || txHash;
   const isProcessingContract = staking.isPending || staking.isLoading;
 
-  const handleMaxClick = () => {
+  // Calculate percentage amounts
+  const handlePercentageClick = (percentage: number) => {
     if (activeTab === "boost") {
-      // For staking, use wallet balance
-      if (balance && !balanceLoading) {
-        setAmount(balance);
+      // For staking, use wallet balance (use raw balance for calculation)
+      if (tokenBalanceNum > 0) {
+        const amountToSet = (tokenBalanceNum * percentage / 100).toString();
+        setAmount(amountToSet);
       }
     } else {
       // For unstaking, use staked amount
       if (staking.userInfo) {
-        const stakedAmount = formatUnits(staking.userInfo.amount, pool.decimals || 18);
-        setAmount(stakedAmount);
+        const stakedAmount = parseFloat(formatUnits(staking.userInfo.amount, decimals));
+        const amountToSet = (stakedAmount * percentage / 100).toString();
+        setAmount(amountToSet);
       }
     }
   };
 
+  // Format amount for display in input (with K, M, B, T)
+  const formattedInputValue = useMemo(() => {
+    if (!amount || amount === '0' || amount === '') return '';
+    const num = parseFloat(amount);
+    if (isNaN(num) || num === 0) return '';
+    return formatTokenAmount(amount, 6);
+  }, [amount]);
+
+  // Handle input change - parse formatted values back to raw numbers
+  const handleAmountChange = (value: string) => {
+    // If empty, set to empty
+    if (value === '' || value.trim() === '') {
+      setAmount('');
+      return;
+    }
+    
+    // Parse formatted value (handles K, M, B, T)
+    const rawAmount = parseFormattedAmount(value);
+    setAmount(rawAmount);
+  };
+
+  // Get min and max limits (for validation only, not auto-adjustment)
+  const minStakeAmount = pool.minStakeAmount || 0;
+  const maxStakeAmount = pool.maxStakeAmount || tokenBalanceNum;
+  const effectiveMax = Math.min(maxStakeAmount, tokenBalanceNum);
+
+  // Validation state
+  const amountNum = parseFloat(amount || '0');
+  const isValidAmount = amountNum >= minStakeAmount && amountNum <= effectiveMax && amountNum > 0;
+  const isBelowMin = amountNum > 0 && amountNum < minStakeAmount;
+  const isAboveMax = amountNum > effectiveMax;
+  const exceedsBalance = amountNum > tokenBalanceNum;
+
+  const handleMaxClick = () => {
+    handlePercentageClick(100);
+  };
+
   // Get staked amount for display
   const stakedAmount = staking.userInfo 
-    ? formatUnits(staking.userInfo.amount, pool.decimals || 18)
+    ? formatUnits(staking.userInfo.amount, decimals)
     : "0";
 
   // Get pending rewards for display
   const pendingRewards = staking.pendingReward
-    ? formatUnits(staking.pendingReward, pool.decimals || 18)
+    ? formatUnits(staking.pendingReward, decimals)
     : "0";
 
   const handleStakeNow = async () => {
-    if (!isConnected || !address) {
+    console.log('[Staking] handleStakeNow called', {
+      activeAddress,
+      amount,
+      tokenBalanceNum,
+      poolId,
+      poolTokenAddress: pool.tokenAddress,
+      poolContractAddress: pool.contractAddress,
+      chainId,
+      needsApproval,
+    });
+
+    if (!activeAddress) {
       setToastSuccess(false);
       setToastMessage("Please connect your wallet first");
       setToastOpen(true);
@@ -93,7 +249,25 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
       return;
     }
 
-    if (parseFloat(amount) > parseFloat(balance || "0")) {
+    const amountNum = parseFloat(amount);
+    
+    // Check minimum stake
+    if (amountNum < minStakeAmount) {
+      setToastSuccess(false);
+      setToastMessage(`Minimum stake amount is ${formatTokenAmount(minStakeAmount.toString(), 6)} ${pool.tokenSymbol}`);
+      setToastOpen(true);
+      return;
+    }
+
+    // Check maximum stake (pool max or balance, whichever is lower)
+    if (amountNum > effectiveMax) {
+      setToastSuccess(false);
+      setToastMessage(`Maximum stake amount is ${formatTokenAmount(effectiveMax.toString(), 6)} ${pool.tokenSymbol}`);
+      setToastOpen(true);
+      return;
+    }
+
+    if (amountNum > tokenBalanceNum) {
       setToastSuccess(false);
       setToastMessage("Insufficient balance");
       setToastOpen(true);
@@ -101,11 +275,28 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
     }
 
     // Check if contract is configured
-    if (!pool.contractAddress || !pool.tokenAddress) {
-      setToastSuccess(false);
-      setToastMessage("Staking pool not configured with contract address");
-      setToastOpen(true);
-      return;
+    if (poolId) {
+      // Factory contract - check if poolId and tokenAddress are available
+      if (!pool.tokenAddress) {
+        setToastSuccess(false);
+        setToastMessage("Staking pool not configured with token address");
+        setToastOpen(true);
+        return;
+      }
+      if (!factoryAddress) {
+        setToastSuccess(false);
+        setToastMessage("Factory address not configured");
+        setToastOpen(true);
+        return;
+      }
+    } else {
+      // Single contract - check if contract address is available
+      if (!pool.contractAddress || !pool.tokenAddress) {
+        setToastSuccess(false);
+        setToastMessage("Staking pool not configured with contract address");
+        setToastOpen(true);
+        return;
+      }
     }
 
     setIsProcessing(true);
@@ -113,39 +304,127 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
     try {
       // Check if approval is needed
       if (needsApproval) {
-        // Approve first
-        await staking.approve(amount);
-        setToastMessage(`Approving ${pool.tokenSymbol}...`);
+        // Approve first - this will trigger wallet approval prompt
+        console.log('[Staking] Approval needed, calling approve...', { amount, poolId });
+        setToastMessage(`Please approve ${pool.tokenSymbol} in your wallet...`);
         setToastOpen(true);
         
-        // Wait a bit for approval transaction
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        try {
+          console.log('[Staking] Calling staking.approve...');
+          const approvePromise = staking.approve(amount);
+          console.log('[Staking] Approve promise created, waiting for wallet prompt...');
+          
+          // The wallet prompt should appear automatically when writeContract is called
+          // We await the promise which resolves when transaction hash is available
+          await approvePromise;
+          console.log('[Staking] Approval transaction submitted, hash:', staking.depositTxHash || 'pending');
+          
+          // Wait for approval transaction to be submitted
+          let waitCount = 0;
+          while ((staking.isPending || staking.isLoading) && waitCount < 60) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            waitCount++;
+          }
+          
+          console.log('[Staking] Approval transaction status:', {
+            isPending: staking.isPending,
+            isLoading: staking.isLoading,
+            isError: staking.isError,
+            error: staking.error,
+          });
+          
+          // Refetch allowance to check if approval went through
+          staking.refetch();
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (approvalError: any) {
+          console.error("[Staking] Approval error:", approvalError);
+          const errorMsg = approvalError?.message || approvalError?.shortMessage || approvalError?.cause?.message || "Approval failed. Please check your wallet and try again.";
+          throw new Error(errorMsg);
+        }
       }
 
-      // Deposit tokens
+      // Deposit tokens - this will trigger wallet transaction prompt
       if (activeTab === "boost") {
-        await staking.deposit(amount);
-        setTxChainId(chainId);
-        setToastSuccess(true);
-        setToastMessage(`Successfully staked ${amount} ${pool.tokenSymbol}`);
+        console.log('[Staking] Depositing tokens...', { amount, poolId });
+        setToastMessage(`Please confirm staking ${amount} ${pool.tokenSymbol} in your wallet...`);
         setToastOpen(true);
+        
+        try {
+          console.log('[Staking] Calling staking.deposit...');
+          const depositPromise = staking.deposit(amount);
+          console.log('[Staking] Deposit promise created, waiting for wallet prompt...');
+          
+          // The wallet prompt should appear automatically when writeContract is called
+          await depositPromise;
+          console.log('[Staking] Deposit transaction submitted, hash:', staking.depositTxHash || 'pending');
+          
+          // Wait for deposit transaction to be submitted and confirmed
+          let waitCount = 0;
+          while ((staking.isPending || staking.isLoading) && waitCount < 120) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            waitCount++;
+          }
+          
+          console.log('[Staking] Deposit transaction status:', {
+            isPending: staking.isPending,
+            isLoading: staking.isLoading,
+            isError: staking.isError,
+            error: staking.error,
+          });
+          
+          // Check if transaction was successful
+          if (staking.isError) {
+            const errorMsg = staking.error?.message || staking.error?.shortMessage || "Transaction failed";
+            throw new Error(errorMsg);
+          }
+          
+          setTxChainId(chainId);
+          setToastSuccess(true);
+          setToastMessage(`Successfully staked ${amount} ${pool.tokenSymbol}`);
+          setToastOpen(true);
+        } catch (depositError: any) {
+          console.error("[Staking] Deposit error:", depositError);
+          const errorMsg = depositError?.message || depositError?.shortMessage || depositError?.cause?.message || "Staking failed. Please check your wallet and try again.";
+          throw new Error(errorMsg);
+        }
       } else {
         // Withdraw tokens
-        await staking.withdraw(amount);
-        setTxChainId(chainId);
-        setToastSuccess(true);
-        setToastMessage(`Successfully unstaked ${amount} ${pool.tokenSymbol}`);
+        setToastMessage(`Please confirm unstaking ${amount} ${pool.tokenSymbol} in your wallet...`);
         setToastOpen(true);
+        
+        try {
+          await staking.withdraw(amount);
+          
+          // Wait for withdraw transaction to be submitted and confirmed
+          let waitCount = 0;
+          while ((staking.isPending || staking.isLoading) && waitCount < 120) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            waitCount++;
+          }
+          
+          if (staking.isError) {
+            throw new Error(staking.error?.message || "Transaction failed");
+          }
+          
+          setTxChainId(chainId);
+          setToastSuccess(true);
+          setToastMessage(`Successfully unstaked ${amount} ${pool.tokenSymbol}`);
+          setToastOpen(true);
+        } catch (withdrawError: any) {
+          console.error("Withdraw error:", withdrawError);
+          throw new Error(withdrawError?.message || withdrawError?.shortMessage || "Unstaking failed. Please try again.");
+        }
       }
       
       // Reset form after successful transaction
       setAmount("");
-      refetchBalance();
+      refetchTokenBalance();
       staking.refetch();
     } catch (error: any) {
       console.error("Transaction error:", error);
       setToastSuccess(false);
-      setToastMessage(error.message || "Transaction failed. Please try again.");
+      const errorMessage = error?.message || error?.shortMessage || error?.toString() || "Transaction failed. Please try again.";
+      setToastMessage(errorMessage);
       setToastOpen(true);
     } finally {
       setIsProcessing(false);
@@ -154,14 +433,14 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
 
   // Handle claim rewards
   const handleClaim = async () => {
-    if (!isConnected || !address) {
+    if (!activeAddress) {
       setToastSuccess(false);
       setToastMessage("Please connect your wallet first");
       setToastOpen(true);
       return;
     }
 
-    if (!pool.contractAddress) {
+    if (!poolId && !pool.contractAddress) {
       setToastSuccess(false);
       setToastMessage("Staking pool not configured");
       setToastOpen(true);
@@ -177,7 +456,7 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
       setToastMessage("Successfully claimed rewards");
       setToastOpen(true);
       
-      refetchBalance();
+      refetchTokenBalance();
       staking.refetch();
     } catch (error: any) {
       console.error("Claim error:", error);
@@ -228,7 +507,21 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
                   TVL
                 </p>
                 <p className="relative shrink-0 text-sm text-white tracking-[-0.56px] w-full">
-                  {pool.tvl || "N/A"}
+                  {(() => {
+                    // Calculate TVL from pool info
+                    if (factoryStaking.poolInfo) {
+                      const totalStaked = Number(formatUnits(factoryStaking.poolInfo.state.totalStaked, decimals));
+                      const maxTvl = Number(formatUnits(factoryStaking.poolInfo.config.maxTvl, decimals));
+                      // TVL is current total staked, or max TVL if set
+                      return maxTvl > 0 
+                        ? `${totalStaked.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${maxTvl.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${pool.tokenSymbol}`
+                        : `${totalStaked.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${pool.tokenSymbol}`;
+                    }
+                    if (staking.totalStaked) {
+                      return `${formatUnits(staking.totalStaked, decimals)} ${pool.tokenSymbol}`;
+                    }
+                    return pool.tvl || "N/A";
+                  })()}
                 </p>
               </div>
             </div>
@@ -238,7 +531,35 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
                   APR
                 </p>
                 <p className="relative shrink-0 text-sm text-white tracking-[-0.56px] w-full">
-                  {pool.apr || pool.apy || "N/A"}
+                  {(() => {
+                    // Calculate APR from pool config
+                    if (factoryStaking.poolInfo) {
+                      const poolConfig = factoryStaking.poolInfo.config;
+                      const poolState = factoryStaking.poolInfo.state;
+                      const poolReward = Number(formatUnits(poolConfig.poolReward, decimals));
+                      const maxTvl = Number(formatUnits(poolConfig.maxTvl, decimals));
+                      const totalStaked = Number(formatUnits(poolState.totalStaked, decimals));
+                      const rewardDurationSeconds = Number(poolConfig.rewardDurationSeconds);
+                      
+                      // Use maxTvl or totalStaked (whichever is relevant)
+                      const tvlForCalculation = maxTvl > 0 ? maxTvl : (totalStaked > 0 ? totalStaked : maxTvl);
+                      
+                      // Calculate APR (assuming same token price for staking and reward)
+                      // In production, you'd fetch token prices from oracles
+                      if (tvlForCalculation > 0 && rewardDurationSeconds > 0) {
+                        const apr = calculateAPRFromPoolConfig(
+                          poolReward,
+                          tvlForCalculation,
+                          rewardDurationSeconds,
+                          1, // rewardTokenPrice (placeholder - should fetch from oracle)
+                          1  // stakingTokenPrice (placeholder - should fetch from oracle)
+                        );
+                        return `${apr.toFixed(2)}%`;
+                      }
+                      return "N/A";
+                    }
+                    return pool.apr || pool.apy || "N/A";
+                  })()}
                 </p>
               </div>
             </div>
@@ -248,9 +569,16 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
                   Total Staked
                 </p>
                 <p className="relative shrink-0 text-sm text-white tracking-[-0.56px] w-full">
-                  {staking.totalStaked 
-                    ? `${formatUnits(staking.totalStaked, pool.decimals || 18)} ${pool.tokenSymbol}`
-                    : pool.totalStaked || "N/A"}
+                  {(() => {
+                    if (factoryStaking.poolInfo) {
+                      const totalStaked = Number(formatUnits(factoryStaking.poolInfo.state.totalStaked, decimals));
+                      return `${totalStaked.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${pool.tokenSymbol}`;
+                    }
+                    if (staking.totalStaked) {
+                      return `${formatUnits(staking.totalStaked, decimals)} ${pool.tokenSymbol}`;
+                    }
+                    return pool.totalStaked || "N/A";
+                  })()}
                 </p>
               </div>
             </div>
@@ -289,7 +617,11 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
               </Tabs>
             </div>
             <button
-              onClick={refetchBalance}
+              onClick={() => {
+                refetchTokenBalance();
+                factoryStaking.refetch();
+                staking.refetch?.();
+              }}
               className="bg-[#0b0f0a] h-[43px] overflow-clip relative rounded-[20px] shrink-0 w-12 flex items-center justify-center hover:opacity-80 transition-opacity"
               aria-label="Refresh"
             >
@@ -347,28 +679,98 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
             <p className="font-['Manrope',sans-serif] font-medium leading-normal relative shrink-0 text-base text-white w-full whitespace-pre-wrap text-left">
               Add More Tokens
             </p>
-            <div className="flex flex-col gap-12 sm:gap-16 lg:gap-20 items-center justify-center relative shrink-0 w-full">
-              <div className="h-[112px] relative shrink-0 w-full max-w-[606px]">
+            {/* Token Balance Display - Same format as portfolio */}
+            <div className="flex flex-col gap-1 w-full max-w-[606px] px-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#7c7c7c]">Available Balance:</span>
+                <div className="flex flex-col items-end">
+                  {!activeAddress ? (
+                    <span className="text-yellow-500 text-xs">No wallet connected</span>
+                  ) : balanceLoading ? (
+                    <span className="text-[#7c7c7c] text-base">Loading...</span>
+                  ) : balanceError ? (
+                    <span className="text-red-500 text-xs">Error: {balanceError}</span>
+                  ) : !tokenAddress ? (
+                    <span className="text-yellow-500 text-xs">No token address configured</span>
+                  ) : (
+                    <>
+                      <span className="text-base text-white font-semibold">
+                        {displayBalance} {pool.tokenSymbol}
+                      </span>
+                      {tokenUsdValue && parseFloat(tokenUsdValue) > 0 && (
+                        <span className="text-sm text-[#7c7c7c]">
+                          {displayUsdValue}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-4 items-center justify-center relative shrink-0 w-full">
+              {/* Percentage Buttons Row - Above input box */}
+              {activeAddress && (
+                <div className="flex gap-2 items-center justify-end w-full max-w-[606px]">
+                  <button
+                    onClick={() => handlePercentageClick(30)}
+                    type="button"
+                    disabled={tokenBalanceNum === 0}
+                    className="px-3 py-1.5 bg-[#0b0f0a] border border-[#1f261e] rounded-lg text-xs text-white hover:border-[#b1f128] hover:bg-[#141e00] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    30%
+                  </button>
+                  <button
+                    onClick={() => handlePercentageClick(50)}
+                    type="button"
+                    disabled={tokenBalanceNum === 0}
+                    className="px-3 py-1.5 bg-[#0b0f0a] border border-[#1f261e] rounded-lg text-xs text-white hover:border-[#b1f128] hover:bg-[#141e00] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    50%
+                  </button>
+                  <button
+                    onClick={() => handlePercentageClick(75)}
+                    type="button"
+                    disabled={tokenBalanceNum === 0}
+                    className="px-3 py-1.5 bg-[#0b0f0a] border border-[#1f261e] rounded-lg text-xs text-white hover:border-[#b1f128] hover:bg-[#141e00] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    75%
+                  </button>
+                  <button
+                    onClick={handleMaxClick}
+                    type="button"
+                    disabled={tokenBalanceNum === 0}
+                    className="px-3 py-1.5 bg-[#b1f128] rounded-lg text-xs text-black font-medium hover:bg-[#9dd81f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Max
+                  </button>
+                </div>
+              )}
+              
+              {/* Input Box - Expanded */}
+              <div className="h-[112px] relative shrink-0 w-full max-w-[606px] mb-6">
                 <div className="absolute bg-[#010501] border border-[#1f261e] border-solid flex flex-col items-center justify-center left-0 px-0 py-6 rounded-2xl top-0 w-full">
                   <div className="flex flex-col items-center px-6 py-0 relative shrink-0 w-full">
-                    <div className="border-[#7c7c7c] border-[0.2px] border-solid h-16 overflow-hidden relative rounded-2xl shrink-0 w-full max-w-[353px]">
-                      <div className="absolute bg-[#b1f128] h-7 flex items-center justify-center right-4 px-4 py-1 rounded-full top-1/2 translate-y-[-50%]">
-                        <button
-                          onClick={handleMaxClick}
-                          type="button"
-                          className="flex flex-col font-['Manrope',sans-serif] font-medium justify-center leading-0 relative shrink-0 text-base text-black text-right whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity"
-                        >
-                          Max
-                        </button>
-                      </div>
-                      <div className="absolute flex font-['Manrope',sans-serif] font-medium gap-1 items-end leading-0 left-4 text-right top-1.5 w-[180px]">
+                    <div className="border-[#7c7c7c] border-[0.2px] border-solid h-16 overflow-visible relative rounded-2xl shrink-0 w-full max-w-[500px]">
+                      {/* Max button inside input box (fallback if no balance) */}
+                      {(!activeAddress || tokenBalanceNum === 0) && (
+                        <div className="absolute bg-[#b1f128] h-7 flex items-center justify-center right-4 px-4 py-1 rounded-full top-1/2 translate-y-[-50%] z-10">
+                          <button
+                            onClick={handleMaxClick}
+                            type="button"
+                            className="flex flex-col font-['Manrope',sans-serif] font-medium justify-center leading-0 relative shrink-0 text-base text-black text-right whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity"
+                          >
+                            Max
+                          </button>
+                        </div>
+                      )}
+                      <div className="absolute flex font-['Manrope',sans-serif] font-medium gap-1 items-end leading-0 left-4 text-right top-1.5 pr-2" style={{ right: '60px' }}>
                         <Input
-                          type="number"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
+                          type="text"
+                          value={formattedInputValue}
+                          onChange={(e) => handleAmountChange(e.target.value)}
                           onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="0.000"
-                          className="bg-transparent border-0 p-0 text-[40px] text-white placeholder:text-[#7c7c7c] focus-visible:ring-0 focus-visible:ring-offset-0 w-full h-auto [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          placeholder={activeAddress && tokenBalanceNum > 0 ? displayBalance : "0.000"}
+                          className={`bg-transparent border-0 p-0 text-[40px] text-white placeholder:text-[#7c7c7c] focus-visible:ring-0 focus-visible:ring-offset-0 w-full h-auto [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isBelowMin || isAboveMax || exceedsBalance ? 'text-red-400' : ''}`}
                         />
                         <div className="flex flex-col h-6 justify-center relative shrink-0 text-sm text-white w-[33px]">
                           <p className="leading-normal whitespace-pre-wrap">{pool.tokenSymbol}</p>
@@ -377,10 +779,27 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
                     </div>
                   </div>
                 </div>
+                {/* Validation messages - outside the input box */}
+                {amount && amountNum > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-2 text-xs text-center">
+                    {isBelowMin && (
+                      <span className="text-red-400">Minimum stake: {formatTokenAmount(minStakeAmount.toString(), 6)} {pool.tokenSymbol}</span>
+                    )}
+                    {isAboveMax && !exceedsBalance && (
+                      <span className="text-red-400">Maximum stake: {formatTokenAmount(effectiveMax.toString(), 6)} {pool.tokenSymbol}</span>
+                    )}
+                    {exceedsBalance && (
+                      <span className="text-red-400">Insufficient balance</span>
+                    )}
+                    {isValidAmount && (
+                      <span className="text-green-400">✓ Valid amount</span>
+                    )}
+                  </div>
+                )}
               </div>
               <Button
                 onClick={handleStakeNow}
-                disabled={isProcessing || isProcessingContract || !amount || parseFloat(amount) <= 0}
+                disabled={isProcessing || isProcessingContract || !amount || !isValidAmount}
                 className="bg-[#081f02] h-14 items-center justify-center px-6 py-4 relative rounded-full shrink-0 w-full max-w-[606px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <p className="font-['Manrope',sans-serif] font-semibold leading-normal relative shrink-0 text-[#b1f128] text-lg text-center tracking-[0.018px] whitespace-pre-wrap">
@@ -396,34 +815,98 @@ export default function StakingDetailView({ pool, onBack }: StakingDetailViewPro
               Unstake Tokens
             </p>
             <div className="flex flex-col gap-12 sm:gap-16 lg:gap-20 items-center justify-center relative shrink-0 w-full">
-              <div className="h-[112px] relative shrink-0 w-full max-w-[606px]">
-                <div className="absolute bg-[#010501] border border-[#1f261e] border-solid flex flex-col items-center justify-center left-0 px-0 py-6 rounded-2xl top-0 w-full">
-                  <div className="flex flex-col items-center px-6 py-0 relative shrink-0 w-full">
-                    <div className="border-[#7c7c7c] border-[0.2px] border-solid h-16 overflow-hidden relative rounded-2xl shrink-0 w-full max-w-[353px]">
-                      <div className="absolute bg-[#b1f128] h-7 flex items-center justify-center right-4 px-4 py-1 rounded-full top-1/2 translate-y-[-50%]">
-                        <button
-                          onClick={handleMaxClick}
-                          type="button"
-                          className="flex flex-col font-['Manrope',sans-serif] font-medium justify-center leading-0 relative shrink-0 text-base text-black text-right whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity"
-                        >
-                          Max
-                        </button>
-                      </div>
-                      <div className="absolute flex font-['Manrope',sans-serif] font-medium gap-1 items-end leading-0 left-4 text-right top-1.5 w-[180px]">
-                        <Input
-                          type="number"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="0.000"
-                          className="bg-transparent border-0 p-0 text-[40px] text-white placeholder:text-[#7c7c7c] focus-visible:ring-0 focus-visible:ring-offset-0 w-full h-auto [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <div className="flex flex-col h-6 justify-center relative shrink-0 text-sm text-white w-[33px]">
-                          <p className="leading-normal whitespace-pre-wrap">{pool.tokenSymbol}</p>
+              <div className="flex flex-col gap-4 w-full max-w-[606px]">
+                {/* Staked Amount Display */}
+                {activeAddress && staking.userInfo && parseFloat(stakedAmount) > 0 && (
+                  <div className="flex items-center justify-between px-2">
+                    <span className="text-xs text-[#7c7c7c]">Staked Amount:</span>
+                    <span className="text-sm text-white font-medium">
+                      {parseFloat(stakedAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} {pool.tokenSymbol}
+                    </span>
+                  </div>
+                )}
+                
+                {/* Percentage Buttons for Unstaking */}
+                {activeAddress && staking.userInfo && parseFloat(stakedAmount) > 0 && (
+                  <div className="flex gap-2 items-center">
+                    <button
+                      onClick={() => handlePercentageClick(25)}
+                      type="button"
+                      className="flex-1 px-3 py-1.5 bg-[#0b0f0a] border border-[#1f261e] rounded-lg text-xs text-white hover:border-[#b1f128] transition-colors"
+                    >
+                      25%
+                    </button>
+                    <button
+                      onClick={() => handlePercentageClick(50)}
+                      type="button"
+                      className="flex-1 px-3 py-1.5 bg-[#0b0f0a] border border-[#1f261e] rounded-lg text-xs text-white hover:border-[#b1f128] transition-colors"
+                    >
+                      50%
+                    </button>
+                    <button
+                      onClick={() => handlePercentageClick(75)}
+                      type="button"
+                      className="flex-1 px-3 py-1.5 bg-[#0b0f0a] border border-[#1f261e] rounded-lg text-xs text-white hover:border-[#b1f128] transition-colors"
+                    >
+                      75%
+                    </button>
+                    <button
+                      onClick={handleMaxClick}
+                      type="button"
+                      className="flex-1 px-3 py-1.5 bg-[#b1f128] rounded-lg text-xs text-black font-medium hover:bg-[#9dd81f] transition-colors"
+                    >
+                      Max
+                    </button>
+                  </div>
+                )}
+
+                {/* Amount Input */}
+                <div className="h-[112px] relative shrink-0 w-full mb-6">
+                  <div className="absolute bg-[#010501] border border-[#1f261e] border-solid flex flex-col items-center justify-center left-0 px-0 py-6 rounded-2xl top-0 w-full">
+                    <div className="flex flex-col items-center px-6 py-0 relative shrink-0 w-full">
+                      <div className="border-[#7c7c7c] border-[0.2px] border-solid h-16 overflow-hidden relative rounded-2xl shrink-0 w-full max-w-[353px]">
+                        <div className="absolute bg-[#b1f128] h-7 flex items-center justify-center right-4 px-4 py-1 rounded-full top-1/2 translate-y-[-50%]">
+                          <button
+                            onClick={handleMaxClick}
+                            type="button"
+                            className="flex flex-col font-['Manrope',sans-serif] font-medium justify-center leading-0 relative shrink-0 text-base text-black text-right whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity"
+                          >
+                            Max
+                          </button>
+                        </div>
+                        <div className="absolute flex font-['Manrope',sans-serif] font-medium gap-1 items-end leading-0 left-4 text-right top-1.5 w-[180px]">
+                          <Input
+                            type="text"
+                            value={formattedInputValue}
+                            onChange={(e) => handleAmountChange(e.target.value)}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            placeholder="0.000"
+                            className={`bg-transparent border-0 p-0 text-[40px] text-white placeholder:text-[#7c7c7c] focus-visible:ring-0 focus-visible:ring-offset-0 w-full h-auto [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isBelowMin || isAboveMax || exceedsBalance ? 'text-red-400' : ''}`}
+                          />
+                          <div className="flex flex-col h-6 justify-center relative shrink-0 text-sm text-white w-[33px]">
+                            <p className="leading-normal whitespace-pre-wrap">{pool.tokenSymbol}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
+                  {/* Validation messages for unstake - outside the input box */}
+                  {amount && amountNum > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-2 text-xs text-center">
+                      {isBelowMin && (
+                        <span className="text-red-400">Minimum unstake: {formatTokenAmount(minStakeAmount.toString(), 6)} {pool.tokenSymbol}</span>
+                      )}
+                      {isAboveMax && !exceedsBalance && (
+                        <span className="text-red-400">Maximum unstake: {formatTokenAmount(effectiveMax.toString(), 6)} {pool.tokenSymbol}</span>
+                      )}
+                      {exceedsBalance && (
+                        <span className="text-red-400">Exceeds staked amount</span>
+                      )}
+                      {isValidAmount && (
+                        <span className="text-green-400">✓ Valid amount</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <Button
