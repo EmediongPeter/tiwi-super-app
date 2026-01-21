@@ -7,7 +7,7 @@
  * Platform-agnostic types that can be used in both web and mobile.
  */
 
-import type { NormalizedToken, ChainDTO } from '@/lib/backend/types/backend-tokens';
+import type { NormalizedToken, ChainDTO, MarketTokenPair } from '@/lib/backend/types/backend-tokens';
 
 /**
  * Tokens API Response
@@ -22,6 +22,21 @@ export interface TokensAPIResponse {
   term?: string;
   query?: string;
   limit?: number | null;
+}
+
+/**
+ * Market Pairs API Response
+ * 
+ * Response format for /api/v1/market-pairs endpoint.
+ * Returns pool/pair-based market data with both base and quote tokens.
+ */
+export interface MarketPairsAPIResponse {
+  pairs: MarketTokenPair[];
+  total: number;
+  category?: 'hot' | 'new' | 'gainers' | 'losers';
+  network?: string;
+  limit?: number | null;
+  page?: number | null;
 }
 
 /**

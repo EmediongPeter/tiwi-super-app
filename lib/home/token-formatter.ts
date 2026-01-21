@@ -7,6 +7,7 @@
 
 import { formatPrice as formatPriceLocale } from '@/lib/shared/utils/formatting';
 import type { Token } from '@/lib/frontend/types/tokens';
+import type { MarketTokenPair } from '@/lib/backend/types/backend-tokens';
 
 export interface HomepageToken {
   symbol: string;
@@ -78,6 +79,74 @@ function formatPriceChange(change: number | undefined): { change: string; positi
 export function formatPrice(price: string | undefined): string {
   const result = formatPriceLocale(price);
   return result === '-' ? '$0.00' : result;
+}
+
+/**
+ * Format pair price for display
+ * Formats the raw pair price value nicely (e.g., "0.02271393152" → "0.022714 USDC")
+ */
+function formatPairPrice(price: string | undefined, symbol: string | undefined): string {
+  if (!price || !symbol) return '0';
+  const numPrice = Number(price);
+  if (!Number.isFinite(numPrice) || numPrice === 0) return '0';
+  
+  // For very small prices, show more decimals
+  if (numPrice < 0.000001) {
+    return `${numPrice.toFixed(10)} ${symbol}`;
+  } else if (numPrice < 0.01) {
+    return `${numPrice.toFixed(6)} ${symbol}`;
+  } else if (numPrice < 1) {
+    return `${numPrice.toFixed(4)} ${symbol}`;
+  } else {
+    return `${numPrice.toFixed(2)} ${symbol}`;
+  }
+}
+
+/**
+ * Transform MarketTokenPair to Token format
+ * Uses pool-level data (poolName for name/symbol, pairPriceDisplay for price)
+ * Preserves full baseToken and quoteToken details for routing
+ */
+export function marketPairToToken(pair: MarketTokenPair): Token {
+  const baseToken = pair.baseToken;
+  const id = `${pair.chainId}-${pair.poolAddress.toLowerCase()}`;
+  
+  // Format pair price if not already formatted
+  const displayPrice = pair.pairPriceDisplay 
+    || (pair.pairPrice && pair.quoteToken.symbol 
+      ? formatPairPrice(pair.pairPrice, pair.quoteToken.symbol)
+      : baseToken.priceUSD || '0');
+  
+  return {
+    id,
+    // Use pool name for both name and symbol (e.g., "BFS / USDC")
+    name: pair.poolName,
+    symbol: pair.poolName,
+    address: pair.poolAddress, // Use pool address as the identifier
+    // For now, use baseToken logo (UI will be updated later to show both)
+    logo: baseToken.logoURI || '',
+    logoURI: baseToken.logoURI,
+    chain: pair.chainName,
+    chainId: pair.chainId,
+    chainLogo: pair.chainLogoURI, // Chain logo from canonical chain data
+    decimals: baseToken.decimals, // Use baseToken decimals
+    // Use formatted pair price (e.g., "0.022714 USDC")
+    price: displayPrice,
+    // Use pair-level metrics
+    priceChange24h: pair.priceChange24h,
+    volume24h: pair.volume24h,
+    liquidity: pair.liquidity,
+    marketCap: pair.marketCap,
+    holders: pair.holders, // From Chainbase (or fallback to transaction count)
+    transactionCount: pair.transactionCount,
+    chainBadge: pair.chainBadge,
+    // Store full token details for routing (attach as metadata)
+    // These will be used when navigating to swap/market pages
+    baseToken: pair.baseToken,
+    quoteToken: pair.quoteToken,
+    // Store raw pair price for formatting (SubscriptPairPrice component needs raw value)
+    pairPrice: pair.pairPrice,
+  };
 }
 
 /**

@@ -2,13 +2,12 @@
  * Pool Market Service
  *
  * Fetches pool/pair-based market data from CoinGecko Onchain APIs
- * and normalizes it into the existing NormalizedToken shape that
- * the rest of the app (and homepage market table) already uses.
+ * and returns MarketTokenPair objects with both base and quote tokens.
  *
  * Design goals:
- * - CoinGecko is the primary source for price, 24h change, volume, liquidity.
- * - We avoid hitting DexScreener here to prevent extra rate-limit pressure.
- *   (DexScreener is still used elsewhere for featured tokens and TWC.)
+ * - CoinGecko is the primary source for pool data, volume, liquidity, price changes.
+ * - DexScreener is used for price enrichment with chainId and dexId validation.
+ * - Supports both network-specific and cross-chain endpoints.
  * - Category semantics:
  *   - "hot"    → trending_pools
  *   - "new"    → new_pools
@@ -16,15 +15,15 @@
  *   - "losers" → trending_pools sorted by 24h change asc, < 0
  */
 
-import type { NormalizedToken } from '@/lib/backend/types/backend-tokens';
+import type { NormalizedToken, MarketToken, MarketTokenPair } from '@/lib/backend/types/backend-tokens';
 import { getCanonicalChain } from '@/lib/backend/registry/chains';
 import { getCache, CACHE_TTL } from '@/lib/backend/utils/cache';
+import { getTokenHoldersCount } from '@/lib/backend/utils/chainbase-client';
 
 // CoinGecko onchain base URL
 const COINGECKO_ONCHAIN_BASE = 'https://api.coingecko.com/api/v3/onchain';
 
 // Map canonical chain IDs to CoinGecko onchain network slugs
-// Extend this map over time as needed.
 const COINGECKO_NETWORK_BY_CHAIN: Record<number, string> = {
   1: 'eth',          // Ethereum
   56: 'bsc',         // BNB Smart Chain
@@ -44,7 +43,23 @@ const CHAIN_BY_COINGECKO_NETWORK: Record<string, number> = Object.entries(
   return acc;
 }, {} as Record<string, number>);
 
+// Map CoinGecko network names to DexScreener chain slugs
+const COINGECKO_TO_DEXSCREENER_CHAIN: Record<string, string> = {
+  'eth': 'ethereum',
+  'bsc': 'bsc',
+  'polygon': 'polygon',
+  'arbitrum': 'arbitrum',
+  'optimism': 'optimism',
+  'base': 'base',
+  'avax': 'avalanche',
+  'solana': 'solana',
+};
+
 type Category = 'hot' | 'new' | 'gainers' | 'losers';
+
+// ============================================================================
+// CoinGecko API Types
+// ============================================================================
 
 interface CoingeckoPoolAttributes {
   base_token_price_usd?: string;
@@ -103,47 +118,118 @@ interface CoingeckoPool {
 }
 
 interface CoingeckoTokenAttributes {
+  address?: string;
   name?: string;
   symbol?: string;
-  address?: string;
-  image?: {
-    small?: string;
-    thumb?: string;
-    large?: string;
-  };
+  decimals?: number;
+  image_url?: string;
+  coingecko_coin_id?: string;
 }
 
-interface CoingeckoIncludedToken {
-  id: string; // e.g. "eth_0x..." or "solana_<mint>"
-  type: 'token';
-  attributes: CoingeckoTokenAttributes;
+interface CoingeckoDexAttributes {
+  name?: string;
+}
+
+interface CoingeckoNetworkAttributes {
+  name?: string;
+  coingecko_asset_platform_id?: string;
+}
+
+interface CoingeckoIncludedItem {
+  id: string;
+  type: 'token' | 'dex' | 'network';
+  attributes: CoingeckoTokenAttributes | CoingeckoDexAttributes | CoingeckoNetworkAttributes;
 }
 
 interface CoingeckoPoolsResponse {
   data: CoingeckoPool[];
-  included?: CoingeckoIncludedToken[];
+  included?: CoingeckoIncludedItem[];
 }
 
-interface DexScreenerSearchPairInfo {
-  imageUrl?: string;
+// ============================================================================
+// DexScreener API Types
+// ============================================================================
+
+interface DexScreenerPair {
+  chainId?: string;
+  dexId?: string;
+  pairAddress?: string;
+  priceUsd?: string;
+  baseToken?: {
+    address?: string;
+    symbol?: string;
+  };
+  quoteToken?: {
+    address?: string;
+    symbol?: string;
+  };
+  info?: {
+    imageUrl?: string;
+  };
 }
 
-interface DexScreenerSearchPair {
-  info?: DexScreenerSearchPairInfo;
+interface DexScreenerResponse {
+  pairs?: DexScreenerPair[];
 }
 
-interface DexScreenerSearchResponse {
-  pairs?: DexScreenerSearchPair[];
-}
+// ============================================================================
+// Pool Market Service
+// ============================================================================
 
 export class PoolMarketService {
   private cache = getCache();
-  private static readonly CACHE_TTL_MS = CACHE_TTL.PRICES; // 60s – good balance for "trending"
+  private static readonly CACHE_TTL_MS = CACHE_TTL.PRICES; // 60s
 
   /**
-   * Public entrypoint: get category-based "token rows" for the market table.
-   * Behind the scenes this is pool-based, but we expose a NormalizedToken
-   * representing the base token of each pool.
+   * Get market pairs by category (returns MarketTokenPair[])
+   * This is the new method that returns full pair data with both tokens.
+   */
+  async getMarketPairsByCategory(
+    category: Category,
+    limit: number = 30,
+    network?: string, // If provided, fetch for specific network; otherwise cross-chain
+    page: number = 1
+  ): Promise<MarketTokenPair[]> {
+    let allPairs: MarketTokenPair[] = [];
+
+    if (network) {
+      // Network-specific endpoint
+      const pairs = await this.fetchMarketPairsForNetwork(network, category, page);
+      allPairs = pairs;
+    } else {
+      // Cross-chain endpoint
+      const pairs = await this.fetchMarketPairsCrossChain(category, page);
+      allPairs = pairs;
+    }
+
+    // Derive gainers/losers from trending pools by sorting
+    const sortedPairs =
+      category === 'gainers'
+        ? allPairs
+            .filter((p) => (p.priceChange24h || 0) > 0)
+            .sort((a, b) => (b.priceChange24h || 0) - (a.priceChange24h || 0))
+        : category === 'losers'
+        ? allPairs
+            .filter((p) => (p.priceChange24h || 0) < 0)
+            .sort((a, b) => (a.priceChange24h || 0) - (b.priceChange24h || 0))
+        : category === 'hot'
+        ? allPairs.sort((a, b) => (b.volume24h || 0) - (a.volume24h || 0))
+        : category === 'new'
+        ? allPairs.sort((a, b) => {
+            const aTime = a.poolCreatedAt ? new Date(a.poolCreatedAt).getTime() : 0;
+            const bTime = b.poolCreatedAt ? new Date(b.poolCreatedAt).getTime() : 0;
+            return bTime - aTime;
+          })
+        : allPairs;
+
+    // Limit results
+    return sortedPairs.slice(0, limit);
+  }
+
+  /**
+   * Legacy method: get category-based "token rows" for the market table.
+   * Returns NormalizedToken[] representing base tokens only.
+   * Kept for backward compatibility.
    */
   async getTokensByCategory(
     category: Category,
@@ -218,9 +304,307 @@ export class PoolMarketService {
     return enriched;
   }
 
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
+  // ============================================================================
+  // Private helpers for MarketTokenPair
+  // ============================================================================
+
+  /**
+   * Fetch market pairs for a specific network (network-specific endpoint)
+   */
+  private async fetchMarketPairsForNetwork(
+    network: string,
+    category: Category,
+    page: number = 1
+  ): Promise<MarketTokenPair[]> {
+    const cacheKey = `cg:pairs:${network}:${category}:page:${page}`;
+    const cached = this.cache.get<MarketTokenPair[]>(cacheKey);
+    if (cached) return cached;
+
+    const apiKey =
+      process.env.COINGECKO_API_KEY ||
+      process.env.COINGECKO_DEMO_API_KEY ||
+      process.env.NEXT_PUBLIC_COINGECKO_API_KEY;
+
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['x-cg-demo-api-key'] = apiKey;
+    }
+
+    const baseEndpoint =
+      category === 'new'
+        ? `${COINGECKO_ONCHAIN_BASE}/networks/${network}/new_pools`
+        : `${COINGECKO_ONCHAIN_BASE}/networks/${network}/trending_pools`;
+
+    const endpoint = `${baseEndpoint}?include=base_token,quote_token,dex,network&page=${page}`;
+
+    try {
+      const res = await fetch(endpoint, { headers });
+      if (!res.ok) {
+        console.warn(
+          `[PoolMarketService] CoinGecko ${category} pools failed for ${network}:`,
+          res.status,
+          res.statusText
+        );
+        return [];
+      }
+
+      const json = (await res.json()) as CoingeckoPoolsResponse;
+      const pairs = await this.parsePoolsToMarketPairs(json);
+
+      this.cache.set(cacheKey, pairs, PoolMarketService.CACHE_TTL_MS);
+      return pairs;
+    } catch (error) {
+      console.error(
+        `[PoolMarketService] Error fetching CoinGecko pools for ${network} (${category}):`,
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Fetch market pairs across all chains (cross-chain endpoint)
+   */
+  private async fetchMarketPairsCrossChain(
+    category: Category,
+    page: number = 1
+  ): Promise<MarketTokenPair[]> {
+    const cacheKey = `cg:pairs:crosschain:${category}:page:${page}`;
+    const cached = this.cache.get<MarketTokenPair[]>(cacheKey);
+    if (cached) return cached;
+
+    const apiKey =
+      process.env.COINGECKO_API_KEY ||
+      process.env.COINGECKO_DEMO_API_KEY ||
+      process.env.NEXT_PUBLIC_COINGECKO_API_KEY;
+
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['x-cg-demo-api-key'] = apiKey;
+    }
+
+    const endpoint = `${COINGECKO_ONCHAIN_BASE}/networks/trending_pools?include=base_token,quote_token,dex,network&page=${page}`;
+
+    try {
+      const res = await fetch(endpoint, { headers });
+      if (!res.ok) {
+        console.warn(
+          `[PoolMarketService] CoinGecko cross-chain ${category} pools failed:`,
+          res.status,
+          res.statusText
+        );
+        return [];
+      }
+
+      const json = (await res.json()) as CoingeckoPoolsResponse;
+      const pairs = await this.parsePoolsToMarketPairs(json);
+
+      this.cache.set(cacheKey, pairs, PoolMarketService.CACHE_TTL_MS);
+      return pairs;
+    } catch (error) {
+      console.error(
+        `[PoolMarketService] Error fetching CoinGecko cross-chain pools (${category}):`,
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Parse CoinGecko pools response to MarketTokenPair[]
+   * Handles the included array to match tokens, dex, and network to pools
+   */
+  private async parsePoolsToMarketPairs(
+    response: CoingeckoPoolsResponse
+  ): Promise<MarketTokenPair[]> {
+    const { data: pools, included = [] } = response;
+
+    // Build lookup maps from included array
+    const tokensMap = new Map<string, CoingeckoTokenAttributes>();
+    const dexMap = new Map<string, CoingeckoDexAttributes>();
+    const networkMap = new Map<string, CoingeckoNetworkAttributes>();
+
+    for (const item of included) {
+      if (item.type === 'token') {
+        tokensMap.set(item.id, item.attributes as CoingeckoTokenAttributes);
+      } else if (item.type === 'dex') {
+        dexMap.set(item.id, item.attributes as CoingeckoDexAttributes);
+      } else if (item.type === 'network') {
+        networkMap.set(item.id, item.attributes as CoingeckoNetworkAttributes);
+      }
+    }
+
+    const pairs: MarketTokenPair[] = [];
+
+    for (const pool of pools) {
+      const baseTokenId = pool.relationships.base_token?.data?.id;
+      const quoteTokenId = pool.relationships.quote_token?.data?.id;
+      const networkId = pool.relationships.network?.data?.id;
+      const dexId = pool.relationships.dex?.data?.id;
+
+      if (!baseTokenId || !quoteTokenId || !networkId) {
+        console.warn(
+          `[PoolMarketService] Missing required relationships for pool ${pool.id}`
+        );
+        continue;
+      }
+
+      const baseTokenAttrs = tokensMap.get(baseTokenId);
+      const quoteTokenAttrs = tokensMap.get(quoteTokenId);
+      const networkAttrs = networkMap.get(networkId);
+      const dexAttrs = dexMap.get(dexId || '');
+
+      if (!baseTokenAttrs || !quoteTokenAttrs || !networkAttrs) {
+        console.warn(
+          `[PoolMarketService] Missing token/network data for pool ${pool.id}`
+        );
+        continue;
+      }
+
+      // Map network name to canonical chain ID
+      const chainId = CHAIN_BY_COINGECKO_NETWORK[networkId];
+      if (!chainId) {
+        console.warn(
+          `[PoolMarketService] Unknown network: ${networkId} for pool ${pool.id}`
+        );
+        continue;
+      }
+
+      const canonicalChain = getCanonicalChain(chainId);
+      if (!canonicalChain) continue;
+
+      // Clean pool name (remove percentages)
+      const cleanedPoolName = this.cleanPoolName(pool.attributes.name);
+
+      // Extract prices from CoinGecko pool data
+      const baseTokenPriceUSD = pool.attributes.base_token_price_usd || '0';
+      const quoteTokenPriceUSD = pool.attributes.quote_token_price_usd || '0';
+      const pairPrice = pool.attributes.base_token_price_quote_token || '0';
+
+      // Create base and quote tokens with CoinGecko prices
+      const baseToken: MarketToken = {
+        chainId,
+        address: baseTokenAttrs.address || '',
+        symbol: baseTokenAttrs.symbol || '',
+        name: baseTokenAttrs.name || '',
+        decimals: baseTokenAttrs.decimals ?? 18,
+        logoURI: baseTokenAttrs.image_url || '',
+        priceUSD: baseTokenPriceUSD, // From CoinGecko pool data
+        verified: false,
+        chainBadge: canonicalChain.name.toLowerCase(),
+        chainName: canonicalChain.name,
+      };
+
+      const quoteToken: MarketToken = {
+        chainId,
+        address: quoteTokenAttrs.address || '',
+        symbol: quoteTokenAttrs.symbol || '',
+        name: quoteTokenAttrs.name || '',
+        decimals: quoteTokenAttrs.decimals ?? 18,
+        logoURI: quoteTokenAttrs.image_url || '',
+        priceUSD: quoteTokenPriceUSD, // From CoinGecko pool data
+        verified: false,
+        chainBadge: canonicalChain.name.toLowerCase(),
+        chainName: canonicalChain.name,
+      };
+
+      // Extract pool metrics
+      const volume24h = Number(pool.attributes.volume_usd?.h24 ?? '0');
+      const liquidity = Number(pool.attributes.reserve_in_usd ?? '0');
+      const priceChange24h = this.getPriceChange24h(pool);
+      const marketCap = pool.attributes.market_cap_usd
+        ? Number(pool.attributes.market_cap_usd)
+        : pool.attributes.fdv_usd
+        ? Number(pool.attributes.fdv_usd)
+        : undefined;
+
+      const tx = pool.attributes.transactions?.h24;
+      const transactionCount = (tx?.buys ?? 0) + (tx?.sells ?? 0);
+
+      // Format pair price display (e.g., "0.0227 USDC")
+      const pairPriceDisplay = pairPrice && quoteToken.symbol
+        ? `${Number(pairPrice).toFixed(6)} ${quoteToken.symbol}`
+        : undefined;
+
+      const pair: MarketTokenPair = {
+        poolAddress: pool.attributes.address,
+        poolName: cleanedPoolName,
+        poolCreatedAt: pool.attributes.pool_created_at,
+        baseToken,
+        quoteToken,
+        volume24h: volume24h || undefined,
+        liquidity: liquidity || undefined,
+        priceChange24h: priceChange24h || undefined,
+        marketCap,
+        holders: undefined, // Will be enriched from Chainbase
+        transactionCount: transactionCount || undefined,
+        chainId,
+        chainName: canonicalChain.name,
+        chainBadge: canonicalChain.name.toLowerCase(),
+        chainLogoURI: canonicalChain.logoURI,
+        dexId: dexId || undefined,
+        pairPrice: pairPrice || undefined,
+        pairPriceDisplay,
+      };
+
+      pairs.push(pair);
+    }
+
+    // Enrich holder counts from Chainbase (with fallback to transaction count)
+    await this.enrichHolderCountsFromChainbase(pairs);
+
+    return pairs;
+  }
+
+  /**
+   * Enrich holder counts from Chainbase API
+   * Falls back to transaction count if Chainbase is unavailable or chain is unsupported
+   * 
+   * For each pair:
+   * 1. Try to get holder count from Chainbase for baseToken
+   * 2. If Chainbase fails or chain is unsupported, use transaction count as fallback
+   */
+  private async enrichHolderCountsFromChainbase(
+    pairs: MarketTokenPair[]
+  ): Promise<void> {
+    const MAX_ENRICH_PER_CALL = 50; // Limit to avoid rate limits
+
+    // Process pairs in batches to avoid rate limits
+    const pairsToProcess = pairs.slice(0, MAX_ENRICH_PER_CALL);
+
+    // Enrich holder counts for each pair
+    await Promise.all(
+      pairsToProcess.map(async (pair) => {
+        // Try to get holder count from Chainbase for baseToken
+        const holderCount = await getTokenHoldersCount(
+          pair.chainId,
+          pair.baseToken.address
+        );
+
+        if (holderCount !== null && holderCount > 0) {
+          pair.holders = holderCount;
+        } else {
+          // Fallback to transaction count (buys + sells)
+          // This is not actual holders, but active traders in 24h
+          pair.holders = pair.transactionCount || undefined;
+        }
+      })
+    );
+  }
+
+  /**
+   * Clean pool name: remove percentages and trim spacing
+   * Example: "ETH / USDC 0.05%" → "ETH / USDC"
+   */
+  private cleanPoolName(name: string): string {
+    if (!name) return '';
+    // Remove percentage patterns like "0.05%", " 0.05%", etc.
+    return name.replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+  }
+
+  // ============================================================================
+  // Legacy helpers (for getTokensByCategory backward compatibility)
+  // ============================================================================
 
   private async fetchPoolsForNetwork(
     network: string,
@@ -383,12 +767,11 @@ export class PoolMarketService {
           const res = await fetch(url);
           if (!res.ok) return;
 
-          const data = (await res.json()) as DexScreenerSearchResponse;
+          const data = (await res.json()) as DexScreenerResponse;
           // Find the first pair that has info.imageUrl (not just the first pair)
           const pairWithImage = Array.isArray(data.pairs)
-            ? data.pairs.find((pair) => pair.info?.imageUrl)
+            ? data.pairs.find((pair: DexScreenerPair) => pair.info?.imageUrl)
             : undefined;
-          console.log("🚀 ~ PoolMarketService ~ enrichLogosWithDexScreener ~ pairWithImage:", pairWithImage)
           const imageUrl = pairWithImage?.info?.imageUrl;
           if (!imageUrl) return;
 
@@ -430,5 +813,3 @@ export function getPoolMarketService(): PoolMarketService {
   }
   return poolMarketServiceInstance;
 }
-
-

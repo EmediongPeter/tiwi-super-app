@@ -11,12 +11,13 @@ import { resolveChain, isChainSupported } from '@/lib/backend/registry/chain-res
 import { getChainBadge } from '@/lib/backend/registry/chains';
 import { getTokenAggregationService } from './token-aggregation-service';
 import { LiFiProvider } from '@/lib/backend/providers/lifi';
-import type { NormalizedToken, ChainDTO, FetchTokensParams, ProviderToken } from '@/lib/backend/types/backend-tokens';
+import type { NormalizedToken, ChainDTO, FetchTokensParams, ProviderToken, MarketTokenPair } from '@/lib/backend/types/backend-tokens';
 import { MOCK_TOKENS } from '@/lib/backend/data/mock-tokens';
 import { getFeaturedTokens, getFeaturedTokensForChains } from '@/lib/backend/data/featured-tokens';
 import { DexScreenerProvider } from '@/lib/backend/providers/dexscreener';
 import { OneInchProvider } from '@/lib/backend/providers/oneinch';
 import { getPoolMarketService } from '@/lib/backend/services/pool-market-service';
+import { getTokenHoldersCount } from '@/lib/backend/utils/chainbase-client';
 
 // Initialize providers (must be called before using aggregation service)
 import '@/lib/backend/providers/init';
@@ -149,6 +150,41 @@ export class TokenService {
       console.error('[TokenService] Error fetching tokens by category:', error);
       // Fallback 2: DexScreener-only implementation as last resort
       return this.getTokensByCategoryFromDexScreener(category, limit);
+    }
+  }
+
+  /**
+   * Get market pairs by category (Hot, New, Gainers, Losers)
+   * 
+   * Returns full MarketTokenPair[] with both base and quote tokens.
+   * This is the preferred method for market table data as it provides
+   * complete pair information including both tokens.
+   * 
+   * @param category - Market category: 'hot', 'new', 'gainers', or 'losers'
+   * @param limit - Maximum number of pairs to return (default: 30)
+   * @param network - Optional network slug (e.g., 'solana', 'eth') for network-specific requests
+   * @returns Array of MarketTokenPair objects
+   */
+  async getMarketPairsByCategory(
+    category: 'hot' | 'new' | 'gainers' | 'losers',
+    limit: number = 30,
+    network?: string,
+    page: number = 1
+  ): Promise<MarketTokenPair[]> {
+    try {
+      // Use PoolMarketService to fetch market pairs
+      const pairs = await this.poolMarketService.getMarketPairsByCategory(
+        category,
+        limit,
+        network,
+        page
+      );
+      
+      return pairs;
+    } catch (error: any) {
+      console.error('[TokenService] Error fetching market pairs by category:', error);
+      // Return empty array on error (graceful degradation)
+      return [];
     }
   }
 
@@ -344,12 +380,28 @@ export class TokenService {
           volume24h: topPair.volume?.h24 || token.volume24h,
           liquidity: topPair.liquidity?.usd || token.liquidity,
           priceChange24h: topPair.priceChange?.h24 || token.priceChange24h,
-          // Use txns.h24 (buys + sells) as number of traders
-          holders: topPair.txns?.h24 ? (topPair.txns.h24.buys + topPair.txns.h24.sells) : token.holders,
+          // Holders will be enriched from Chainbase (fallback to transaction count if unavailable)
+          holders: token.holders, // Will be enriched separately
           // Use DexScreener image URL only as a fallback – primary logo comes from 1inch
           logoURI: token.logoURI || topPair.info?.imageUrl || token.logoURI || '',
           marketCap: topPair.marketCap || topPair.fdv || token.marketCap,
+          // Store transaction count for fallback
+          transactionCount: topPair.txns?.h24 ? (topPair.txns.h24.buys + topPair.txns.h24.sells) : token.transactionCount,
         };
+
+        // Enrich holder count from Chainbase (with fallback to transaction count)
+        if (typeof enriched.chainId === 'number' && enriched.address) {
+          const holderCount = await getTokenHoldersCount(
+            enriched.chainId,
+            enriched.address
+          );
+          if (holderCount !== null && holderCount > 0) {
+            enriched.holders = holderCount;
+          } else {
+            // Fallback to transaction count
+            enriched.holders = enriched.transactionCount;
+          }
+        }
 
         return enriched;
       } catch (error) {
@@ -655,7 +707,20 @@ export class TokenService {
               priceChange24h: dexToken.priceChange24h || token.priceChange24h,
               marketCap: dexToken.marketCap || token.marketCap,
               decimals: token.decimals,
+              transactionCount: dexToken.transactionCount || token.transactionCount,
             };
+
+            // Enrich holder count from Chainbase (with fallback to transaction count)
+            const holderCount = await getTokenHoldersCount(
+              token.chainId,
+              token.address
+            );
+            if (holderCount !== null && holderCount > 0) {
+              enrichedToken.holders = holderCount;
+            } else {
+              // Fallback to transaction count
+              enrichedToken.holders = enrichedToken.transactionCount;
+            }
             
             // Cache the enriched data
             cache.set(cacheKey, enrichedToken, CACHE_TTL);
@@ -718,6 +783,7 @@ export class TokenService {
       .then(async (dexToken) => {
         if (dexToken) {
           const { getCache } = await import('@/lib/backend/utils/cache');
+          const { getTokenHoldersCount } = await import('@/lib/backend/utils/chainbase-client');
           const cache = getCache();
           
           // Cache enriched data for next request
@@ -731,6 +797,18 @@ export class TokenService {
             marketCap: dexToken.marketCap || token.marketCap,
             decimals: token.decimals,
           };
+
+          // Enrich holder count from Chainbase (with fallback to transaction count)
+          const holderCount = await getTokenHoldersCount(
+            token.chainId,
+            token.address
+          );
+          if (holderCount !== null && holderCount > 0) {
+            enrichedToken.holders = holderCount;
+          } else {
+            // Fallback to transaction count
+            enrichedToken.holders = enrichedToken.transactionCount;
+          }
           
           cache.set(cacheKey, enrichedToken, cacheTtl);
         }
@@ -767,9 +845,21 @@ export class TokenService {
       const seenTokens = new Set<string>();
 
       for (const providerToken of providerTokens) {
-        const chain = getCanonicalChain(providerToken.chainId);
+        // Ensure chainId is a number
+        const chainId = typeof providerToken.chainId === 'number' 
+          ? providerToken.chainId 
+          : typeof providerToken.chainId === 'string'
+          ? parseInt(providerToken.chainId, 10)
+          : undefined;
+        
+        if (!chainId || isNaN(chainId)) {
+          console.warn(`[TokenService] Invalid chainId for token ${providerToken.symbol}: ${providerToken.chainId}`);
+          continue;
+        }
+        
+        const chain = getCanonicalChain(chainId);
         if (!chain) {
-          console.warn(`[TokenService] Chain ${providerToken.chainId} not found for token ${providerToken.symbol}`);
+          console.warn(`[TokenService] Chain ${chainId} not found for token ${providerToken.symbol}`);
           continue;
         }
 

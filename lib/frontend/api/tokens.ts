@@ -6,8 +6,8 @@
  * TanStack Query handles caching, deduplication, and retries.
  */
 
-import type { NormalizedToken } from '@/lib/backend/types/backend-tokens';
-import type { TokensAPIResponse } from '@/lib/shared/types/api';
+import type { NormalizedToken, MarketTokenPair } from '@/lib/backend/types/backend-tokens';
+import type { TokensAPIResponse, MarketPairsAPIResponse } from '@/lib/shared/types/api';
 import type { Token } from '@/lib/frontend/types/tokens';
 import { cleanImageUrl } from '@/lib/shared/utils/formatting';
 
@@ -92,6 +92,75 @@ export async function fetchTokens(params: FetchTokensParams = {}): Promise<Token
     
     // Otherwise, wrap in user-friendly error
     throw new Error('Unable to load tokens. Please check your connection and try again.');
+  }
+}
+
+/**
+ * Fetch market pairs from backend API
+ * 
+ * Pure function used as queryFn for TanStack Query.
+ * Returns MarketTokenPair[] with both base and quote tokens.
+ * 
+ * @param params - Request parameters
+ * @returns Promise resolving to market pairs
+ */
+export interface FetchMarketPairsParams {
+  category: 'hot' | 'new' | 'gainers' | 'losers';
+  limit?: number;
+  network?: string; // Network slug (e.g., 'solana', 'eth') for network-specific requests
+  page?: number;
+}
+
+export async function fetchMarketPairs(
+  params: FetchMarketPairsParams
+): Promise<MarketPairsAPIResponse> {
+  const { category, limit, network, page } = params;
+  
+  // Build API URL
+  const url = new URL('/api/v1/market-pairs', window.location.origin);
+  
+  // Add query parameters
+  url.searchParams.set('category', category);
+  if (limit) {
+    url.searchParams.set('limit', limit.toString());
+  }
+  if (network) {
+    url.searchParams.set('network', network);
+  }
+  if (page) {
+    url.searchParams.set('page', page.toString());
+  }
+  
+  try {
+    const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      
+      // Extract user-friendly error message from API response
+      const errorMessage = errorData.error || `Unable to load market pairs`;
+      
+      // Create error with user-friendly message
+      const error = new Error(errorMessage);
+      // Preserve original error data for debugging
+      (error as any).status = response.status;
+      (error as any).data = errorData;
+      
+      throw error;
+    }
+    
+    const data: MarketPairsAPIResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('[TokenAPI] Error fetching market pairs:', error);
+    
+    // If error is already an Error with a message, re-throw as-is
+    if (error instanceof Error) {
+      throw error;
+    }
+    
+    // Otherwise, wrap in user-friendly error
+    throw new Error('Unable to load market pairs. Please check your connection and try again.');
   }
 }
 

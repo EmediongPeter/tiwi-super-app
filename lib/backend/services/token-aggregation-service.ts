@@ -50,19 +50,15 @@ export class TokenAggregationService {
   async searchTokens(params: FetchTokensParams): Promise<NormalizedToken[]> {
     const { chainIds, search: query, limit = 30 } = params;
     
-    console.log(`[TokenAggregationService] searchTokens called with:`, { chainIds, query, limit });
-    
     // Determine which chains to search (filter + dedupe + cap fanout)
     const chainsToSearch = this.buildChainList(chainIds);
     
     if (chainsToSearch.length === 0) {
       // No chains specified: search all supported chains
       // For now, return empty (will be handled by TokenService)
-      console.warn('[TokenAggregationService] No chains specified, returning empty array');
       return [];
     }
     
-    console.log(`[TokenAggregationService] Searching ${chainsToSearch.length} chains:`, chainsToSearch);
     
     // Detect if this is an "all networks" scenario (multiple chains, no search query)
     const isAllNetworksRequest = !query && chainsToSearch.length > 1;
@@ -74,24 +70,18 @@ export class TokenAggregationService {
     
     // CORRECTED FLOW: Always prioritize primary providers (Jupiter for Solana, LiFi for others)
     // DexScreener is only used as fallback if primary providers return insufficient results
-    console.log(`[TokenAggregationService] Fetching from primary providers for ${chainsToSearch.length} chains`);
     const primaryResults = await this.fetchFromPrimaryProviders(chainsToSearch, query, fetchLimit);
-    console.log(`[TokenAggregationService] Primary providers returned ${primaryResults.length} tokens`);
     allResults.push(...primaryResults);
     
     // Step 2: Use DexScreener as fallback only if needed
     if (this.shouldUseDexScreener(primaryResults, query)) {
-      console.log(`[TokenAggregationService] Using DexScreener as fallback (primary returned ${primaryResults.length} results)`);
       const dexResults = await this.fetchFromDexScreener(chainsToSearch, query, fetchLimit);
-      console.log(`[TokenAggregationService] DexScreener returned ${dexResults.length} tokens`);
       allResults.push(...dexResults);
     }
     
-    console.log(`[TokenAggregationService] Total results before normalization: ${allResults.length}`);
     
     // Step 3: Normalize and deduplicate
     const normalized = this.normalizeAndDeduplicate(allResults);
-    console.log(`[TokenAggregationService] After normalization: ${normalized.length} tokens`);
     
     // Step 3.5: Decimals enrichment removed - fetch on-demand when needed (e.g., routing)
     // This avoids enriching 500+ tokens when only 30 are returned
@@ -132,12 +122,12 @@ export class TokenAggregationService {
       finalTokens = sortedTokens.slice(0, limit);
     }
     
-    // Step 7: Enrichment is already done by DexScreener (synchronous)
-    // Only start background enrichment for router formats (non-blocking)
+    // Step 7: Enrich holders synchronously (bounded concurrency) so client receives counts.
+    await this.enrichHolderCountsBlocking(finalTokens);
+    // Router formats can remain background to keep response fast.
     this.enrichRouterFormatsInBackground(finalTokens);
     
-    // Step 8: Return immediately (fast response)
-    // Note: Decimals are NOT enriched here - fetched on-demand when needed (e.g., routing)
+    // Step 8: Return (decimals fetched on-demand elsewhere)
     return finalTokens;
   }
 
@@ -191,7 +181,6 @@ export class TokenAggregationService {
       if (result.status === 'fulfilled') {
         results.push(...result.value);
       } else {
-        console.warn('[TokenAggregationService] Primary provider fetch failed:', result.reason);
       }
     }
     
@@ -212,7 +201,6 @@ export class TokenAggregationService {
     try {
       return await this.fetchFromProvider(dexscreener, { chainIds, search: query, limit });
     } catch (error) {
-      console.warn('[TokenAggregationService] DexScreener fetch failed:', error);
       return [];
     }
   }
@@ -247,7 +235,6 @@ export class TokenAggregationService {
         
         if (!canonicalChain) {
           console.warn(
-            `[TokenAggregationService] Could not find canonical chain for provider ${provider.name} chain ID ${providerChainId}, skipping token ${providerToken.address}`
           );
           continue;
         }
@@ -258,7 +245,6 @@ export class TokenAggregationService {
       
       return normalized;
     } catch (error) {
-      console.error(`[TokenAggregationService] Error fetching from ${provider.name}:`, error);
       return [];
     }
   }
@@ -286,7 +272,6 @@ export class TokenAggregationService {
     if (ordered.length > TokenAggregationService.MAX_CHAIN_FANOUT) {
       const trimmed = ordered.slice(0, TokenAggregationService.MAX_CHAIN_FANOUT);
       console.warn(
-        `[TokenAggregationService] Trimming chain fanout from ${ordered.length} to ${trimmed.length} to avoid rate limits`,
         trimmed
       );
       return trimmed;
@@ -406,6 +391,24 @@ export class TokenAggregationService {
   private enrichRouterFormatsInBackground(tokens: NormalizedToken[]): void {
     const enrichmentService = getTokenEnrichmentService();
     enrichmentService.enrichRouterFormatsInBackground(tokens);
+  }
+
+  /**
+   * Background enrichment for holder counts (non-blocking, fire-and-forget)
+   * Uses Chainbase where supported, falls back to transactionCount if needed.
+   */
+  private enrichHolderCountsInBackground(tokens: NormalizedToken[]): void {
+    const enrichmentService = getTokenEnrichmentService();
+    enrichmentService.enrichHolderCountsInBackground(tokens);
+  }
+
+  /**
+   * Blocking holder enrichment to ensure counts are available in the response.
+   * Uses limited concurrency inside the enrichment service to stay rate-limit friendly.
+   */
+  private async enrichHolderCountsBlocking(tokens: NormalizedToken[]): Promise<void> {
+    const enrichmentService = getTokenEnrichmentService();
+    await enrichmentService.enrichHolderCounts(tokens);
   }
 }
 

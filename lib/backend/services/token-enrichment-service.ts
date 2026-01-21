@@ -12,6 +12,7 @@
 
 import { getProviderRegistry } from '@/lib/backend/providers/registry';
 import { getCanonicalChain } from '@/lib/backend/registry/chains';
+import { getTokenHoldersCount } from '@/lib/backend/utils/chainbase-client';
 import type { NormalizedToken } from '@/lib/backend/types/backend-tokens';
 import type { BaseTokenProvider } from '@/lib/backend/providers/base';
 
@@ -42,11 +43,29 @@ export class TokenEnrichmentService {
    * This method starts enrichment and returns immediately.
    * Enrichment happens asynchronously and updates cache when ready.
    */
-  enrichTokensInBackground(tokens: NormalizedToken[]): void {
+  public enrichTokensInBackground(tokens: NormalizedToken[]): void {
     // Fire-and-forget: don't await, don't block
     this.enrichTokens(tokens).catch(error => {
       console.warn('[TokenEnrichmentService] Background enrichment failed:', error);
     });
+  }
+
+  /**
+   * Enrich holder counts in background (non-blocking, fire-and-forget)
+   * Uses Chainbase when available; falls back to transactionCount if needed.
+   */
+  public enrichHolderCountsInBackground(tokens: NormalizedToken[]): void {
+    this.enrichHolderCountsInternal(tokens).catch(error => {
+      console.warn('[TokenEnrichmentService] Background holder enrichment failed:', error);
+    });
+  }
+
+  /**
+   * Enrich holder counts (blocking/awaitable). Uses Chainbase where supported, falls
+   * back to transactionCount if available. Limited concurrency to avoid rate limits.
+   */
+  public async enrichHolderCounts(tokens: NormalizedToken[]): Promise<void> {
+    await this.enrichHolderCountsInternal(tokens);
   }
 
   /**
@@ -55,7 +74,7 @@ export class TokenEnrichmentService {
    * DexScreener data (price, change, volume, liquidity) is already included synchronously.
    * This only enriches router formats for routing compatibility.
    */
-  enrichRouterFormatsInBackground(tokens: NormalizedToken[]): void {
+  public enrichRouterFormatsInBackground(tokens: NormalizedToken[]): void {
     // Fire-and-forget: don't await, don't block
     this.enrichRouterFormats(tokens).catch(error => {
       console.warn('[TokenEnrichmentService] Background router format enrichment failed:', error);
@@ -208,6 +227,42 @@ export class TokenEnrichmentService {
       routerFormats: Object.keys(routerFormats).length > 0 ? routerFormats : undefined,
       enrichedBy: enrichedBy.length > 0 ? enrichedBy : undefined,
     };
+  }
+
+  /**
+   * Internal: Enrich holder counts using Chainbase (with fallback to transactionCount)
+   * Mutates tokens in place to keep response objects updated when available.
+   */
+  private async enrichHolderCountsInternal(tokens: NormalizedToken[]): Promise<void> {
+    // Simple concurrency guard to avoid hammering Chainbase
+    const CONCURRENCY = 5;
+    let cursor = 0;
+
+    const worker = async () => {
+      while (cursor < tokens.length) {
+        const index = cursor++;
+        const token = tokens[index];
+        if (!token || token.holders !== undefined) continue;
+        if (!token.chainId || !token.address) continue;
+
+        try {
+          const holders = await getTokenHoldersCount(token.chainId, token.address);
+          if (holders !== null && holders !== undefined) {
+            token.holders = holders;
+            continue;
+          }
+
+          // Fallback: use transactionCount if present
+          if (token.transactionCount !== undefined && token.transactionCount !== null) {
+            token.holders = token.transactionCount;
+          }
+        } catch (error) {
+          console.warn(`[TokenEnrichmentService] Failed to enrich holders for ${token.address}:`, error);
+        }
+      }
+    };
+
+    await Promise.allSettled(Array.from({ length: CONCURRENCY }, () => worker()));
   }
 
   /**

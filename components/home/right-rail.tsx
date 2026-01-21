@@ -96,14 +96,14 @@ function StatsGrid() {
             {isLoading ? (
               <Skeleton className="h-5 w-16" />
             ) : (
-              <div className="flex items-center gap-1.5 lg:gap-2 xl:gap-2">
+            <div className="flex items-center gap-1.5 lg:gap-2 xl:gap-2">
                 <span className="text-white text-sm lg:text-sm xl:text-base font-semibold">{volume24hFormatted}</span>
                 <span className={`text-xs lg:text-xs xl:text-sm font-medium ${
                   volumeChange.isPositive ? 'text-[#3fea9b]' : 'text-[#ff5c5c]'
                 }`}>
                   {volumeChange.formatted}
                 </span>
-              </div>
+            </div>
             )}
           </div>
           <div className="border border-[#1f261e] rounded-lg px-0 py-3 lg:py-4 xl:py-4 flex flex-col items-center gap-2">

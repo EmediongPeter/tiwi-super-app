@@ -122,12 +122,16 @@ export function formatPriceWithSubscript(
   const significantDigits = decimalPart.substring(firstNonZeroIndex);
   const displayDigits = significantDigits.substring(0, maxDisplayDecimals);
 
-  // Format: 0.0 + subscript(leadingZeros) + displayDigits
-  // Example: 0.00000000005044 → 0.0₉₅₀₄₄ (9 zeros before 5044)
-  // Example: 0.1149838573e-6 = 0.0000001149838573 → 0.0₆₁₁₄₉ (6 zeros before 1149...)
-  const subscript = digitsToSubscript(leadingZeros.toString());
+  // Format: 0.0 + subscript(remaining zeros) + displayDigits
+  // Show "0.0" then subscript the remaining zeros (total zeros - 1)
+  // Example: 0.0000000004070 (9 zeros) → 0.0₈4070 (subscript 8, not 9)
+  // Example: 0.00000000005044 (9 zeros) → 0.0₈5044
+  // Example: 0.0000001149838573 (6 zeros) → 0.0₅11498
+  const remainingZeros = leadingZeros - 1; // Subtract 1 because we show "0.0"
+  const subscript = digitsToSubscript(remainingZeros.toString());
   
-  return `${prefix}0.${subscript}${displayDigits}`;
+  // Always format as: 0.0 + subscript(remaining zeros) + digits
+  return `${prefix}0.0${subscript}${displayDigits}`;
 }
 
 /**

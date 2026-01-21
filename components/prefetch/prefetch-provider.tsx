@@ -61,7 +61,7 @@ export function PrefetchProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Prefetch market tokens by category for homepage market table
+    // Prefetch market tokens by category for homepage market table (legacy - kept for backward compatibility)
     const prefetchMarketCategory = async (
       category: 'hot' | 'new' | 'gainers' | 'losers'
     ) => {
@@ -85,6 +85,32 @@ export function PrefetchProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         if (process.env.NODE_ENV === 'development') {
           console.warn(`[Prefetch] Failed to prefetch market category ${category}:`, error);
+        }
+      }
+    };
+
+    // Prefetch market pairs by category for homepage market table (new implementation)
+    const prefetchMarketPairs = async (
+      category: 'hot' | 'new' | 'gainers' | 'losers'
+    ) => {
+      try {
+        const { getMarketPairsQueryKey } = await import('@/hooks/useMarketPairsQuery');
+        const { fetchMarketPairs } = await import('@/lib/frontend/api/tokens');
+        
+        await queryClient.prefetchQuery({
+          queryKey: getMarketPairsQueryKey({
+            category,
+            limit: 20,
+            page: 1,
+          }),
+          queryFn: () => fetchMarketPairs({ category, limit: 20, page: 1 }),
+        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Prefetch] Market pairs category ${category} prefetched`);
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[Prefetch] Failed to prefetch market pairs category ${category}:`, error);
         }
       }
     };
@@ -151,7 +177,7 @@ export function PrefetchProvider({ children }: { children: React.ReactNode }) {
         prefetchAllChainsTokens();
       }, 100);
 
-      // 150ms: Prefetch market categories for homepage table
+      // 150ms: Prefetch market pairs for homepage table (new implementation)
       setTimeout(() => {
         const categories: Array<'hot' | 'new' | 'gainers' | 'losers'> = [
           'hot',
@@ -160,7 +186,7 @@ export function PrefetchProvider({ children }: { children: React.ReactNode }) {
           'losers',
         ];
         categories.forEach((category) => {
-          prefetchMarketCategory(category);
+          prefetchMarketPairs(category);
         });
       }, 150);
 

@@ -11,7 +11,7 @@ export interface Token {
   logoURI?: string;
   chain: string;
   chainId?: number;          // Canonical chain ID from backend
-  chainLogo?: string;        // Derived from chain list (logoURI)
+  chainLogo?: string;        // Derived from chain list (logoURI) or from pair data
   decimals: number | undefined;  // Token decimals (undefined means unknown, will be fetched)
   balance?: string;
   usdValue?: string;
@@ -21,8 +21,12 @@ export interface Token {
   volume24h?: number;        // 24h trading volume
   liquidity?: number;        // Liquidity in USD
   marketCap?: number;        // Market capitalization
-  holders?: number;          // Number of token holders
+  holders?: number;          // Number of token holders (from Chainbase or fallback)
   transactionCount?: number; // 24h transaction count
+  // Market pair metadata (for pairs from market-pairs endpoint)
+  baseToken?: any;           // Full baseToken details (for routing to swap/market pages)
+  quoteToken?: any;          // Full quoteToken details (for routing to swap/market pages)
+  pairPrice?: string;        // Raw pair price (base_token_price_quote_token) for formatting
 }
 
 export interface Chain {

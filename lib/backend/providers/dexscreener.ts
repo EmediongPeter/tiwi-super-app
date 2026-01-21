@@ -232,7 +232,8 @@ export class DexScreenerProvider extends BaseTokenProvider {
           
           // Extract transaction data
           const txns = pair.txns?.h24;
-          const holders = txns?.buys || 0; // Holders = number of buys
+          // DexScreener does not provide holders; keep undefined and enrich later
+          const holders = undefined;
           const transactionCount = (txns?.buys || 0) + (txns?.sells || 0); // Transaction count = buys + sells
           
           // Extract tokens from pair (baseToken and quoteToken)
@@ -384,7 +385,8 @@ export class DexScreenerProvider extends BaseTokenProvider {
           
           // Extract transaction data
           const txns = pair.txns?.h24;
-          const holders = txns?.buys || 0; // Holders = number of buys
+          // DexScreener does not provide holders; keep undefined and enrich later
+          const holders = undefined;
           const transactionCount = (txns?.buys || 0) + (txns?.sells || 0); // Transaction count = buys + sells
           
           // Extract tokens from pair (baseToken and quoteToken)

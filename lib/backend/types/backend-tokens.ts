@@ -182,6 +182,52 @@ export interface TokenProvider {
 }
 
 // ============================================================================
+// Market Token Pair Types (for Pool-based Market Data)
+// ============================================================================
+
+/**
+ * Market token representation (for pairs)
+ * Similar to NormalizedToken but specifically for market pair data
+ */
+export interface MarketToken {
+  chainId: number;
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoURI: string;
+  priceUSD: string;
+  verified?: boolean;
+  chainBadge: string;
+  chainName: string;
+}
+
+/**
+ * Market token pair (pool-based)
+ * Contains both base and quote tokens with pool metadata
+ */
+export interface MarketTokenPair {
+  poolAddress: string;
+  poolName: string; // Cleaned name (percentages removed)
+  poolCreatedAt?: string;
+  baseToken: MarketToken; // Full token details (for routing to swap/market pages)
+  quoteToken: MarketToken; // Full token details (for routing to swap/market pages)
+  volume24h?: number;
+  liquidity?: number;
+  priceChange24h?: number;
+  marketCap?: number;
+  holders?: number; // From Chainbase API (or fallback to transaction count)
+  transactionCount?: number;
+  chainId: number;
+  chainName: string;
+  chainBadge: string;
+  chainLogoURI?: string; // Chain logo from canonical chain data
+  dexId?: string; // Dex ID from CoinGecko
+  pairPrice?: string; // base_token_price_quote_token (raw value, e.g., "0.02271393152")
+  pairPriceDisplay?: string; // Formatted pair price (e.g., "0.0227 USDC")
+}
+
+// ============================================================================
 // API Response Types
 // ============================================================================
 // 

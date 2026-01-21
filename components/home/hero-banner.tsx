@@ -108,7 +108,7 @@ export function HeroBanner() {
         {/* Fixed-size container - all images will have the same dimensions and take full width */}
         <div 
           key={current.id} 
-          className="relative w-full hero-slide-in overflow-hidden h-[114px] lg:h-[140px] xl:h-[160px] 2xl:h-[180px]"
+          className="relative w-full hero-slide-in overflow-hidden h-[104px] lg:h-[120px] xl:h-[140px] 2xl:h-[160px]"
         >
           <Image
             src={imageUrl}
