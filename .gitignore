@@ -57,5 +57,4 @@ typechain-types/
 Thumbs.db
 
 # Utility
-docs
-/docs
+docs/
