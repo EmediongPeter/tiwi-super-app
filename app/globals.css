@@ -1,585 +1,676 @@
 @import "tailwindcss";
 
 :root {
-  /* Design System Colors from Figma */
-  --bg-dark: #010501;
-  --bg-semi: #0b0f0a;
-  --bg-cards: #121712;
-  --bg-cta: #081f02;
-  --bg-shade-40: #156200;
-  --stroke: #1f261e;
-  --primary-cta: #b1f128;
-  --body-text: #b5b5b5;
-  --title-text: #ffffff;
-  --mute-text: #7c7c7c;
-  --error-status: #ff5c5c;
-  
-  --background: #010501;
-  --foreground: #ffffff;
+    /* Design System Colors from Figma */
+    --bg-dark: #010501;
+    --bg-semi: #0b0f0a;
+    --bg-cards: #121712;
+    --bg-cta: #081f02;
+    --bg-shade-40: #156200;
+    --stroke: #1f261e;
+    --primary-cta: #b1f128;
+    --body-text: #b5b5b5;
+    --title-text: #ffffff;
+    --mute-text: #7c7c7c;
+    --error-status: #ff5c5c;
+
+    --background: #010501;
+    --foreground: #ffffff;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 /* Custom gradient utilities for background elements */
 .bg-gradient-radial {
-  background: radial-gradient(circle, var(--tw-gradient-stops));
+    background: radial-gradient(circle, var(--tw-gradient-stops));
 }
 
 /* Marquee animation for mobile status bar - Continuous flow */
 @keyframes marquee {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-33.333%);
-  }
+    0% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(-33.333%);
+    }
 }
 
 .animate-marquee {
-  animation: marquee 25s linear infinite;
-  will-change: transform;
+    animation: marquee 25s linear infinite;
+    will-change: transform;
 }
 
 /* Smooth expand / collapse utility for limit details */
 .limit-collapse {
-  transition: max-height 200ms ease-out, opacity 200ms ease-out;
-  overflow: hidden;
+    transition: max-height 200ms ease-out, opacity 200ms ease-out;
+    overflow: hidden;
 }
 
 /* Smooth expand / collapse utility for When Price and Expires sections */
 .section-collapse {
-  transition: max-height 300ms ease-out, opacity 300ms ease-out, display 300ms ease-out;
-  overflow: hidden;
+    transition: max-height 300ms ease-out, opacity 300ms ease-out, display 300ms ease-out;
+    overflow: hidden;
 }
 
 /* When collapsed, ensure no spacing and no interaction */
 .section-collapse.max-h-0 {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
 }
 
 /* Toast animation */
 @keyframes toast-slide-in {
-  from {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
 
 .toast-enter {
-  animation: toast-slide-in 0.3s ease-out;
+    animation: toast-slide-in 0.3s ease-out;
 }
 
 /* Hero banner slide-in animation */
 @keyframes hero-slide-in-from-right {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
 
 .hero-slide-in {
-  animation: hero-slide-in-from-right 0.4s ease-out;
+    animation: hero-slide-in-from-right 0.4s ease-out;
 }
 
 /* Spotlight slide-in animation */
 @keyframes spotlight-slide-in-from-right {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
 
 .spotlight-slide-in {
-  animation: spotlight-slide-in-from-right 0.4s ease-out;
+    animation: spotlight-slide-in-from-right 0.4s ease-out;
 }
 
 /* Smart Markets Marquee Animations */
 @keyframes smart-markets-marquee-left-to-right {
-  from {
-    transform: translateX(-33.333%);
-  }
-  to {
-    transform: translateX(0%);
-  }
+    from {
+        transform: translateX(-33.333%);
+    }
+
+    to {
+        transform: translateX(0%);
+    }
 }
 
 @keyframes smart-markets-marquee-right-to-left {
-  from {
-    transform: translateX(0%);
-  }
-  to {
-    transform: translateX(-33.333%);
-  }
+    from {
+        transform: translateX(0%);
+    }
+
+    to {
+        transform: translateX(-33.333%);
+    }
 }
 
 .smart-markets-row-top {
-  animation: smart-markets-marquee-left-to-right 40s linear infinite;
-  will-change: transform;
+    animation: smart-markets-marquee-left-to-right 40s linear infinite;
+    will-change: transform;
 }
 
 .smart-markets-row-bottom {
-  animation: smart-markets-marquee-right-to-left 40s linear infinite;
-  will-change: transform;
+    animation: smart-markets-marquee-right-to-left 40s linear infinite;
+    will-change: transform;
 }
 
 /* Bottom sheet slide animations */
 @keyframes slide-in-from-bottom {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
 }
 
 @keyframes slide-out-to-bottom {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(100%);
-  }
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(100%);
+    }
 }
 
 .slide-in-from-bottom {
-  animation: slide-in-from-bottom 0.3s ease-out;
+    animation: slide-in-from-bottom 0.3s ease-out;
 }
 
 .slide-out-to-bottom {
-  animation: slide-out-to-bottom 0.3s ease-in;
+    animation: slide-out-to-bottom 0.3s ease-in;
 }
 
 /* Staking detail view slide-in animation */
 @keyframes staking-detail-slide-in {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
 
 .staking-detail-enter {
-  animation: staking-detail-slide-in 0.4s ease-out;
+    animation: staking-detail-slide-in 0.4s ease-out;
 }
 
 /* Hide scrollbar but keep functionality */
 .scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
 
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;
+    display: none;
 }
 
 /* Custom scrollbar styling for token list */
 .token-list-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #0b0f0a;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #0b0f0a;
 }
 
 .token-list-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  display: block !important;
+    width: 8px;
+    display: block !important;
 }
 
 .token-list-scrollbar::-webkit-scrollbar-track {
-  background: #0b0f0a;
-  border-radius: 4px;
+    background: #0b0f0a;
+    border-radius: 4px;
 }
 
 .token-list-scrollbar::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 4px;
+    background: #1f261e;
+    border-radius: 4px;
 }
 
 .token-list-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
+    background: #2a3229;
 }
 
 /* Custom scrollbar styling for wallet modals */
 .wallet-modal-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #0b0f0a;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #0b0f0a;
 }
 
 .wallet-modal-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  display: block !important;
+    width: 8px;
+    display: block !important;
 }
 
 .wallet-modal-scrollbar::-webkit-scrollbar-track {
-  background: #0b0f0a;
-  border-radius: 4px;
+    background: #0b0f0a;
+    border-radius: 4px;
 }
 
 .wallet-modal-scrollbar::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 4px;
+    background: #1f261e;
+    border-radius: 4px;
 }
 
 .wallet-modal-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
+    background: #2a3229;
 }
 
 /* Custom scrollbar styling for market table - Tiwi Protocol design */
 .market-table-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #0b0f0a;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #0b0f0a;
 }
 
 .market-table-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-  display: block !important;
+    width: 8px;
+    height: 8px;
+    display: block !important;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-track {
-  background: #0b0f0a;
-  border-radius: 4px;
+    background: #0b0f0a;
+    border-radius: 4px;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 4px;
-  border: 1px solid #0b0f0a;
+    background: #1f261e;
+    border-radius: 4px;
+    border: 1px solid #0b0f0a;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
-  border-color: #1f261e;
+    background: #2a3229;
+    border-color: #1f261e;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-thumb:active {
-  background: #3a4239;
+    background: #3a4239;
 }
 
 /* Horizontal scrollbar styling */
 .market-table-scrollbar::-webkit-scrollbar:horizontal {
-  height: 8px;
+    height: 8px;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-track:horizontal {
-  background: #0b0f0a;
-  border-radius: 4px;
+    background: #0b0f0a;
+    border-radius: 4px;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-thumb:horizontal {
-  background: #1f261e;
-  border-radius: 4px;
-  border: 1px solid #0b0f0a;
+    background: #1f261e;
+    border-radius: 4px;
+    border: 1px solid #0b0f0a;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-thumb:horizontal:hover {
-  background: #2a3229;
-  border-color: #1f261e;
+    background: #2a3229;
+    border-color: #1f261e;
 }
 
 .market-table-scrollbar::-webkit-scrollbar-thumb:horizontal:active {
-  background: #3a4239;
+    background: #3a4239;
 }
 
 /* Mobile Menu Drawer Animations */
 @keyframes mobile-menu-backdrop-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes mobile-menu-backdrop-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
 }
 
 @keyframes mobile-menu-drawer-slide-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
+    from {
+        transform: translateX(100%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
 }
 
 @keyframes mobile-menu-drawer-slide-out {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(100%);
-  }
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(100%);
+    }
 }
 
 .mobile-menu-backdrop-fade-in {
-  animation: mobile-menu-backdrop-fade-in 0.3s ease-out forwards;
+    animation: mobile-menu-backdrop-fade-in 0.3s ease-out forwards;
 }
 
 .mobile-menu-backdrop-fade-out {
-  animation: mobile-menu-backdrop-fade-out 0.3s ease-in forwards;
+    animation: mobile-menu-backdrop-fade-out 0.3s ease-in forwards;
 }
 
 .mobile-menu-drawer-initial {
-  transform: translateX(100%);
+    transform: translateX(100%);
 }
 
 .mobile-menu-drawer-slide-in {
-  animation: mobile-menu-drawer-slide-in 0.3s ease-out forwards;
-  will-change: transform;
+    animation: mobile-menu-drawer-slide-in 0.3s ease-out forwards;
+    will-change: transform;
 }
 
 .mobile-menu-drawer-slide-out {
-  animation: mobile-menu-drawer-slide-out 0.3s ease-in forwards;
-  will-change: transform;
+    animation: mobile-menu-drawer-slide-out 0.3s ease-in forwards;
+    will-change: transform;
 }
 
 /* Custom scrollbar for mobile menu */
 .mobile-menu-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #010501;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #010501;
 }
 
 .mobile-menu-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  display: block !important;
+    width: 6px;
+    display: block !important;
 }
 
 .mobile-menu-scrollbar::-webkit-scrollbar-track {
-  background: #010501;
+    background: #010501;
 }
 
 .mobile-menu-scrollbar::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 3px;
+    background: #1f261e;
+    border-radius: 3px;
 }
 
 .mobile-menu-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
+    background: #2a3229;
 }
 
 /* Custom scrollbar styling for orderbook section */
 .orderbook-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #0b0f0a;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #0b0f0a;
 }
 
 .orderbook-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  display: block !important;
+    width: 8px;
+    display: block !important;
 }
 
 .orderbook-scrollbar::-webkit-scrollbar-track {
-  background: #0b0f0a;
-  border-radius: 4px;
+    background: #0b0f0a;
+    border-radius: 4px;
 }
 
 .orderbook-scrollbar::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 4px;
-  border: 1px solid #0b0f0a;
+    background: #1f261e;
+    border-radius: 4px;
+    border: 1px solid #0b0f0a;
 }
 
 .orderbook-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
-  border-color: #1f261e;
+    background: #2a3229;
+    border-color: #1f261e;
 }
 
 .orderbook-scrollbar::-webkit-scrollbar-thumb:active {
-  background: #3a4239;
+    background: #3a4239;
 }
 
 /* Main application scrollbar styling */
 html {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #010501;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #010501;
 }
 
 html::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+    width: 12px;
+    height: 12px;
 }
 
 html::-webkit-scrollbar-track {
-  background: #010501;
+    background: #010501;
 }
 
 html::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 6px;
-  border: 2px solid #010501;
+    background: #1f261e;
+    border-radius: 6px;
+    border: 2px solid #010501;
 }
 
 html::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
-  border-color: #0b0f0a;
+    background: #2a3229;
+    border-color: #0b0f0a;
 }
 
 html::-webkit-scrollbar-thumb:active {
-  background: #3a4239;
+    background: #3a4239;
 }
 
 html::-webkit-scrollbar-corner {
-  background: #010501;
+    background: #010501;
 }
 
 /* Custom scrollbar for all overflow-y-auto components (thinner than main scrollbar) */
 /* Targets elements with overflow-y-auto class (works with Tailwind utility classes) */
 [class*="overflow-y-auto"] {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #010501;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #010501;
 }
 
 [class*="overflow-y-auto"]::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+    width: 6px;
+    height: 6px;
 }
 
 [class*="overflow-y-auto"]::-webkit-scrollbar-track {
-  background: #010501;
-  border-radius: 3px;
+    background: #010501;
+    border-radius: 3px;
 }
 
 [class*="overflow-y-auto"]::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 3px;
-  border: 1px solid #010501;
+    background: #1f261e;
+    border-radius: 3px;
+    border: 1px solid #010501;
 }
 
 [class*="overflow-y-auto"]::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
-  border-color: #0b0f0a;
+    background: #2a3229;
+    border-color: #0b0f0a;
 }
 
 [class*="overflow-y-auto"]::-webkit-scrollbar-thumb:active {
-  background: #3a4239;
+    background: #3a4239;
 }
 
 [class*="overflow-y-auto"]::-webkit-scrollbar-corner {
-  background: #010501;
+    background: #010501;
 }
 
 /* Custom scrollbar for dropdown menus (smaller than other scrollbars) */
 .dropdown-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #1f261e #0b0f0a;
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #0b0f0a;
 }
 
 .dropdown-scrollbar::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-  display: block !important;
+    width: 4px;
+    height: 4px;
+    display: block !important;
 }
 
 .dropdown-scrollbar::-webkit-scrollbar-track {
-  background: #0b0f0a;
-  border-radius: 2px;
+    background: #0b0f0a;
+    border-radius: 2px;
 }
 
 .dropdown-scrollbar::-webkit-scrollbar-thumb {
-  background: #1f261e;
-  border-radius: 2px;
+    background: #1f261e;
+    border-radius: 2px;
 }
 
 .dropdown-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #2a3229;
+    background: #2a3229;
 }
 
 /* Range input styling for percentage slider */
 input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
 }
 
 input[type="range"]::-webkit-slider-track {
-  background: transparent;
-  height: 4px;
+    background: transparent;
+    height: 4px;
 }
 
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #b1f128;
-  border: 2px solid #156200;
-  border-radius: 50%;
-  cursor: pointer;
-  margin-top: -6px;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #b1f128;
+    border: 2px solid #156200;
+    border-radius: 50%;
+    cursor: pointer;
+    margin-top: -6px;
 }
 
 input[type="range"]::-moz-range-track {
-  background: transparent;
-  height: 4px;
+    background: transparent;
+    height: 4px;
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  background: #b1f128;
-  border: 2px solid #156200;
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
+    width: 16px;
+    height: 16px;
+    background: #b1f128;
+    border: 2px solid #156200;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
 }
 
 /* Skeleton shimmer animation */
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
 }
 
 .animate-shimmer {
-  animation: shimmer 2s ease-in-out infinite;
+    animation: shimmer 2s ease-in-out infinite;
 }
 
 /* Enhanced skeleton shimmer for portfolio (Bybit-style) */
 .skeleton-shimmer {
-  background: linear-gradient(
-    90deg,
-    #0E1310 0%,
-    #1A1F1A 50%,
-    #0E1310 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2s ease-in-out infinite;
+    background: linear-gradient(90deg,
+            #0E1310 0%,
+            #1A1F1A 50%,
+            #0E1310 100%);
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Network Selector Dropdown scrollbar */
+.network-dropdown-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #1f261e #0b0f0a;
+}
+
+.network-dropdown-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    display: block !important;
+}
+
+.network-dropdown-scrollbar::-webkit-scrollbar-track {
+    background: #0b0f0a;
+    border-radius: 3px;
+}
+
+.network-dropdown-scrollbar::-webkit-scrollbar-thumb {
+    background: #1f261e;
+    border-radius: 3px;
+}
+
+.network-dropdown-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #2a3229;
+}
+
+/* Network Selector Dropdown animation */
+@keyframes dropdown-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.network-dropdown-scrollbar {
+    animation: dropdown-fade-in 0.15s ease-out;
+}
+
+/* Collapsible Search Bar expand animation */
+@keyframes search-expand {
+    from {
+        opacity: 0;
+        transform: translateY(-50%) scaleX(0.8);
+        transform-origin: right center;
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(-50%) scaleX(1);
+        transform-origin: right center;
+    }
+}
+
+@keyframes search-collapse {
+    from {
+        opacity: 1;
+        transform: translateY(-50%) scaleX(1);
+        transform-origin: right center;
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-50%) scaleX(0.8);
+        transform-origin: right center;
+    }
+}
+
+.animate-search-expand {
+    animation: search-expand 0.2s ease-out forwards;
+}
+
+.animate-search-collapse {
+    animation: search-collapse 0.2s ease-out forwards;
 }

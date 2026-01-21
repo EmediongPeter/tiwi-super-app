@@ -1,0 +1,4115 @@
+Okay I want you to reason something with me when it comes to routing transactions because this is the goal
+The goal is to ensure that any token can be tradeable or swappable on Tiwi protocol. So I was thinking of this, what if we have something like this
+As we all know that theirs a liquidity pool between TWC / WBNB and a user wants to swap from TWC to ETH maybe on Ethereum chain
+
+There's no pair like TWC/ETH but there's a pair liek WBNB/ETH SO what we can do is to route from TWC to WBNB then from WBNB to ETH SUCH that it becomes a multihop swap where there will be some intermediaries and I was thinking we should achieve this in such a way that it is seamless
+
+So the goal is rather than telling the user that there's no route for TWC TO ETH WE FIND INTERMEDIARY PAIRS WHERE WE CAN SWAP FROM THE BASE TOKEN THEN AN INTERMEDIARY TO A QUOTE TOKEN. THIS DOESN'T JUST FOR TWC BUT OTHER MAYBE LOW CAP TOKENS OR TOKENS WITHOUT A DIRECT ROUTE FROM PANCAKESWAP, UNISWAP OR OTHER ROUTERS/AGGREGATORS
+
+
+We are designing a system that can handle multi-hop swaps for tokens that don't have direct pairs. The idea is to find intermediate tokens (like WBNB, WETH, USDT, etc.) that can bridge the trade.
+
+Steps to consider:
+
+Token Pair Discovery: Given a fromToken and toToken, we need to check if there's a direct pair. If not, we need to find a path through intermediate tokens.
+
+Pathfinding Algorithm: We can use a graph where tokens are nodes and pairs are edges. Then we can run a shortest path algorithm (like BFS or Dijkstra) to find a route.
+
+Liquidity Check: The pairs must have sufficient liquidity for the swap amount.
+
+Slippage and Fees: Each hop adds slippage and fees, so we need to account for that.
+
+Integration with DEXs: We need to interact with multiple DEXs (PancakeSwap, Uniswap, etc.) to execute each hop.
+
+Seamless User Experience: The user should see the entire route and the expected output, and then approve and execute the entire multi-hop swap in one transaction (if possible) or multiple transactions (if not).
+
+Implementation Plan:
+
+Build a Token Graph: For each chain, we can build a graph of tokens and pairs. We can source this data from:
+
+DEX subgraphs (like PancakeSwap's subgraph for BSC)
+
+On-chain pair factories (like PancakeSwap factory)
+
+Token lists (like the ones we already have)
+
+Pathfinding:
+
+Use BFS to find a path from fromToken to toToken. We can limit the path length to 3-4 hops to avoid high fees and complexity.
+
+Prefer paths with higher liquidity and lower fees.
+
+Quote Calculation:
+
+For each hop, calculate the expected output using the DEX's router (e.g., getAmountsOut on PancakeSwap).
+
+Chain the quotes: the output of one hop is the input of the next.
+
+Swap Execution:
+
+If all hops are on the same chain and DEX (or compatible DEXs), we can use the router's multi-hop swap function (like swapExactTokensForTokens on PancakeSwap).
+
+If hops are on different chains, we need cross-chain bridges (which we already have via LI.FI).
+
+Fallback: If we cannot find a path, we can try to use aggregators (like 1inch) or cross-chain bridges (like LI.FI) as a fallback.
+
+How to integrate with our existing system?
+
+We already have:
+
+getPancakeSwapV2Quote for single-hop quotes on PancakeSwap.
+
+getUniswapV2Quote for single-hop quotes on Uniswap.
+
+We can extend these to handle multi-hop by:
+
+a. Building a graph for each chain and DEX.
+b. Finding a path and then getting a quote for the entire path.
+
+However, note that PancakeSwap and Uniswap routers already support multi-hop swaps via a path of tokens. We can use the same getAmountsOut and swapExactTokensForTokens functions with a path of length > 2.
+
+So the plan is:
+
+For a given chain (e.g., BSC), build a graph of tokens connected by PancakeSwap pairs.
+
+When a direct pair doesn't exist, find a path of tokens from fromToken to toToken.
+
+Use the router's getAmountsOut to get the output for the entire path.
+
+If the path exists and the output is acceptable, then use the same path to execute the swap.
+
+We can implement a function getMultiHopQuote that:
+
+Input: fromToken, toToken, amountIn, chainId, dex (e.g., 'pancakeswap')
+
+Output: quote with path, amountOut, and steps (each hop)
+
+Example:
+
+TWC -> WBNB -> ETH (on BSC, note: ETH on BSC is actually BETH or a pegged version? Actually, we might want to swap to WBNB then to BUSD? Let's clarify.)
+
+But note: The user wants to swap TWC (on BSC) to ETH (on Ethereum). This is a cross-chain swap.
+
+We have two options:
+
+Option 1: Do a multi-hop on BSC to get a token that can be bridged to Ethereum (like USDT, BUSD, etc.), then bridge.
+
+Option 2: Use a cross-chain aggregator (like LI.FI) that already handles these.
+
+Given our current architecture, we already have LI.FI for cross-chain. So for same-chain multi-hop, we can implement the graph approach.
+
+So let's break down:
+
+Case 1: Same chain, same DEX (e.g., BSC, PancakeSwap) - multi-hop.
+
+Case 2: Same chain, different DEXs - we might need to split the swap across DEXs.
+
+Case 3: Different chains - use LI.FI or other bridges.
+
+We can start by implementing same-chain multi-hop for PancakeSwap and Uniswap.
+
+Steps:
+
+Build a graph for each chain and DEX combination.
+
+Pathfinding function: findPath(fromTokenAddress, toTokenAddress, graph).
+
+Quote function: getMultiHopQuote(path, amountIn, chainId, dex).
+
+Swap execution: Use the router's multi-hop swap function.
+
+How to build the graph?
+
+We can fetch all pairs from the DEX factory (like PancakeSwap factory) and then build the graph.
+
+However, fetching all pairs might be heavy. Alternatively, we can use a token list and only consider pairs that involve tokens in our list.
+
+We can start with a curated list of intermediate tokens (like WBNB, BUSD, USDT, etc.) and then build a graph with these.
+
+We can also use the DEX subgraph to query pairs for a given token.
+
+Let's assume we have a function getPairsForToken(tokenAddress, chainId, dex) that returns a list of tokens that have a pair with the given token.
+
+Then we can run BFS to find a path.
+
+Implementation:
+
+We'll create a new file utils/multi-hop.ts (or utils/dex-router.ts) that contains:
+
+A class TokenGraph that builds and traverses the graph.
+
+Functions: findSwapPath, getMultiHopQuote, executeMultiHopSwap.
+
+We'll also need to update the handleSwap function to consider multi-hop quotes.
+
+Let's write the steps for the BFS:
+
+We want to find the shortest path (in terms of hops) from fromToken to toToken.
+
+We'll use a queue and a visited set.
+
+We'll also track the parent of each token to reconstruct the path.
+
+We'll start by fetching the neighbors (pairs) of the fromToken.
+
+We can limit the BFS to a maximum depth (say 3).
+
+We'll assume we have a function getNeighbors(tokenAddress) that returns the token addresses that have a pair with the given token.
+
+How to get the neighbors?
+
+text
+ We can query the DEX factory for pairs that contain the token.
+
+ Alternatively, we can maintain a map of all pairs (from the factory) and then build the graph offline.
+Given the complexity, we might want to use an external API or subgraph for this.
+
+Alternatively, we can use the DEX router's getAmountsOut to try a few known intermediate tokens (like WBNB, BUSD, USDT) and see if we can get a quote.
+
+We can try a fixed set of intermediate tokens (called "base tokens") and see if there's a path through them.
+
+This is simpler and might cover most cases.
+
+Steps for fixed intermediate tokens:
+
+text
+ Let baseTokens = [WBNB, BUSD, USDT, ...] for BSC.
+
+ We want to swap TWC to ETH (pegged on BSC? Actually, ETH on BSC is usually WETH? Let's assume the user wants to swap to WETH on BSC).
+
+ We can try:
+
+    TWC -> WBNB -> WETH
+
+ We can check if there's a pair TWC/WBNB and WBNB/WETH.
+We can implement:
+
+text
+ 1. Check direct pair.
+
+ 2. If not, for each baseToken, check if there's a pair from fromToken to baseToken and from baseToken to toToken.
+
+ 3. If multiple, choose the one with the best quote.
+
+ 4. We can also try two hops: fromToken -> baseToken1 -> baseToken2 -> toToken.
+We can write a function that tries all combinations of baseTokens up to 2 intermediate tokens.
+
+This is more practical than building a full graph.
+
+Let's design:
+
+text
+ function findPathViaBaseTokens(fromToken, toToken, baseTokens, maxHops = 3) {
+     // Try direct
+     if (hasPair(fromToken, toToken)) return [fromToken, toToken];
+
+     // Try 2 hops
+     for (let base of baseTokens) {
+         if (hasPair(fromToken, base) && hasPair(base, toToken)) {
+             return [fromToken, base, toToken];
+         }
+     }
+
+     // Try 3 hops
+     for (let base1 of baseTokens) {
+         for (let base2 of baseTokens) {
+             if (base1 === base2) continue;
+             if (hasPair(fromToken, base1) && hasPair(base1, base2) && hasPair(base2, toToken)) {
+                 return [fromToken, base1, base2, toToken];
+             }
+         }
+     }
+
+     return null;
+ }
+We can get the quotes for each path and choose the best.
+
+We can extend this to more than 3 hops, but note that each hop adds gas and slippage.
+
+How to check if a pair exists?
+
+text
+ We can use the DEX factory to check if a pair exists for two tokens.
+
+ For PancakeSwap: factory.getPair(tokenA, tokenB) returns the pair address.
+We can pre-fetch the pair addresses for the baseTokens and the fromToken and toToken.
+
+Alternatively, we can use the router's getAmountsOut to check if a pair exists and has liquidity.
+
+We can try to get a quote for a small amount and see if it succeeds.
+
+We can implement hasPair by calling getAmountsOut with a minimal amount (1 wei) and catching errors.
+
+However, this is not efficient if we do it for many pairs.
+
+We can cache the pair existence.
+
+Given that we are only trying a few baseTokens, it's acceptable.
+
+Let's implement:
+
+text
+ async function hasPair(tokenA, tokenB, amountIn = 1) {
+     try {
+         // Use the router to getAmountsOut for a minimal amount
+         const amounts = await router.getAmountsOut(BigInt(amountIn), [tokenA, tokenB]);
+         return amounts.length > 0 && amounts[1] > 0;
+     } catch {
+         return false;
+     }
+ }
+But note: the router's getAmountsOut might fail if the pair doesn't exist or has no liquidity.
+
+We can also use the factory to check pair existence without liquidity.
+
+Let's do:
+
+text
+ For PancakeSwap, we can use the factory contract to get the pair address.
+
+ If the pair address is not zero, then the pair exists.
+
+ Then we can check the reserves to see if it has liquidity.
+We can do:
+
+text
+ const pairAddress = await factory.getPair(tokenA, tokenB);
+ if (pairAddress === zeroAddress) return false;
+
+ // Check reserves
+ const pairContract = new Contract(pairAddress, pairABI, provider);
+ const reserves = await pairContract.getReserves();
+ return reserves[0] > 0 && reserves[1] > 0;
+This is more accurate.
+
+We can do this for each pair.
+
+However, note that we are only checking a few pairs (up to baseTokens.length^2 * 2 for 3 hops).
+
+We can proceed with this.
+
+Steps:
+
+text
+ 1. Define a list of baseTokens for each chain.
+
+ 2. For a given fromToken and toToken, try to find a path via baseTokens.
+
+ 3. Once a path is found, get the quote for the entire path.
+
+ 4. If multiple paths are found, choose the one with the best output.
+We can implement this in a new function getMultiHopQuote in utils/pancakeswapv2.ts (and similarly for Uniswap).
+
+We'll need:
+
+text
+ - The router contract to get quotes.
+ - The factory contract to check pairs.
+We already have the router and factory addresses.
+
+Let's write the function:
+
+text
+ async function getMultiHopQuote(
+     fromToken: Address,
+     toToken: Address,
+     amountIn: bigint,
+     chainId: number
+ ): Promise<{
+     path: Address[];
+     amountOut: bigint;
+ } | null> {
+     const baseTokens = BASE_TOKENS[chainId]; // defined per chain
+
+     // Try direct path
+     if (await hasPair(fromToken, toToken, chainId)) {
+         const directQuote = await getAmountsOut(amountIn, [fromToken, toToken], chainId);
+         if (directQuote) {
+             return {
+                 path: [fromToken, toToken],
+                 amountOut: directQuote[1]
+             };
+         }
+     }
+
+     // Try 2 hops
+     for (const base of baseTokens) {
+         if (await hasPair(fromToken, base, chainId) && await hasPair(base, toToken, chainId)) {
+             const path = [fromToken, base, toToken];
+             const amounts = await getAmountsOut(amountIn, path, chainId);
+             if (amounts) {
+                 return {
+                     path,
+                     amountOut: amounts[2]
+                 };
+             }
+         }
+     }
+
+     // Try 3 hops
+     for (const base1 of baseTokens) {
+         for (const base2 of baseTokens) {
+             if (base1 === base2) continue;
+             if (await hasPair(fromToken, base1, chainId) && 
+                 await hasPair(base1, base2, chainId) && 
+                 await hasPair(base2, toToken, chainId)) {
+                 const path = [fromToken, base1, base2, toToken];
+                 const amounts = await getAmountsOut(amountIn, path, chainId);
+                 if (amounts) {
+                     return {
+                         path,
+                         amountOut: amounts[3]
+                     };
+                 }
+             }
+         }
+     }
+
+     return null;
+ }
+We can then use this in the quote fetching process.
+
+We can update the getPancakeSwapV2Quote function to try multi-hop if direct pair fails.
+
+Alternatively, we can create a new function getPancakeSwapV2QuoteMultiHop and call it from the main quote fetching logic.
+
+We can change the existing getPancakeSwapV2Quote to:
+
+text
+ - First try direct pair.
+ - If fails, try multi-hop.
+Let's update the getPancakeSwapV2Quote function to support multi-hop.
+
+We can add a parameter maxHops (default 3) and then try to find a path.
+
+We'll need to adjust the return type to include the path.
+
+We already have the path in the quote, so we can return the same structure.
+
+Steps for the updated getPancakeSwapV2Quote:
+
+text
+ 1. Check if there's a direct pair and get the quote.
+
+ 2. If not, try to find a multi-hop path and quote.
+
+ 3. If found, return the quote with the path.
+
+ 4. If not, return null.
+We can also consider the gas cost of multi-hop and adjust the quote accordingly, but for now, we just return the output amount.
+
+Let's implement:
+
+text
+ async function getPancakeSwapV2Quote(
+     fromToken: Address,
+     toToken: Address,
+     amountIn: string | bigint,
+     chainId: number,
+     maxHops: number = 3
+ ): Promise<PancakeSwapV2Quote | null> {
+     const amountInBigInt = typeof amountIn === 'string' ? BigInt(amountIn) : amountIn;
+
+     // Try direct pair
+     if (await hasPair(fromToken, toToken, chainId)) {
+         const amounts = await getAmountsOut(amountInBigInt, [fromToken, toToken], chainId);
+         if (amounts && amounts.length >= 2) {
+             return {
+                 amountOut: amounts[1].toString(),
+                 path: [fromToken, toToken],
+                 routerAddress: PANCAKESWAP_V2_ROUTER[chainId],
+                 factoryAddress: PANCAKESWAP_V2_FACTORY[chainId],
+                 tokenIn: fromToken,
+                 tokenOut: toToken,
+                 needsPairCreation: false,
+                 priceImpact: 0, // We don't calculate this for now
+                 isFeeOnTransfer: false, // We don't know, assume false
+                 slippage: 0.5 // Default
+             };
+         }
+     }
+
+     // Try multi-hop
+     const baseTokens = BASE_TOKENS[chainId];
+     let bestQuote: { path: Address[], amountOut: bigint } | null = null;
+
+     // We already tried direct, so start with 2 hops
+     for (let hops = 2; hops <= maxHops; hops++) {
+         // Generate all possible paths of length `hops` using baseTokens as intermediates
+         // We can use a recursive function or iterative BFS.
+
+         // For simplicity, we'll use the fixed baseTokens and try all combinations for 2 and 3 hops.
+         // We already have the logic for 2 and 3 hops above.
+
+         // We can break if we find a path for the current number of hops and then try to find a better one with the same number of hops? 
+         // Or we can just take the first one we find? We want the best quote.
+
+         // We'll try all combinations and choose the one with the highest output.
+
+         // We can generate all permutations of baseTokens for the intermediate steps.
+
+         // For 2 hops: fromToken -> base -> toToken
+         // For 3 hops: fromToken -> base1 -> base2 -> toToken
+
+         // We can write a helper to generate paths of a given length.
+
+         // But note: the number of baseTokens is small (say 5). Then for 2 hops: 5 paths, for 3 hops: 5*4=20 paths.
+
+         // We can do:
+
+         if (hops === 2) {
+             for (const base of baseTokens) {
+                 if (await hasPair(fromToken, base, chainId) && await hasPair(base, toToken, chainId)) {
+                     const path = [fromToken, base, toToken];
+                     const amounts = await getAmountsOut(amountInBigInt, path, chainId);
+                     if (amounts) {
+                         const currentAmountOut = amounts[2];
+                         if (!bestQuote || currentAmountOut > bestQuote.amountOut) {
+                             bestQuote = { path, amountOut: currentAmountOut };
+                         }
+                     }
+                 }
+             }
+         } else if (hops === 3) {
+             for (const base1 of baseTokens) {
+                 for (const base2 of baseTokens) {
+                     if (base1 === base2) continue;
+                     if (await hasPair(fromToken, base1, chainId) && 
+                         await hasPair(base1, base2, chainId) && 
+                         await hasPair(base2, toToken, chainId)) {
+                         const path = [fromToken, base1, base2, toToken];
+                         const amounts = await getAmountsOut(amountInBigInt, path, chainId);
+                         if (amounts) {
+                             const currentAmountOut = amounts[3];
+                             if (!bestQuote || currentAmountOut > bestQuote.amountOut) {
+                                 bestQuote = { path, amountOut: currentAmountOut };
+                             }
+                         }
+                     }
+                 }
+             }
+         }
+
+         // If we found a path for this number of hops, we can break and not try more hops? 
+         // More hops usually mean higher costs, so we can break after the first found for the smallest number of hops?
+         // But we want the best quote, so we try all hops up to maxHops and take the best.
+
+         // However, we can break early if we found a path for the current number of hops and then try the next number of hops? 
+         // We are already trying all paths for each hop count.
+
+         // We can break after we have a path for the current hop count? But we want the best, so we try all.
+
+     }
+
+     if (bestQuote) {
+         return {
+             amountOut: bestQuote.amountOut.toString(),
+             path: bestQuote.path,
+             routerAddress: PANCAKESWAP_V2_ROUTER[chainId],
+             factoryAddress: PANCAKESWAP_V2_FACTORY[chainId],
+             tokenIn: fromToken,
+             tokenOut: toToken,
+             needsPairCreation: false,
+             priceImpact: 0, // We don't calculate this for now
+             isFeeOnTransfer: false, // We don't know, assume false
+             slippage: 0.5 // Default
+         };
+     }
+
+     return null;
+ }
+This is a basic implementation. We can improve by:
+
+text
+ - Calculating price impact (requires reserves)
+ - Detecting fee-on-transfer tokens
+ - Adjusting slippage based on the number of hops
+We can also cache the pair existence and liquidity to avoid multiple calls.
+
+We'll need to implement hasPair and getAmountsOut using the factory and router contracts.
+
+Let's write the helper functions:
+
+text
+ async function hasPair(tokenA: Address, tokenB: Address, chainId: number): Promise<boolean> {
+     const factoryAddress = PANCAKESWAP_V2_FACTORY[chainId];
+     const factoryContract = getContract(factoryAddress, PANCAKE_FACTORY_ABI, publicClient);
+
+     const pairAddress = await factoryContract.read.getPair([tokenA, tokenB]);
+     if (pairAddress === zeroAddress) return false;
+
+     // Check reserves
+     const pairContract = getContract(pairAddress, PANCAKE_PAIR_ABI, publicClient);
+     const reserves = await pairContract.read.getReserves();
+     return reserves[0] > 0 && reserves[1] > 0;
+ }
+
+ async function getAmountsOut(amountIn: bigint, path: Address[], chainId: number): Promise<bigint[] | null> {
+     try {
+         const routerAddress = PANCAKESWAP_V2_ROUTER[chainId];
+         const routerContract = getContract(routerAddress, PANCAKE_ROUTER_ABI, publicClient);
+         const amounts = await routerContract.read.getAmountsOut([amountIn, path]);
+         return amounts;
+     } catch {
+         return null;
+     }
+ }
+We can use the getCachedClient for the public client.
+
+We'll need to import the ABI for the factory and pair.
+
+We can define:
+
+text
+ const PANCAKE_FACTORY_ABI = [
+     'function getPair(address, address) view returns (address)'
+ ] as const;
+
+ const PANCAKE_PAIR_ABI = [
+     'function getReserves() view returns (uint112, uint112, uint32)'
+ ] as const;
+We already have the router ABI.
+
+We can now integrate this into the existing flow.
+
+We'll update the getPancakeSwapV2Quote function to use these helpers.
+
+We also need to define BASE_TOKENS for each chain.
+
+For BSC, we can use:
+
+text
+ const BASE_TOKENS: Record<number, Address[]> = {
+     56: [
+         '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+         '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+         '0x55d398326f99059fF775485246999027B3197955', // USDT
+         '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // USDC
+         '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', // BTCB
+     ]
+ };
+We can add more chains as needed.
+
+This approach should allow us to swap tokens that don't have direct pairs.
+
+We can do the same for Uniswap V2 on other chains.
+
+Let me know if you have any questions or if you want to proceed with this implementation.
+
+
+This is an **excellent strategic goal**! You're essentially building a **universal token routing protocol** that can handle both direct and indirect swaps. This is how major aggregators like 1inch, 0x, and Li.FI work internally.
+
+Let me break down the architecture and implementation strategy:
+
+## **The Core Problem You're Solving:**
+
+```
+Token A ──X──> Token C (No direct pair)
+Token A ──✓──> Token B (Has pair) 
+Token B ──✓──> Token C (Has pair)
+
+Solution: A → B → C (Multi-hop)
+```
+
+## **Architecture for Universal Token Routing**
+
+### **1. Layered Routing System**
+
+```
+TIWI Protocol Routing Stack:
+├── Layer 1: Direct DEX Quotes (PancakeSwap, Uniswap, etc.)
+├── Layer 2: Multi-hop Routing (Your implementation)
+├── Layer 3: Cross-chain Bridging (Li.FI integration)
+└── Layer 4: Fallback to CEX/DEX Aggregators
+```
+
+### **2. Core Components You Need**
+
+#### **Component A: Liquidity Graph Builder**
+```typescript
+// utils/liquidity-graph.ts
+interface TokenNode {
+  address: string;
+  symbol: string;
+  decimals: number;
+  chainId: number;
+  liquidity: Record<string, bigint>; // Pair addresses → liquidity
+}
+
+interface Edge {
+  tokenA: string;
+  tokenB: string;
+  dex: string; // 'pancakeswap', 'uniswap', etc.
+  pairAddress: string;
+  liquidity: bigint;
+  fee: number; // 0.25% for Uniswap V3, 0.3% for V2, etc.
+}
+
+class LiquidityGraph {
+  private graph: Map<string, TokenNode>;
+  private edges: Map<string, Edge>;
+  
+  async buildForChain(chainId: number) {
+    // 1. Fetch all pairs from DEX factories
+    // 2. Build adjacency list for fast routing
+    // 3. Cache liquidity data
+  }
+  
+  findPath(
+    fromToken: string,
+    toToken: string,
+    amount: bigint,
+    maxHops: number = 3
+  ): Path[] {
+    // Dijkstra or BFS with liquidity constraints
+  }
+}
+```
+
+#### **Component B: Smart Router**
+```typescript
+// utils/smart-router.ts
+interface RouteStep {
+  dex: string;
+  fromToken: string;
+  toToken: string;
+  pairAddress: string;
+  expectedOutput: bigint;
+  fee: number;
+}
+
+interface OptimizedRoute {
+  steps: RouteStep[];
+  totalOutput: bigint;
+  totalFee: number;
+  path: string[];
+  executionData: any;
+}
+
+class SmartRouter {
+  async findBestRoute(
+    fromToken: Token,
+    toToken: Token,
+    amount: bigint,
+    options: {
+      maxHops?: number;
+      preferredDexes?: string[];
+      excludeDexes?: string[];
+      minLiquidity?: bigint;
+    }
+  ): Promise<OptimizedRoute[]> {
+    // 1. Check direct pairs
+    // 2. If none, find intermediary tokens
+    // 3. Optimize for: best price, lowest fees, fewest hops
+    // 4. Return top 3 routes
+  }
+  
+  private findIntermediaryTokens(
+    fromToken: Token,
+    toToken: Token,
+    chainId: number
+  ): string[] {
+    // Strategy: Find tokens that connect both
+    // Priority order:
+    // 1. Native tokens (ETH, BNB, MATIC)
+    // 2. Stablecoins (USDT, USDC, DAI)
+    // 3. High-liquidity blue chips (WBTC, WETH)
+    // 4. Bridge tokens (anyToken)
+  }
+}
+```
+
+#### **Component C: Multi-hop Executor**
+```typescript
+// utils/multi-hop-executor.ts
+class MultiHopExecutor {
+  async executeRoute(
+    route: OptimizedRoute,
+    wallet: WalletClient,
+    options: {
+      slippage: number;
+      deadline: number;
+    }
+  ): Promise<TransactionReceipt> {
+    // Two approaches:
+    
+    // APPROACH 1: Single transaction (if same DEX supports it)
+    if (route.steps[0].dex === route.steps[1].dex) {
+      // Use DEX's native multi-hop function
+      return this.executeNativeMultiHop(route, wallet, options);
+    }
+    
+    // APPROACH 2: Multi-transaction with atomicity
+    return this.executeStepByStep(route, wallet, options);
+  }
+  
+  private async executeNativeMultiHop(
+    route: OptimizedRoute,
+    wallet: WalletClient,
+    options: any
+  ) {
+    // Example: PancakeSwap's swapExactTokensForTokens
+    // Can handle [TokenA → TokenB → TokenC] in one tx
+  }
+}
+```
+
+### **3. Implementation Strategy**
+
+#### **Phase 1: Basic Multi-hop for Single DEX**
+```typescript
+// Start with PancakeSwap multi-hop
+async function getPancakeSwapMultiHopQuote(
+  fromToken: Address,
+  toToken: Address,
+  amountIn: bigint,
+  chainId: number,
+  maxHops: number = 3
+): Promise<MultiHopQuote> {
+  
+  // Common intermediary tokens on BSC
+  const intermediaries = [
+    '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+    '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+    '0x55d398326f99059fF775485246999027B3197955', // USDT
+    '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // USDC
+  ];
+  
+  // Try all combinations
+  const routes = await findRoutes(
+    fromToken,
+    toToken,
+    amountIn,
+    intermediaries,
+    maxHops
+  );
+  
+  return bestRoute(routes);
+}
+```
+
+#### **Phase 2: Cross-DEX Multi-hop**
+```typescript
+// TWC → (PancakeSwap) → BUSD → (Uniswap) → ETH
+async function getCrossDexRoute(
+  fromToken: Token,
+  toToken: Token,
+  amount: bigint
+): Promise<CrossDexRoute> {
+  
+  // Find common tokens between DEXes
+  const commonTokens = findCommonTokens(['pancakeswap', 'uniswap']);
+  
+  // Build route across multiple DEXes
+  const route = {
+    steps: [
+      {
+        dex: 'pancakeswap',
+        path: [fromToken.address, commonTokens[0]],
+      },
+      {
+        dex: 'uniswap',
+        path: [commonTokens[0], toToken.address],
+      }
+    ]
+  };
+  
+  return route;
+}
+```
+
+#### **Phase 3: Full Universal Router**
+```typescript
+// utils/universal-router.ts
+class UniversalRouter {
+  async routeTrade(
+    from: {token: Token; chain: number},
+    to: {token: Token; chain: number},
+    amount: bigint
+  ): Promise<Route> {
+    
+    // Strategy 1: Same chain, direct or multi-hop
+    if (from.chain === to.chain) {
+      return await this.routeSameChain(from, to, amount);
+    }
+    
+    // Strategy 2: Cross-chain with bridge
+    return await this.routeCrossChain(from, to, amount);
+  }
+  
+  private async routeSameChain(
+    from: Token,
+    to: Token,
+    amount: bigint
+  ): Promise<Route> {
+    
+    // Step 1: Check direct pairs on all DEXes
+    const directRoutes = await this.checkDirectPairs(from, to, amount);
+    if (directRoutes.length > 0) return best(directRoutes);
+    
+    // Step 2: Find intermediary tokens
+    const intermediaries = await this.findIntermediaries(from, to);
+    
+    // Step 3: Build multi-hop routes (2-3 hops max)
+    const multiHopRoutes = await this.buildMultiHopRoutes(
+      from, to, amount, intermediaries
+    );
+    
+    // Step 4: Optimize for price, gas, success rate
+    return this.optimizeRoute(multiHopRoutes);
+  }
+}
+```
+
+### **4. Smart Intermediary Token Selection**
+
+```typescript
+// utils/token-connector.ts
+class TokenConnector {
+  // Heuristic: What makes a good intermediary token?
+  async findBestIntermediaries(
+    fromToken: Token,
+    toToken: Token
+  ): Promise<Intermediary[]> {
+    
+    const candidates = [];
+    
+    // Rule 1: Always include chain's native token
+    candidates.push({
+      token: await getNativeToken(fromToken.chainId),
+      reason: 'Native token has highest liquidity',
+      score: 100
+    });
+    
+    // Rule 2: Include major stablecoins
+    const stables = await getStablecoins(fromToken.chainId);
+    candidates.push(...stables.map(s => ({
+      token: s,
+      reason: 'Stablecoin with deep liquidity',
+      score: 90
+    })));
+    
+    // Rule 3: Include tokens that both tokens have pairs with
+    const commonPairs = await findCommonPairs(fromToken, toToken);
+    candidates.push(...commonPairs.map(p => ({
+      token: p,
+      reason: 'Direct pair exists with both tokens',
+      score: 95
+    })));
+    
+    // Rule 4: Include bridge tokens (if cross-chain needed)
+    if (fromToken.chainId !== toToken.chainId) {
+      const bridgeTokens = await getBridgeTokens(fromToken.chainId, toToken.chainId);
+      candidates.push(...bridgeTokens);
+    }
+    
+    return candidates.sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+}
+```
+
+### **5. Integration with Existing System**
+
+```typescript
+// In your existing SwapInterface.tsx
+const findUniversalRoute = async (
+  fromToken: Token,
+  toToken: Token,
+  amount: string
+): Promise<Quote | null> => {
+  
+  // Step 1: Try existing Li.FI first (for cross-chain)
+  const lifiQuote = await getLifiQuote(fromToken, toToken, amount);
+  if (lifiQuote) return lifiQuote;
+  
+  // Step 2: Try direct DEX quotes
+  const directDexQuote = await getDirectDexQuote(fromToken, toToken, amount);
+  if (directDexQuote) return directDexQuote;
+  
+  // Step 3: Try multi-hop routing
+  const multiHopRoute = await universalRouter.routeTrade(
+    fromToken,
+    toToken,
+    toSmallestUnit(amount, fromToken.decimals)
+  );
+  
+  if (multiHopRoute) {
+    // Convert to your quote format
+    return {
+      ...multiHopRoute,
+      isMultiHop: true,
+      steps: multiHopRoute.steps.length
+    };
+  }
+  
+  // Step 4: Fallback to aggregator API (1inch, 0x, etc.)
+  return await getAggregatorQuote(fromToken, toToken, amount);
+};
+```
+
+### **6. Example: Your TWC → ETH Scenario**
+
+```typescript
+// How it would work:
+const route = await universalRouter.routeTrade(
+  { address: '0xDA1060...', chain: 56 }, // TWC on BSC
+  { address: '0x0000...', chain: 1 },   // ETH on Ethereum
+  parseUnits('1000', 9) // 1000 TWC
+);
+
+// Resulting route:
+{
+  type: 'CROSS_CHAIN_WITH_MULTI_HOP',
+  steps: [
+    {
+      type: 'SWAP',
+      chain: 56,
+      dex: 'pancakeswap',
+      from: 'TWC',
+      to: 'WBNB',
+      path: ['TWC', 'WBNB']
+    },
+    {
+      type: 'BRIDGE',
+      bridge: 'stargate',
+      from: 'WBNB (BSC)',
+      to: 'WETH (Ethereum)'
+    },
+    {
+      type: 'SWAP',
+      chain: 1,
+      dex: 'uniswap',
+      from: 'WETH',
+      to: 'ETH',
+      path: ['WETH', 'ETH']
+    }
+  ],
+  totalOutput: '0.5 ETH',
+  estimatedGas: ['0.001 BNB', '0.01 ETH'],
+  successRate: 92
+}
+```
+
+### **7. Progressive Rollout Plan**
+
+**Week 1-2: Single DEX Multi-hop**
+- Implement PancakeSwap multi-hop for BSC
+- Support 2-3 hop routes via WBNB, BUSD, USDT
+- Basic UI showing route breakdown
+
+**Week 3-4: Cross-DEX on Same Chain**
+- Add Uniswap support for Ethereum
+- Route between DEXes using common tokens
+- Better price comparison
+
+**Week 5-6: Full Universal Router**
+- Integrate with existing Li.FI system
+- Add fallback to aggregators
+- Advanced routing algorithms
+
+**Week 7-8: Optimization & UI**
+- Route simulation and success prediction
+- Gas optimization
+- Beautiful route visualization
+
+### **8. Key Technical Challenges & Solutions**
+
+| **Challenge** | **Solution** |
+|--------------|-------------|
+| **Gas costs** | Use gas estimation, optimize hop count |
+| **Slippage** | Dynamic per-hop slippage calculation |
+| **Failed steps** | Atomic transactions or refund paths |
+| **Price impact** | Limit swap size based on pool liquidity |
+| **RPC latency** | Cache liquidity data, parallel requests |
+
+### **9. Starting Point - Simple Implementation**
+
+Here's a minimal version to get started:
+
+```typescript
+// utils/multi-hop/pancakeswap.ts
+export async function findPancakeSwapRoute(
+  fromToken: Address,
+  toToken: Address,
+  amountIn: bigint
+): Promise<{path: Address[]; amountOut: bigint}> {
+  
+  // Hardcoded intermediaries for BSC (expand as needed)
+  const intermediaries = [
+    '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+    '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+  ];
+  
+  // Try direct first
+  const direct = await tryDirectSwap(fromToken, toToken, amountIn);
+  if (direct) return direct;
+  
+  // Try 2-hop: A → Intermediary → B
+  for (const mid of intermediaries) {
+    const route1 = await tryDirectSwap(fromToken, mid, amountIn);
+    if (!route1) continue;
+    
+    const route2 = await tryDirectSwap(mid, toToken, route1.amountOut);
+    if (route2) {
+      return {
+        path: [fromToken, mid, toToken],
+        amountOut: route2.amountOut
+      };
+    }
+  }
+  
+  throw new Error('No route found');
+}
+```
+
+This approach transforms Tiwi from a simple aggregator into a **universal routing protocol** that can handle any token pair. The key insight is building a **liquidity graph** and finding the optimal path through it, which is exactly what the big players do.
+
+Would you like me to elaborate on any specific component or help you implement the first phase?
+
+
+
+Okay I was thinking of something, other chains like base, optimism, avalanche, etc. Which dexs do they use, and what about dexes like sushiswap, or smart markets like Gluex, Curve-finance, etc
+We are building a universal router. We need to consider:
+
+Different chains have different DEXes.
+
+We need to support multiple DEXes per chain, and multi-hop across DEXes.
+
+We need to find the best route for any token pair.
+
+Let's break down by chain:
+
+Ethereum:
+
+Uniswap V2 (and forks)
+
+Uniswap V3
+
+Sushiswap
+
+Curve (for stablecoins and pegged assets)
+
+Balancer
+
+Others (Kyber, 0x, etc.)
+
+BSC:
+
+PancakeSwap (V2 and V3)
+
+Biswap
+
+ApeSwap
+
+MDEX
+
+BabySwap
+
+Polygon:
+
+QuickSwap
+
+Sushiswap
+
+Curve
+
+Balancer
+
+Avalanche:
+
+Trader Joe
+
+Pangolin
+
+Sushiswap
+
+Curve
+
+Fantom:
+
+SpookySwap
+
+SpiritSwap
+
+Sushiswap
+
+Curve
+
+Arbitrum:
+
+Uniswap V3
+
+Sushiswap
+
+Curve
+
+Balancer
+
+Optimism:
+
+Uniswap V3
+
+Velodrome (and similar)
+
+Base:
+
+BaseSwap
+
+Sushiswap
+
+Curve
+
+We also have aggregators that can be used as fallback:
+
+1inch
+
+0x API
+
+ParaSwap
+
+However, note that we are already using Li.FI for cross-chain. We can also use Li.FI for same-chain swaps?
+Li.FI does have same-chain swaps via aggregators, but we might want to build our own for more control and lower costs.
+
+Our goal: For any chain, we want to support the most popular DEXes and be able to do multi-hop across them.
+
+Steps:
+
+For each chain, we need to know the DEXes and their router/factory addresses.
+
+We need to build a graph of tokens and pairs for each chain, but that's too heavy to do on the client.
+Instead, we can use on-chain calls to find routes for a given pair.
+
+Alternatively, we can use existing aggregator APIs for same-chain swaps (like 1inch) and only use our own multi-hop for chains where we don't have an aggregator.
+
+But we want to be self-sufficient and not rely on too many external APIs.
+
+Let's consider the following:
+
+We are already using PancakeSwap and Uniswap V2 for BSC and Ethereum respectively. We can extend this to other DEXes by:
+
+a. Having a list of DEXes per chain, with their router and factory addresses, and the swap function signatures.
+
+b. For a given token pair, we can try to get a quote from each DEX (direct pair) and then try multi-hop via the most liquid tokens (like native token, stablecoins).
+
+c. We can use a simple algorithm for multi-hop: try to route via the native token and then via stablecoins.
+
+However, doing this for every swap might be slow because we would need to make multiple on-chain calls.
+
+We can optimize by:
+
+Caching pair existence (like we already do for PancakeSwap and Uniswap).
+
+Predefining a list of intermediary tokens per chain (like WETH, USDT, USDC, DAI, etc.).
+
+Implementation plan:
+
+Create a new module: universal-router.ts that will handle routing for any chain.
+
+For each chain, define a list of DEXes (with router, factory, and init code hash for V2, and fee for V3 if needed).
+
+Define a list of intermediary tokens for each chain (usually the native Wrapped token and major stablecoins).
+
+When a route is requested for a token pair on a chain:
+
+a. Try to get a direct quote from each DEX (if the pair exists).
+
+b. If no direct pair, try a multi-hop route via each intermediary token and each DEX.
+
+Example:
+Token A -> Intermediary (via DEX 1) -> Token B (via DEX 2)
+We need to check if DEX 1 has A->Intermediary and DEX 2 has Intermediary->B.
+
+We can try all combinations of DEXes and intermediaries, but that can be too many calls.
+
+We can do:
+
+text
+For each intermediary token:
+    For each DEX:
+        Check if A -> Intermediary exists in that DEX.
+        If yes, get the quote for A -> Intermediary.
+
+    For each DEX:
+        Check if Intermediary -> B exists in that DEX.
+        If yes, get the quote for Intermediary -> B.
+
+Then combine the best A->Intermediary and Intermediary->B.
+But note: the intermediary token must be the same. So we can't do A -> USDT on DEX1 and then USDT -> B on DEX2?
+Actually we can, as long as the intermediary token is the same.
+
+We can also try 3-hop routes (A -> I1 -> I2 -> B) but that's more complex and may not be necessary for most pairs.
+
+We'll set a limit of 2 hops for now (or 3 if needed).
+
+We'll return the best route (with the highest output) among all found.
+
+We'll also consider gas costs (but that's more advanced).
+
+We'll need to simulate the swap to ensure it works and get the exact output.
+
+We'll need to generate the calldata for the swap (multi-hop swap function if available, or multiple swaps).
+
+However, note that some DEXes have native multi-hop support (like Uniswap V2's router). We can use that for 2-hop within the same DEX.
+
+For 2-hop across different DEXes, we might need to do two separate swaps, but we can bundle them in one transaction if we use a smart contract.
+
+Alternatively, we can use an aggregator contract that does the multi-hop across DEXes.
+
+But for simplicity, we can start with same-DEX multi-hop and then extend.
+
+Given the complexity, let's start with:
+
+Supporting multi-hop only within the same DEX (for DEXes that support it, like PancakeSwap and Uniswap V2).
+
+Then, if we don't find a route, we try cross-DEX multi-hop by doing two separate swaps (and we'll have to do two transactions or use a contract).
+
+However, note that we are building a web interface and we are using wallet clients. We can only send one transaction at a time.
+
+We have two options for cross-DEX multi-hop:
+
+Option 1: Use a smart contract that does the two swaps (we would need to deploy one or use an existing aggregator).
+
+Option 2: Do two separate transactions (not ideal because the user has to sign twice and the price might change).
+
+Given the constraints, let's focus on same-DEX multi-hop for now.
+
+But note: we are already using PancakeSwap and Uniswap V2, which support multi-hop in one transaction.
+
+So, for the TWC -> ETH example on BSC:
+
+TWC and ETH (native) don't have a pair. But TWC has a pair with WBNB, and WBNB can be swapped to ETH via a bridge?
+Actually, on BSC, ETH is a pegged token (like BETH or ETH). But let's assume we are swapping to WBNB and then to BETH?
+
+Actually, the user wants to swap TWC (BSC) to ETH (Ethereum). That's cross-chain. We are already using Li.FI for cross-chain.
+
+So for same-chain, we are only concerned about swapping to a token that is on the same chain.
+
+Therefore, the example should be: TWC (BSC) -> BETH (BSC) [pegged ETH on BSC].
+
+And if there's no direct pair, we can do TWC -> WBNB -> BETH.
+
+And if TWC -> WBNB exists on PancakeSwap and WBNB -> BETH exists on PancakeSwap, then we can do a multi-hop on PancakeSwap.
+
+So, let's break down the steps for same-chain multi-hop:
+
+Step 1: Check if there's a direct pair for the two tokens on any DEX on that chain.
+
+Step 2: If not, try to find an intermediary token that has pairs with both tokens on the same DEX.
+
+Step 3: If found, return the multi-hop route.
+
+Step 4: If not, try different DEXes for each hop (but then we need a contract to do the swap in one transaction).
+
+Given the complexity of cross-DEX in one transaction, we might want to use an existing aggregator contract for that chain.
+
+Alternatively, we can use the DEX's router that supports multi-hop, but only for the same DEX.
+
+Let's start with same-DEX multi-hop and then consider using aggregator contracts (like 1inch) for cross-DEX.
+
+We can integrate 1inch for Ethereum and BSC, and other aggregators for other chains.
+
+But note: we are already using Li.FI for cross-chain. Li.FI also does same-chain swaps via aggregators.
+
+However, we want to build our own for more control and possibly better rates (by combining DEXes we know).
+
+Given the scope, I propose:
+
+Phase 1: Same-chain multi-hop for supported DEXes (PancakeSwap for BSC, Uniswap V2 for Ethereum, etc.)
+
+Phase 2: Integrate 1inch (or other aggregators) for same-chain swaps as a fallback.
+
+Phase 3: Cross-DEX multi-hop using our own contract (if needed).
+
+Let's focus on Phase 1.
+
+How to implement same-DEX multi-hop for a DEX that supports it (like PancakeSwap V2):
+
+We already have a function getPancakeSwapV2Quote that returns a quote for a direct pair.
+
+We need to extend it to handle multi-hop.
+
+We can create a function getPancakeSwapV2MultiHopQuote that tries to find a route via an intermediary.
+
+Steps:
+
+text
+ 1. Check if there's a direct pair. If yes, return that.
+
+ 2. If not, try each intermediary token (we'll define a list for each chain) to see if there's a pair from tokenA to intermediary and from intermediary to tokenB.
+
+ 3. If both pairs exist, get the quote for tokenA -> intermediary and then for intermediary -> tokenB (using the output of the first as input to the second).
+
+ 4. Return the combined quote.
+We can do this for up to 2 hops (or 3 if needed).
+
+We must be cautious of gas and time. We don't want to make too many on-chain calls.
+
+We can cache the pair existence checks.
+
+We can do:
+
+text
+  For each intermediary token I:
+     Check if pair (A, I) exists and (I, B) exists.
+     If both exist, calculate the route.
+How to check if a pair exists?
+
+text
+  We can use the factory contract to get the pair address.
+We already have a function getPancakeSwapPair in pancakeswapv2.ts that does that.
+
+We can do:
+
+text
+  const pair1 = await getPancakeSwapPair(tokenA, I, chainId);
+  const pair2 = await getPancakeSwapPair(I, tokenB, chainId);
+
+  if (pair1 && pair2) {
+     // Get quote for A->I
+     const quote1 = await getPancakeSwapV2Quote(tokenA, I, amountIn, chainId);
+     // Then use quote1.amountOut as input for I->B
+     const quote2 = await getPancakeSwapV2Quote(I, tokenB, quote1.amountOut, chainId);
+     return {
+        ...quote2,
+        path: [tokenA, I, tokenB],
+        isMultiHop: true
+     };
+  }
+We can try multiple intermediaries and pick the best output.
+
+We can do this in parallel for all intermediaries.
+
+We must also consider that the intermediary token might have multiple decimals, and we need to convert amounts correctly.
+
+We already have getPancakeSwapV2Quote that handles the decimal conversion.
+
+We can do:
+
+text
+  const promises = intermediaries.map(async (I) => {
+     // Check pairs and get quotes if available
+  });
+
+  const results = await Promise.all(promises);
+  // Filter out nulls and pick the best.
+We can limit the number of intermediaries to the top 5 by liquidity (or predefined list).
+
+For BSC, we can use: WBNB, BUSD, USDT, USDC, etc.
+
+We can also try 3-hop: A -> I1 -> I2 -> B, but that's more complex and might not be needed.
+
+Let's stick to 2-hop for now.
+
+We can extend the PancakeSwapV2Quote type to include the path and whether it's multi-hop.
+
+Then in the swap execution, we need to use the appropriate router function.
+
+For PancakeSwap V2, the router function swapExactTokensForTokens can handle multi-hop if we provide the path.
+
+So we can use the same swap function for both direct and multi-hop.
+
+We just need to pass the path.
+
+Therefore, we can return:
+
+text
+  {
+     amountOut: ...,
+     path: [tokenA, I, tokenB],
+     routerAddress: ...,
+     // ... other fields
+  }
+And then in the swap execution, we use path to build the transaction.
+
+We already do that in getPancakeSwapV2SwapData.
+
+So we just need to find the path.
+
+Let's update getPancakeSwapV2Quote to try multi-hop if direct pair doesn't exist.
+
+We can rename it to getPancakeSwapV2QuoteWithMultiHop or change the existing function.
+
+We can do:
+
+text
+  export async function getPancakeSwapV2Quote(
+     fromToken: Address,
+     toToken: Address,
+     amountIn: string,
+     chainId: number
+  ): Promise<PancakeSwapV2Quote | null> {
+
+     // First, try direct pair
+     const directPair = await getPancakeSwapPair(fromToken, toToken, chainId);
+     if (directPair) {
+        // Get the direct quote
+        return getDirectPancakeSwapV2Quote(fromToken, toToken, amountIn, chainId);
+     }
+
+     // If no direct pair, try multi-hop via intermediaries
+     const intermediaries = getIntermediaryTokens(chainId);
+     let bestQuote: PancakeSwapV2Quote | null = null;
+
+     for (const I of intermediaries) {
+        // Check if fromToken -> I and I -> toToken pairs exist
+        const pair1 = await getPancakeSwapPair(fromToken, I, chainId);
+        const pair2 = await getPancakeSwapPair(I, toToken, chainId);
+
+        if (pair1 && pair2) {
+           // Get quote for fromToken -> I
+           const quote1 = await getDirectPancakeSwapV2Quote(fromToken, I, amountIn, chainId);
+           if (!quote1) continue;
+
+           // Get quote for I -> toToken using the output of quote1
+           const quote2 = await getDirectPancakeSwapV2Quote(I, toToken, quote1.amountOut, chainId);
+           if (!quote2) continue;
+
+           // Combine the quotes
+           const combinedQuote: PancakeSwapV2Quote = {
+              ...quote2,
+              path: [fromToken, I, toToken],
+              isMultiHop: true,
+           };
+
+           // Keep the best quote (highest output)
+           if (!bestQuote || BigInt(combinedQuote.amountOut) > BigInt(bestQuote.amountOut)) {
+              bestQuote = combinedQuote;
+           }
+        }
+     }
+
+     return bestQuote;
+  }
+We need to define getIntermediaryTokens for each chain.
+
+For BSC:
+return [
+'0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+'0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+'0x55d398326f99059fF775485246999027B3197955', // USDT
+'0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // USDC
+];
+
+We also need to handle the case where the token is the same as the intermediary (skip).
+
+We can do:
+
+text
+  if (fromToken.toLowerCase() === I.toLowerCase() || toToken.toLowerCase() === I.toLowerCase()) {
+     continue;
+  }
+We also need to consider that the intermediary token might be the same as fromToken or toToken.
+
+This is a basic implementation.
+
+We can extend it to 3-hop if needed, but for now 2-hop should cover most cases.
+
+We can also try multiple DEXes for the same chain.
+
+We can create a similar function for Uniswap V2 and other DEXes.
+
+Then, in the universal router, we can try each DEX and pick the best quote.
+
+We can do:
+
+text
+  const dexes = [getPancakeSwapV2Quote, getUniswapV2Quote, ...];
+
+  const quotes = await Promise.all(dexes.map(dex => dex(fromToken, toToken, amountIn, chainId)));
+
+  const validQuotes = quotes.filter(q => q !== null);
+
+  // Pick the best quote (highest output)
+We must also consider gas costs, but that's more advanced.
+
+Let's start with PancakeSwap V2 and Uniswap V2, and then add more DEXes.
+
+We can create a configuration for each chain:
+
+text
+  chainConfig = {
+     56: { // BSC
+        dexes: ['pancakeswapv2', 'biswap', ...],
+        intermediaries: [...]
+     },
+     1: { // Ethereum
+        dexes: ['uniswapv2', 'sushiswap', ...],
+        intermediaries: [...]
+     },
+     // ... other chains
+  }
+We can then loop through the dexes for the chain and try to get a quote (with multi-hop) from each.
+
+We can do:
+
+text
+  for (const dexName of chainConfig[chainId].dexes) {
+     const quote = await getDexQuote(dexName, fromToken, toToken, amountIn, chainId);
+     if (quote) {
+        // Compare and keep the best
+     }
+  }
+We can implement getDexQuote to call the appropriate function for the DEX.
+
+This is a big undertaking, but we can start with one DEX per chain and expand.
+
+Given the time, let's start with:
+
+text
+  BSC: PancakeSwap V2 (with multi-hop via WBNB, BUSD, USDT, USDC)
+  Ethereum: Uniswap V2 (with multi-hop via WETH, USDT, USDC, DAI)
+Then we can add more DEXes and chains.
+
+We also need to handle native tokens (like BNB, ETH) because they don't have an address. We use the wrapped version for the swap.
+
+We already handle that in the existing code.
+
+Let's update the existing getPancakeSwapV2Quote to support multi-hop as described.
+
+We'll create a new function getPancakeSwapV2QuoteWithMultiHop and then replace the existing one, or update it.
+
+We'll also need to update the swap execution to use the path from the quote.
+
+We already use the path in getPancakeSwapV2SwapData, so it should work.
+
+Let's do it step by step.
+
+Step 1: Update getPancakeSwapV2Quote to try multi-hop if direct pair doesn't exist.
+
+Step 2: Define the intermediary tokens for BSC.
+
+Step 3: Test with TWC and BETH (or any two tokens that don't have a direct pair but share a common intermediary).
+
+Step 4: Then do the same for Uniswap V2 on Ethereum.
+
+Step 5: Then add more DEXes.
+
+We can also consider using the DEX's native multi-hop function (like PancakeSwap's router supports multi-hop in one transaction).
+
+We are already using the router's getAmountsOut which supports multi-hop if we provide a path.
+
+So we can use getAmountsOut for the multi-hop quote.
+
+We can do:
+
+text
+  const amounts = await router.readContract({
+     address: routerAddress,
+     abi: ROUTER_ABI,
+     functionName: 'getAmountsOut',
+     args: [BigInt(amountIn), [fromToken, I, toToken]]
+  });
+
+  if (amounts && amounts[amounts.length - 1] > 0) {
+     return {
+        amountOut: amounts[amounts.length - 1].toString(),
+        path: [fromToken, I, toToken],
+        // ... other fields
+     };
+  }
+This is more efficient because it's one call to the router.
+
+We can try multiple paths (different intermediaries) and pick the best.
+
+We can do:
+
+text
+  const paths = intermediaries.map(I => [fromToken, I, toToken]);
+
+  for (const path of paths) {
+     try {
+        const amounts = await router.readContract({
+           address: routerAddress,
+           abi: ROUTER_ABI,
+           functionName: 'getAmountsOut',
+           args: [BigInt(amountIn), path]
+        });
+        if (amounts && amounts[amounts.length - 1] > 0) {
+           // Keep the best
+        }
+     } catch (error) {
+        // If the path is invalid, the router will revert. We can skip.
+     }
+  }
+We can do this in parallel, but note that if one fails, it won't affect the others.
+
+We can use Promise.allSettled to try all paths.
+
+This is much better because we don't need to check pair existence individually.
+
+Let's do:
+
+text
+  const promises = paths.map(async (path) => {
+     try {
+        const amounts = await router.readContract({
+           address: routerAddress,
+           abi: ROUTER_ABI,
+           functionName: 'getAmountsOut',
+           args: [BigInt(amountIn), path]
+        });
+        return {
+           success: true,
+           amounts,
+           path
+        };
+     } catch (error) {
+        return {
+           success: false,
+           error,
+           path
+        };
+     }
+  });
+
+  const results = await Promise.all(promises);
+
+  const validResults = results.filter(r => r.success && r.amounts && r.amounts[r.amounts.length - 1] > 0);
+
+  // Then pick the best.
+We can also try 3-hop paths: [fromToken, I1, I2, toToken]
+
+We can generate the paths:
+
+text
+  For 2-hop: [A, I, B] for each I in intermediaries.
+  For 3-hop: [A, I1, I2, B] for each I1, I2 in intermediaries (but note: I1 and I2 must be different and not A or B).
+We can limit the number of intermediaries to 5, so 2-hop: 5 paths, 3-hop: 5*4=20 paths.
+
+We can do 2-hop first, and if no valid path, then try 3-hop.
+
+We can also use the router's getAmountsOut for 3-hop.
+
+Let's implement:
+
+text
+  async function getBestPath(fromToken, toToken, amountIn, intermediaries, maxHops = 3) {
+     const router = getRouter(chainId);
+
+     // Generate 2-hop paths
+     const twoHopPaths = intermediaries.map(I => [fromToken, I, toToken]);
+
+     // Generate 3-hop paths
+     const threeHopPaths = [];
+     for (const I1 of intermediaries) {
+        for (const I2 of intermediaries) {
+           if (I1 === I2) continue;
+           threeHopPaths.push([fromToken, I1, I2, toToken]);
+        }
+     }
+
+     const allPaths = [...twoHopPaths, ...threeHopPaths];
+
+     // Try each path
+     const promises = allPaths.map(async (path) => {
+        try {
+           const amounts = await router.readContract({
+              address: routerAddress,
+              abi: ROUTER_ABI,
+              functionName: 'getAmountsOut',
+              args: [BigInt(amountIn), path]
+           });
+           return {
+              success: true,
+              amounts,
+              path
+           };
+        } catch (error) {
+           return {
+              success: false,
+              error,
+              path
+           };
+        }
+     });
+
+     const results = await Promise.allSettled(promises);
+
+     let bestOutput = 0n;
+     let bestPath = null;
+
+     for (const result of results) {
+        if (result.status === 'fulfilled' && result.value.success) {
+           const output = result.value.amounts[result.value.amounts.length - 1];
+           if (output > bestOutput) {
+              bestOutput = output;
+              bestPath = result.value.path;
+           }
+        }
+     }
+
+     return { bestOutput, bestPath };
+  }
+We can then use the bestPath and bestOutput to build the quote.
+
+We must also consider that the router might not support paths longer than 2 or 3 hops.
+
+We can set a maximum of 3 hops.
+
+We can also consider the gas cost of more hops (each hop adds gas).
+
+We can adjust the best output by estimated gas, but that's more complex.
+
+Let's start with this.
+
+We'll implement this for PancakeSwap V2 and then for other DEXes.
+
+We need to get the router address for each DEX.
+
+We can store the router addresses in a config.
+
+Let's create a new file universal-router.ts and start building.
+
+We'll define:
+
+text
+  interface DEX {
+     name: string;
+     routerAddress: Address;
+     factoryAddress: Address;
+     routerABI: any; // We can use the standard Uniswap V2 router ABI for most
+     initCodeHash: string; // For pair address calculation (if needed)
+  }
+
+  const DEXES: Record<number, DEX[]> = {
+     56: [
+        {
+           name: 'PancakeSwap V2',
+           routerAddress: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
+           factoryAddress: '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73',
+           routerABI: PANCAKE_ROUTER_ABI,
+           initCodeHash: '0x00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5'
+        },
+        // ... other DEXes on BSC
+     ],
+     1: [
+        {
+           name: 'Uniswap V2',
+           routerAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+           factoryAddress: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f',
+           routerABI: UNISWAP_V2_ROUTER_ABI,
+           initCodeHash: '0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f'
+        },
+        // ... other DEXes on Ethereum
+     ],
+     // ... other chains
+  };
+We can then use the router ABIs to call getAmountsOut.
+
+We can also use the factory and initCodeHash to compute pair addresses, but we don't need that if we use the router's getAmountsOut.
+
+However, note that the router's getAmountsOut will revert if the path is invalid (i.e., a pair doesn't exist). So we can try and catch.
+
+We can also use the factory to check if a pair exists, but that would be more calls.
+
+Using getAmountsOut is simpler and gives the output amount.
+
+We can do:
+
+text
+  for (const dex of DEXES[chainId]) {
+     const { bestOutput, bestPath } = await getBestPathForDex(dex, fromToken, toToken, amountIn, intermediaries);
+     if (bestOutput > 0) {
+        // We have a route from this DEX
+     }
+  }
+We can then compare the outputs from different DEXes and pick the best.
+
+We also need to consider that the token addresses might be in different formats (checksummed or not). We should use checksummed addresses.
+
+We can use getAddress from viem to normalize.
+
+We also need to handle native tokens (like BNB, ETH). We can convert them to their wrapped version for the swap.
+
+We already have a function isNativeToken and we convert to wrapped token address.
+
+Let's assume the fromToken and toToken are already wrapped if they are native? Or we can do:
+
+text
+  For the swap, we need to use the wrapped version for the token addresses in the path.
+
+  So if `fromToken` is native, we use the wrapped native token address for the swap, but the user will send the native token.
+
+  We already handle that in the existing swap code.
+We can do:
+
+text
+  const fromTokenAddress = isNativeToken(fromToken.address) ? WNATIVE[chainId] : fromToken.address;
+
+  Similarly for toToken.
+Then use these addresses in the path.
+
+We can define WNATIVE for each chain.
+
+Let's start with BSC and Ethereum.
+
+We can implement step by step.
+
+Given the complexity, I think we should start with a simple version for PancakeSwap on BSC and then expand.
+
+We can create a new branch and implement:
+
+text
+  - A new function `getUniversalQuote` that will try multiple DEXes and multi-hop.
+
+  - We'll start with BSC and PancakeSwap.
+
+  - Then add Uniswap for Ethereum.
+
+  - Then add more DEXes.
+We can also use the existing getPancakeSwapV2Quote and getUniswapV2Quote and extend them to support multi-hop.
+
+We can do:
+
+text
+  // In universal-router.ts
+  export async function getUniversalQuote(
+     fromToken: Token,
+     toToken: Token,
+     amount: string,
+     chainId: number
+  ): Promise<UniversalQuote | null> {
+     // Convert amount to smallest unit
+     const amountIn = toSmallestUnit(amount, fromToken.decimals);
+
+     // Get the wrapped token addresses
+     const fromTokenAddress = isNativeToken(fromToken.address) ? WNATIVE[chainId] : fromToken.address;
+     const toTokenAddress = isNativeToken(toToken.address) ? WNATIVE[chainId] : toToken.address;
+
+     // Get the DEXes for the chain
+     const dexes = DEXES[chainId] || [];
+
+     let bestQuote: UniversalQuote | null = null;
+
+     for (const dex of dexes) {
+        const quote = await getDexQuote(dex, fromTokenAddress, toTokenAddress, amountIn, chainId);
+        if (quote && (!bestQuote || BigInt(quote.amountOut) > BigInt(bestQuote.amountOut))) {
+           bestQuote = quote;
+        }
+     }
+
+     return bestQuote;
+  }
+We can define UniversalQuote to include:
+
+text
+  amountOut: string;
+  path: Address[];
+  dex: string;
+  routerAddress: Address;
+  // ... other needed fields for swap execution
+We can then use this universal quote in the swap interface.
+
+We can replace the existing DEX-specific quote functions with this universal one, or use it as a fallback.
+
+We can do:
+
+text
+  // In SwapInterface.tsx, when fetching quote:
+  const quote = await getUniversalQuote(fromToken, toToken, fromAmount, fromChain);
+We'll need to update the swap execution to handle the universal quote.
+
+We can create a universal swap execution function that uses the router address and path from the quote.
+
+We can use the same getPancakeSwapV2SwapData for PancakeSwap, but now we have multiple DEXes.
+
+We can create a getSwapData function that takes the universal quote and returns the transaction data.
+
+We can have a mapping of DEX name to swap data function.
+
+We can do:
+
+text
+  const SWAP_FUNCTIONS = {
+     'PancakeSwap V2': getPancakeSwapV2SwapData,
+     'Uniswap V2': getUniswapV2SwapData,
+     // ... other DEXes
+  };
+
+  const swapData = SWAP_FUNCTIONS[quote.dex](quote, ...);
+We can then use the swapData to send the transaction.
+
+This is a big refactor, but it will make it easier to add more DEXes in the future.
+
+Let's do it step by step.
+
+Step 1: Create universal-router.ts with the getUniversalQuote function (for BSC and Ethereum only, with PancakeSwap and Uniswap).
+
+Step 2: Update SwapInterface to use getUniversalQuote for same-chain swaps.
+
+Step 3: Update the swap execution to use the universal quote.
+
+We can keep the existing code for cross-chain (Li.FI) and for wallet-to-wallet transfers.
+
+We can also keep the existing DEX-specific functions for now and use them inside the universal router.
+
+We can do:
+
+text
+  In `getUniversalQuote`:
+     if (chainId === 56) {
+        return await getPancakeSwapV2QuoteWithMultiHop(fromTokenAddress, toTokenAddress, amountIn, chainId);
+     } else if (chainId === 1) {
+        return await getUniswapV2QuoteWithMultiHop(fromTokenAddress, toTokenAddress, amountIn, chainId);
+     }
+Then, we can extend to more DEXes.
+
+Let's start by updating getPancakeSwapV2Quote to support multi-hop and then use it in the universal router.
+
+We can do the same for Uniswap V2.
+
+We can then add more DEXes.
+
+Given the time, let's start with updating getPancakeSwapV2Quote for multi-hop and then integrate it.
+
+We'll do:
+
+text
+  // In pancakeswapv2.ts
+  export async function getPancakeSwapV2Quote(
+     fromToken: Address,
+     toToken: Address,
+     amountIn: string,
+     chainId: number
+  ): Promise<PancakeSwapV2Quote | null> {
+     // Try direct pair
+     const direct = await getDirectPancakeSwapV2Quote(fromToken, toToken, amountIn, chainId);
+     if (direct) {
+        return direct;
+     }
+
+     // If no direct pair, try multi-hop
+     const intermediaries = getIntermediaryTokens(chainId);
+     const routerAddress = PANCAKESWAP_V2_ROUTER[chainId];
+     if (!routerAddress) return null;
+
+     const publicClient = getCachedClient(chainId);
+
+     // Generate 2-hop and 3-hop paths
+     const twoHopPaths = intermediaries.map(I => [fromToken, I, toToken]);
+     const threeHopPaths = [];
+     for (const I1 of intermediaries) {
+        for (const I2 of intermediaries) {
+           if (I1 === I2) continue;
+           threeHopPaths.push([fromToken, I1, I2, toToken]);
+        }
+     }
+
+     const allPaths = [...twoHopPaths, ...threeHopPaths];
+
+     const promises = allPaths.map(async (path) => {
+        try {
+           const amounts = await publicClient.readContract({
+              address: routerAddress,
+              abi: PANCAKE_ROUTER_ABI,
+              functionName: 'getAmountsOut',
+              args: [BigInt(amountIn), path]
+           });
+           return {
+              success: true,
+              amounts,
+              path
+           };
+        } catch (error) {
+           return {
+              success: false,
+              error,
+              path
+           };
+        }
+     });
+
+     const results = await Promise.allSettled(promises);
+
+     let bestOutput = 0n;
+     let bestPath: Address[] | null = null;
+
+     for (const result of results) {
+        if (result.status === 'fulfilled' && result.value.success) {
+           const output = result.value.amounts[result.value.amounts.length - 1];
+           if (output > bestOutput) {
+              bestOutput = output;
+              bestPath = result.value.path;
+           }
+        }
+     }
+
+     if (bestPath && bestOutput > 0) {
+        return {
+           amountOut: bestOutput.toString(),
+           path: bestPath,
+           routerAddress,
+           factoryAddress: PANCAKESWAP_V2_FACTORY[chainId]!,
+           tokenIn: fromToken,
+           tokenOut: toToken,
+           needsPairCreation: false,
+           priceImpact: 0, // We don't calculate this for multi-hop yet
+           isFeeOnTransfer: false,
+           slippage: 0.5, // Default
+        };
+     }
+
+     return null;
+  }
+We need to define getIntermediaryTokens for BSC.
+
+We can do:
+
+text
+  function getIntermediaryTokens(chainId: number): Address[] {
+     if (chainId === 56) {
+        return [
+           '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+           '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+           '0x55d398326f99059fF775485246999027B3197955', // USDT
+           '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // USDC
+        ];
+     }
+     // For other chains, return empty for now
+     return [];
+  }
+We also need to update getDirectPancakeSwapV2Quote to return a PancakeSwapV2Quote for a direct pair.
+
+We can extract the direct quote logic from the existing getPancakeSwapV2Quote and put it in getDirectPancakeSwapV2Quote.
+
+Then we can use it in the new getPancakeSwapV2Quote (which now does multi-hop).
+
+We can do the same for Uniswap V2.
+
+Let's do this step by step.
+
+Given the complexity, I think we should start by creating a new branch and implementing the multi-hop for PancakeSwap.
+
+Then we can test it with TWC and another token that doesn't have a direct pair.
+
+Once it works, we can integrate it into the universal router and then add more DEXes.
+
+We can do:
+
+text
+  Step 1: Update `getPancakeSwapV2Quote` to support multi-hop (as above).
+
+  Step 2: Test on BSC.
+
+  Step 3: Update `getUniswapV2Quote` similarly.
+
+  Step 4: Create `universal-router.ts` that uses these two for BSC and Ethereum.
+
+  Step 5: Update SwapInterface to use the universal router for same-chain swaps.
+We can then gradually add more DEXes.
+
+We can also add more chains.
+
+Let me know if you want to proceed with this plan.
+
+We can also consider using existing aggregator APIs for same-chain swaps as a fallback, but let's build our own for now.
+
+We can always add aggregators later.
+
+Let's start.
+
+
+That's just on the side note
+But I would love you to explain more on Liquidity Graph builder, how are we going to achieve such that it supports other tokens not just TWC, etc. now focusing on EVM chains alone
+We are building a universal liquidity graph that can map all token pairs across multiple DEXes on EVM chains.
+The goal is to create a graph where nodes are tokens and edges are trading pairs (with DEX and liquidity information).
+This graph will allow us to find paths (direct or multi-hop) between any two tokens.
+
+Steps:
+
+For each chain, we have a set of DEXes (UniswapV2, SushiSwap, PancakeSwap, etc.) with their factory addresses.
+
+We can fetch all pairs from these factories (either by listening to PairCreated events or through subgraphs).
+
+We then build a graph where:
+
+Nodes: Token addresses
+
+Edges: Pair addresses, with data on DEX, reserves, and other metadata.
+
+However, note that fetching all pairs for a chain (like Ethereum) can be huge and expensive.
+
+Alternative approach: Use a hybrid method.
+a. For the initial version, we can use a known list of major tokens and only consider pairs that involve these tokens.
+b. We can also use DEX subgraphs to query pairs by token address (if we are looking for a route for a specific token pair).
+
+Given the complexity, we might start with a simplified version for the MVP.
+
+Simplified MVP Plan:
+
+We will focus on a few major DEXes per chain (e.g., UniswapV2, SushiSwap on Ethereum; PancakeSwap on BSC).
+
+We will not build the entire graph upfront. Instead, we will build it on-demand and cache it.
+
+We will use the following approach for a given chain and token pair (A, B):
+a. Check if there is a direct pair on any DEX.
+b. If not, find intermediary tokens that have pairs with both A and B.
+c. We can use a list of common intermediary tokens (WETH, WBNB, USDT, USDC, DAI, etc.) for each chain.
+
+We can also use external APIs (like DexScreener) to get pair information for a token.
+
+Let's design the LiquidityGraph class.
+
+Note: We are only considering EVM chains for now.
+
+Implementation:
+
+We will have a class LiquidityGraph that is chain-specific.
+
+Steps for building the graph for a chain:
+
+Initialize with chain ID and a list of DEX configurations (factory address, router address, fee, etc.).
+
+We can use the factory to get all pairs, but that's heavy. Instead, we can use a subgraph or an external API.
+
+Given that we are building a universal router, we might rely on external APIs for pair data.
+
+However, for the sake of decentralization and reliability, we should eventually use on-chain data.
+
+But for MVP, let's use DexScreener API to get pairs for a token.
+
+We can do:
+
+For token A, fetch all pairs from DexScreener (or similar) that are on the chain we are interested in.
+
+Then, we can build a local graph for token A and token B and their connections.
+
+We can then run a BFS (breadth-first search) to find a path from A to B.
+
+We will design the graph to be built incrementally.
+
+Let's define:
+
+Node: token address (string)
+Edge: {
+dex: string,
+pairAddress: string,
+token0: string,
+token1: string,
+reserve0: string,
+reserve1: string,
+}
+
+We will use a neighbor list for the graph: Map<string, Edge[]>
+
+Algorithm for finding path:
+
+function findPath(A, B, maxHops=3) {
+// BFS from A to B, up to maxHops
+// We also want to consider the liquidity (reserves) to avoid paths with very low liquidity.
+
+text
+ We can also assign weights to edges (like 1 for a direct hop, and more for multiple hops) and use Dijkstra if we want the shortest path.
+
+ But for now, BFS is enough.
+
+ We want to return the first path we find, or the best path (with highest liquidity?).
+
+ We can also consider the DEX fees in the future.
+}
+
+We will cache the graph for a token for a certain period (e.g., 5 minutes) to avoid too many API calls.
+
+We will have a method to add edges for a token (by fetching from DexScreener).
+
+We will have a method to find intermediaries for two tokens.
+
+Let's write the code for the LiquidityGraph class.
+
+Note: This is a simplified version for MVP.
+
+Steps for findPath:
+
+If we have not fetched neighbors for token A, fetch from DexScreener and build edges for token A.
+
+Similarly for token B.
+
+Run BFS from A to B, up to maxHops.
+
+However, note that the graph is built only for tokens we have fetched. We don't have the entire chain graph.
+
+Alternative: We can fetch for both tokens and then try to find a common intermediary.
+
+We can do:
+
+text
+Fetch all pairs for token A and token B.
+
+Then, we have two sets of tokens that are connected to A and B.
+
+We look for an intersection (common token) between the two sets.
+
+If found, then we have a path: A -> commonToken -> B.
+
+If not, we can try to go one more hop: for each token connected to A, fetch its pairs and see if it connects to B.
+But note: We are limited by the number of API calls we can make.
+
+We can try to use a fixed list of common intermediaries for each chain.
+
+Let's define:
+
+text
+For each chain, we have a list of common intermediary tokens (like WETH, USDT, etc.).
+Then, we can check:
+
+text
+Does A have a pair with any of the common intermediaries? 
+Does B have a pair with the same common intermediary?
+If yes, then we have a path.
+
+We can also try multiple hops through common intermediaries.
+
+We can design the algorithm as:
+
+text
+Step 1: Check direct pair between A and B (on any DEX).
+Step 2: Check for a common intermediary from the fixed list.
+Step 3: Check for a 3-hop path: A -> common1 -> common2 -> B.
+We can do this by:
+
+text
+For A, get all pairs (or check against the fixed list).
+For B, get all pairs (or check against the fixed list).
+Let's code accordingly.
+
+We are going to design:
+
+text
+class LiquidityGraph {
+  chainId: number;
+  commonIntermediaries: Address[]; // for this chain
+
+  async getPairsForToken(token: Address): Promise<Edge[]> {
+    // fetch from DexScreener and format
+  }
+
+  async findPath(A: Address, B: Address, maxHops: number = 3): Promise<Path | null> {
+    // Try direct pair
+    // Try 2-hop via common intermediaries
+    // Try 3-hop via two common intermediaries
+  }
+}
+Let's assume we have a function to get pairs for a token from DexScreener.
+
+We'll use the following endpoint: https://api.dexscreener.com/latest/dex/tokens/{tokenAddress}
+
+But note: This returns pairs for all chains. We have to filter by chainId.
+
+We can also use other APIs that are chain-specific.
+
+Alternatively, we can use the DEX subgraphs, but that requires more setup.
+
+For now, let's use DexScreener and filter by chainId.
+
+Steps for getPairsForToken:
+
+Call DexScreener API for the token.
+
+Filter by chainId (we have to map chainId to chain name, e.g., 1 -> ethereum, 56 -> bsc, etc.).
+
+Format the data into Edge format.
+
+Let's code accordingly.
+
+We'll also need to map chainId to chain name for DexScreener.
+
+We can do:
+
+text
+const CHAIN_ID_TO_NAME: Record<number, string> = {
+  1: 'ethereum',
+  56: 'bsc',
+  137: 'polygon',
+  42161: 'arbitrum',
+  10: 'optimism',
+  250: 'fantom',
+  43114: 'avalanche',
+};
+Now, let's write the LiquidityGraph class.
+
+Note: We are not building the entire graph. We are building on-demand for the tokens we are interested in.
+
+We'll cache the pairs for a token for a certain time (e.g., 5 minutes) to avoid too many API calls.
+
+Let's code accordingly.
+
+
+
+# **Building a Universal Liquidity Graph for EVM Chains**
+
+Let me explain in detail how to build a liquidity graph that can route **any token** across **all EVM chains**. This is how 1inch, 0x, and other aggregators work internally.
+
+## **1. The Core Concept: Token as Node, Pair as Edge**
+
+```
+Graph Representation:
+Token A (Node) ───[Pair 1 @ DEX1]───→ Token B (Node)
+Token A (Node) ───[Pair 2 @ DEX2]───→ Token C (Node)
+Token B (Node) ───[Pair 3 @ DEX3]───→ Token C (Node)
+```
+
+## **2. Architecture of the Liquidity Graph**
+
+### **A. Graph Structure in Code**
+```typescript
+// types/graph.ts
+interface TokenNode {
+  id: string; // `${chainId}:${address.toLowerCase()}`
+  chainId: number;
+  address: string;
+  symbol: string;
+  decimals: number;
+  liquidityScore: number; // 0-100, based on total liquidity across all pairs
+  type: 'native' | 'stable' | 'bluechip' | 'altcoin' | 'bridge';
+}
+
+interface PairEdge {
+  id: string; // `${chainId}:${pairAddress}`
+  dex: string; // 'uniswapv2', 'pancakeswap', 'curve', etc.
+  chainId: number;
+  tokenA: string; // TokenNode.id
+  tokenB: string; // TokenNode.id
+  pairAddress: string;
+  reserveA: bigint;
+  reserveB: bigint;
+  liquidityUSD: number; // Total liquidity in USD
+  fee: number; // 0.003 for Uniswap V2, 0.0005 for V3, etc.
+  lastUpdated: number; // timestamp
+}
+
+interface LiquidityGraph {
+  nodes: Map<string, TokenNode>; // tokenId → TokenNode
+  edges: Map<string, PairEdge>; // edgeId → PairEdge
+  adjacency: Map<string, Set<string>>; // tokenId → Set of connected tokenIds
+}
+```
+
+### **B. Building the Graph: Multi-Source Data Collection**
+
+```typescript
+// builders/liquidity-graph-builder.ts
+class LiquidityGraphBuilder {
+  private graph: LiquidityGraph;
+  private dataSources = [
+    'onchain_factories',
+    'dex_subgraphs',
+    'dexscreener_api',
+    'coingecko_api',
+    'custom_indexers'
+  ];
+  
+  async buildForChain(chainId: number): Promise<LiquidityGraph> {
+    console.log(`Building liquidity graph for chain ${chainId}...`);
+    
+    // Step 1: Fetch all pairs from DEX factories (parallel)
+    const factories = DEX_REGISTRY[chainId].map(d => d.factory);
+    const allPairs = await this.fetchAllPairsFromFactories(factories, chainId);
+    
+    // Step 2: Enrich with liquidity data
+    await this.enrichPairsWithReserves(allPairs);
+    
+    // Step 3: Build graph structure
+    this.buildGraphFromPairs(allPairs);
+    
+    // Step 4: Add known token metadata
+    await this.enrichTokensWithMetadata(chainId);
+    
+    // Step 5: Calculate liquidity scores
+    this.calculateLiquidityScores();
+    
+    return this.graph;
+  }
+  
+  private async fetchAllPairsFromFactories(
+    factories: Address[], 
+    chainId: number
+  ): Promise<PairData[]> {
+    // Method 1: Use TheGraph subgraphs (fastest)
+    const subgraphPairs = await this.fetchFromSubgraphs(chainId);
+    
+    // Method 2: On-chain factory events (backup)
+    const onchainPairs = await this.fetchFromOnChainEvents(factories, chainId);
+    
+    // Method 3: External APIs (DexScreener, etc.)
+    const apiPairs = await this.fetchFromAPIs(chainId);
+    
+    // Merge and deduplicate
+    return this.mergePairData([...subgraphPairs, ...onchainPairs, ...apiPairs]);
+  }
+  
+  private buildGraphFromPairs(pairs: PairData[]): void {
+    this.graph = {
+      nodes: new Map(),
+      edges: new Map(),
+      adjacency: new Map()
+    };
+    
+    for (const pair of pairs) {
+      // Add nodes for both tokens
+      this.addTokenNode(pair.tokenA);
+      this.addTokenNode(pair.tokenB);
+      
+      // Add edge between tokens
+      const edgeId = `${pair.chainId}:${pair.pairAddress}`;
+      const edge: PairEdge = {
+        id: edgeId,
+        dex: pair.dex,
+        chainId: pair.chainId,
+        tokenA: pair.tokenA.id,
+        tokenB: pair.tokenB.id,
+        pairAddress: pair.pairAddress,
+        reserveA: pair.reserveA,
+        reserveB: pair.reserveB,
+        liquidityUSD: pair.liquidityUSD,
+        fee: pair.fee,
+        lastUpdated: Date.now()
+      };
+      
+      this.graph.edges.set(edgeId, edge);
+      
+      // Update adjacency lists
+      this.addAdjacency(pair.tokenA.id, pair.tokenB.id);
+      this.addAdjacency(pair.tokenB.id, pair.tokenA.id);
+    }
+  }
+}
+```
+
+## **3. Data Collection Strategies**
+
+### **Strategy A: Subgraph Queries (Fastest)**
+```typescript
+// queries/subgraph-queries.ts
+const UNISWAP_V2_SUBGRAPH_QUERY = `
+  query GetPairs($first: Int!, $skip: Int!) {
+    pairs(
+      first: $first,
+      skip: $skip,
+      orderBy: reserveUSD,
+      orderDirection: desc
+    ) {
+      id
+      token0 {
+        id
+        symbol
+        decimals
+        name
+      }
+      token1 {
+        id
+        symbol
+        decimals
+        name
+      }
+      reserve0
+      reserve1
+      reserveUSD
+      volumeUSD
+      txCount
+    }
+  }
+`;
+
+const PANCAKESWAP_SUBGRAPH_QUERY = `
+  query GetPairs($first: Int!, $skip: Int!) {
+    pairs(
+      first: $first,
+      skip: $skip,
+      orderBy: volumeUSD,
+      orderDirection: desc
+    ) {
+      id
+      token0 {
+        id
+        symbol
+        decimals
+      }
+      token1 {
+        id
+        symbol
+        decimals
+      }
+      reserve0
+      reserve1
+      reserveUSD
+    }
+  }
+`;
+```
+
+### **Strategy B: Factory Event Listening (On-chain)**
+```typescript
+// listeners/factory-listener.ts
+class FactoryEventListener {
+  async listenForNewPairs(
+    factoryAddress: Address,
+    chainId: number,
+    dexName: string
+  ): Promise<void> {
+    // ABI for PairCreated event (standard across Uniswap V2 forks)
+    const factoryABI = [
+      'event PairCreated(address indexed token0, address indexed token1, address pair, uint)'
+    ];
+    
+    const publicClient = createPublicClientForChain(chainId);
+    
+    // Get historical pairs
+    const filter = await publicClient.createEventFilter({
+      address: factoryAddress,
+      event: parseAbiItem('event PairCreated(address, address, address, uint)'),
+      fromBlock: 0n // From genesis
+    });
+    
+    const logs = await publicClient.getFilterLogs({ filter });
+    
+    for (const log of logs) {
+      const [token0, token1, pairAddress] = log.args;
+      await this.processNewPair(
+        token0!,
+        token1!,
+        pairAddress!,
+        chainId,
+        dexName
+      );
+    }
+    
+    // Subscribe to new pairs
+    const unwatch = publicClient.watchEvent({
+      address: factoryAddress,
+      event: parseAbiItem('event PairCreated(address, address, address, uint)'),
+      onLogs: (logs) => {
+        // Update graph in real-time
+        logs.forEach(log => {
+          // Add new pair to graph
+        });
+      }
+    });
+  }
+}
+```
+
+### **Strategy C: External API Integration**
+```typescript
+// api/dexscreener-integration.ts
+class DexScreenerIntegration {
+  private BASE_URL = 'https://api.dexscreener.com/latest/dex';
+  
+  async getTokenPairs(tokenAddress: string, chainId: number): Promise<PairData[]> {
+    // Map chainId to DexScreener chain identifier
+    const chainMap = {
+      1: 'ethereum',
+      56: 'bsc',
+      137: 'polygon',
+      42161: 'arbitrum',
+      10: 'optimism',
+      8453: 'base',
+      43114: 'avalanche',
+      250: 'fantom'
+    };
+    
+    const chainName = chainMap[chainId];
+    if (!chainName) return [];
+    
+    const response = await fetch(
+      `${this.BASE_URL}/tokens/${chainName}:${tokenAddress}`
+    );
+    
+    const data = await response.json();
+    
+    return data.pairs.map((pair: any) => ({
+      dex: pair.dexId,
+      chainId,
+      tokenA: {
+        address: pair.baseToken.address,
+        symbol: pair.baseToken.symbol,
+        decimals: pair.baseToken.decimals
+      },
+      tokenB: {
+        address: pair.quoteToken.address,
+        symbol: pair.quoteToken.symbol,
+        decimals: pair.quoteToken.decimals
+      },
+      pairAddress: pair.pairAddress,
+      reserveA: BigInt(pair.liquidity.base || 0),
+      reserveB: BigInt(pair.liquidity.quote || 0),
+      liquidityUSD: pair.liquidity.usd || 0,
+      fee: pair.fees || 0.003
+    }));
+  }
+  
+  async getAllPairsForChain(chainId: number, limit = 1000): Promise<PairData[]> {
+    // DexScreener has a /dex endpoint that returns top pairs
+    const chainMap = { /* ... same as above ... */ };
+    const chainName = chainMap[chainId];
+    
+    const response = await fetch(
+      `${this.BASE_URL}/search?q=${chainName}&limit=${limit}`
+    );
+    
+    const data = await response.json();
+    
+    // Parse and deduplicate
+    return this.parsePairsResponse(data, chainId);
+  }
+}
+```
+
+## **4. Smart Graph Building (Handling Scale)**
+
+### **A. Tiered Graph Approach**
+```typescript
+// builders/tiered-graph-builder.ts
+class TieredLiquidityGraph {
+  // Level 1: High-liquidity pairs (> $1M)
+  private tier1: LiquidityGraph;
+  
+  // Level 2: Medium-liquidity pairs ($100K - $1M)
+  private tier2: LiquidityGraph;
+  
+  // Level 3: Low-liquidity pairs (< $100K)
+  private tier3: LiquidityGraph;
+  
+  async buildTieredGraph(chainId: number): Promise<void> {
+    const allPairs = await this.fetchAllPairs(chainId);
+    
+    // Split by liquidity tiers
+    const { tier1Pairs, tier2Pairs, tier3Pairs } = this.splitByLiquidityTiers(allPairs);
+    
+    // Build each tier separately
+    this.tier1 = this.buildGraphFromPairs(tier1Pairs);
+    this.tier2 = this.buildGraphFromPairs(tier2Pairs);
+    this.tier3 = this.buildGraphFromPairs(tier3Pairs);
+    
+    // Connect tiers through common tokens
+    this.connectTiers();
+  }
+  
+  private splitByLiquidityTiers(pairs: PairData[]): {
+    tier1Pairs: PairData[];
+    tier2Pairs: PairData[];
+    tier3Pairs: PairData[];
+  } {
+    return {
+      tier1Pairs: pairs.filter(p => p.liquidityUSD > 1_000_000),
+      tier2Pairs: pairs.filter(p => p.liquidityUSD > 100_000 && p.liquidityUSD <= 1_000_000),
+      tier3Pairs: pairs.filter(p => p.liquidityUSD <= 100_000)
+    };
+  }
+  
+  findPath(
+    fromToken: TokenNode,
+    toToken: TokenNode,
+    amount: bigint,
+    options: {
+      minLiquidity?: number;
+      maxHops?: number;
+    } = {}
+  ): Path[] {
+    // Strategy: Try tier1 first, then tier2, then tier3
+    const paths = [];
+    
+    // Try high-liquidity routes first
+    const tier1Paths = this.findPathInGraph(this.tier1, fromToken, toToken, amount, options);
+    if (tier1Paths.length > 0) return tier1Paths.slice(0, 3);
+    
+    // Fall back to tier2
+    const tier2Paths = this.findPathInGraph(this.tier2, fromToken, toToken, amount, options);
+    if (tier2Paths.length > 0) return tier2Paths.slice(0, 3);
+    
+    // Finally try tier3
+    const tier3Paths = this.findPathInGraph(this.tier3, fromToken, toToken, amount, options);
+    return tier3Paths.slice(0, 3);
+  }
+}
+```
+
+### **B. On-Demand Graph Expansion**
+```typescript
+// builders/on-demand-graph.ts
+class OnDemandLiquidityGraph {
+  private baseGraph: LiquidityGraph; // Pre-built with top tokens
+  private expandedNodes: Set<string> = new Set();
+  
+  async findPathWithExpansion(
+    fromTokenId: string,
+    toTokenId: string,
+    amount: bigint
+  ): Promise<Path | null> {
+    // Try with existing graph first
+    const path = this.findPathInBaseGraph(fromTokenId, toTokenId, amount);
+    if (path) return path;
+    
+    // If not found, expand graph around these tokens
+    await this.expandGraphAroundToken(fromTokenId);
+    await this.expandGraphAroundToken(toTokenId);
+    
+    // Try again with expanded graph
+    return this.findPathInBaseGraph(fromTokenId, toTokenId, amount);
+  }
+  
+  private async expandGraphAroundToken(tokenId: string): Promise<void> {
+    if (this.expandedNodes.has(tokenId)) return;
+    
+    const [chainId, address] = tokenId.split(':');
+    
+    // Fetch all pairs for this token from APIs
+    const pairs = await this.fetchAllPairsForToken(address, parseInt(chainId));
+    
+    // Add new pairs to graph
+    for (const pair of pairs) {
+      this.addPairToGraph(pair);
+    }
+    
+    this.expandedNodes.add(tokenId);
+    console.log(`Expanded graph around ${tokenId}, added ${pairs.length} pairs`);
+  }
+}
+```
+
+## **5. Pathfinding Algorithms**
+
+### **A. BFS with Liquidity Constraints**
+```typescript
+// algorithms/bfs-router.ts
+class BFSRouter {
+  findPaths(
+    graph: LiquidityGraph,
+    startTokenId: string,
+    endTokenId: string,
+    amount: bigint,
+    maxHops: number = 3,
+    minLiquidityUSD: number = 1000
+  ): Path[] {
+    const visited = new Set<string>();
+    const queue: Array<{
+      tokenId: string;
+      path: string[]; // Token IDs
+      liquidity: number; // Minimum liquidity along path
+      priceImpact: number; // Estimated price impact
+    }> = [];
+    
+    queue.push({
+      tokenId: startTokenId,
+      path: [startTokenId],
+      liquidity: Infinity,
+      priceImpact: 0
+    });
+    
+    const foundPaths: Path[] = [];
+    
+    while (queue.length > 0 && foundPaths.length < 10) {
+      const current = queue.shift()!;
+      
+      if (current.tokenId === endTokenId) {
+        // Found a path
+        const path = this.reconstructPath(graph, current.path);
+        if (path) foundPaths.push(path);
+        continue;
+      }
+      
+      if (current.path.length > maxHops) continue;
+      
+      const neighbors = graph.adjacency.get(current.tokenId) || new Set();
+      
+      for (const neighborId of neighbors) {
+        if (current.path.includes(neighborId)) continue; // Avoid cycles
+        
+        const edge = this.findEdge(graph, current.tokenId, neighborId);
+        if (!edge) continue;
+        
+        // Apply liquidity constraints
+        const edgeLiquidityUSD = edge.liquidityUSD;
+        if (edgeLiquidityUSD < minLiquidityUSD) continue;
+        
+        // Calculate price impact for this hop
+        const hopPriceImpact = this.calculatePriceImpact(amount, edge);
+        const totalPriceImpact = current.priceImpact + hopPriceImpact;
+        
+        // Skip if price impact too high (> 10%)
+        if (totalPriceImpact > 0.1) continue;
+        
+        queue.push({
+          tokenId: neighborId,
+          path: [...current.path, neighborId],
+          liquidity: Math.min(current.liquidity, edgeLiquidityUSD),
+          priceImpact: totalPriceImpact
+        });
+      }
+    }
+    
+    return foundPaths.sort((a, b) => {
+      // Sort by: 1) Higher liquidity, 2) Lower price impact, 3) Fewer hops
+      if (b.totalLiquidity !== a.totalLiquidity) {
+        return b.totalLiquidity - a.totalLiquidity;
+      }
+      if (a.totalPriceImpact !== b.totalPriceImpact) {
+        return a.totalPriceImpact - b.totalPriceImpact;
+      }
+      return a.hops - b.hops;
+    });
+  }
+}
+```
+
+### **B. Dijkstra with Weighted Edges**
+```typescript
+// algorithms/dijkstra-router.ts
+class DijkstraRouter {
+  findBestPath(
+    graph: LiquidityGraph,
+    startTokenId: string,
+    endTokenId: string,
+    amount: bigint
+  ): Path | null {
+    // Weight function: combination of fees, price impact, and liquidity
+    const getWeight = (edge: PairEdge): number => {
+      const feeCost = edge.fee; // 0.003 = 0.3%
+      const liquidityScore = Math.max(0.1, 1 - (edge.liquidityUSD / 1_000_000)); // Normalize
+      const priceImpact = this.estimatePriceImpact(amount, edge);
+      
+      return feeCost + liquidityScore * 0.5 + priceImpact * 2;
+    };
+    
+    // Standard Dijkstra implementation
+    const distances = new Map<string, number>();
+    const previous = new Map<string, string>();
+    const unvisited = new Set<string>();
+    
+    // Initialize
+    for (const tokenId of graph.nodes.keys()) {
+      distances.set(tokenId, Infinity);
+      unvisited.add(tokenId);
+    }
+    distances.set(startTokenId, 0);
+    
+    while (unvisited.size > 0) {
+      // Get unvisited node with smallest distance
+      let current = null;
+      let minDistance = Infinity;
+      
+      for (const tokenId of unvisited) {
+        const distance = distances.get(tokenId)!;
+        if (distance < minDistance) {
+          minDistance = distance;
+          current = tokenId;
+        }
+      }
+      
+      if (!current || minDistance === Infinity) break;
+      
+      // If we reached the destination
+      if (current === endTokenId) {
+        return this.reconstructPath(graph, previous, startTokenId, endTokenId);
+      }
+      
+      unvisited.delete(current);
+      
+      // Visit neighbors
+      const neighbors = graph.adjacency.get(current) || new Set();
+      for (const neighborId of neighbors) {
+        if (!unvisited.has(neighborId)) continue;
+        
+        const edge = this.findEdge(graph, current, neighborId);
+        if (!edge) continue;
+        
+        const weight = getWeight(edge);
+        const alt = distances.get(current)! + weight;
+        
+        if (alt < distances.get(neighborId)!) {
+          distances.set(neighborId, alt);
+          previous.set(neighborId, current);
+        }
+      }
+    }
+    
+    return null;
+  }
+}
+```
+
+## **6. Token Classification System**
+
+```typescript
+// classifiers/token-classifier.ts
+class TokenClassifier {
+  private KNOWN_TOKENS = {
+    // Native tokens
+    NATIVE: {
+      1: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', // ETH
+      56: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', // BNB
+      137: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', // MATIC
+    },
+    
+    // Wrapped natives
+    WRAPPED_NATIVE: {
+      1: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+      56: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', // WBNB
+      137: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', // WMATIC
+    },
+    
+    // Stablecoins
+    STABLES: {
+      1: [
+        '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+        '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+        '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
+      ],
+      56: [
+        '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', // BUSD
+        '0x55d398326f99059fF775485246999027B3197955', // USDT
+        '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // USDC
+      ],
+    },
+    
+    // Blue chip tokens
+    BLUECHIP: {
+      1: [
+        '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC
+        '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0', // MATIC
+        '0x514910771AF9Ca656af840dff83E8264EcF986CA', // LINK
+      ],
+    }
+  };
+  
+  classifyToken(token: TokenNode): TokenType {
+    const address = token.address.toLowerCase();
+    
+    // Check if native
+    if (address === this.KNOWN_TOKENS.NATIVE[token.chainId]) {
+      return 'native';
+    }
+    
+    // Check if wrapped native
+    if (address === this.KNOWN_TOKENS.WRAPPED_NATIVE[token.chainId]) {
+      return 'wrapped_native';
+    }
+    
+    // Check if stablecoin
+    const chainStables = this.KNOWN_TOKENS.STABLES[token.chainId] || [];
+    if (chainStables.map(s => s.toLowerCase()).includes(address)) {
+      return 'stable';
+    }
+    
+    // Check if bluechip
+    const chainBluechips = this.KNOWN_TOKENS.BLUECHIP[token.chainId] || [];
+    if (chainBluechips.map(b => b.toLowerCase()).includes(address)) {
+      return 'bluechip';
+    }
+    
+    // Check liquidity to determine if altcoin or low-cap
+    if (token.liquidityScore > 50) {
+      return 'altcoin';
+    }
+    
+    return 'lowcap';
+  }
+  
+  getRecommendedIntermediaries(
+    fromType: TokenType,
+    toType: TokenType,
+    chainId: number
+  ): string[] {
+    // Smart intermediary selection based on token types
+    
+    if (fromType === 'lowcap' && toType === 'stable') {
+      // Low-cap → Stable: Go through native or bluechip first
+      return [
+        this.KNOWN_TOKENS.WRAPPED_NATIVE[chainId],
+        ...(this.KNOWN_TOKENS.BLUECHIP[chainId] || []).slice(0, 2)
+      ];
+    }
+    
+    if (fromType === 'stable' && toType === 'stable') {
+      // Stable → Stable: Use Curve if available
+      return []; // Direct via Curve
+    }
+    
+    // Default: Use wrapped native and top stable
+    return [
+      this.KNOWN_TOKENS.WRAPPED_NATIVE[chainId],
+      ...(this.KNOWN_TOKENS.STABLES[chainId] || []).slice(0, 1)
+    ];
+  }
+}
+```
+
+## **7. Real-World Example: Routing ANY Token**
+
+Let's say a user wants to swap **"Dogelon Mars (ELON)"** to **"Shiba Inu (SHIB)"** on Ethereum:
+
+### **Step 1: Graph Query**
+```typescript
+const graph = await LiquidityGraphBuilder.buildForChain(1); // Ethereum
+
+const elonAddress = '0x761D38e5ddf6ccf6Cf7c55759d5210750B5D60F3'; // ELON
+const shibAddress = '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE'; // SHIB
+
+// Check direct pair
+const directPair = graph.findEdge(elonAddress, shibAddress);
+// Returns null - no direct ELON/SHIB pair
+
+// Find paths with BFS
+const paths = graph.findPaths(
+  elonAddress,
+  shibAddress,
+  parseUnits('1000000', 18), // 1M ELON
+  { maxHops: 3, minLiquidityUSD: 10000 }
+);
+
+// Returns:
+[
+  {
+    path: ['ELON', 'WETH', 'SHIB'],
+    hops: 2,
+    totalLiquidity: 1500000, // USD
+    expectedOutput: '452189123456789012345', // SHIB
+    steps: [
+      { dex: 'uniswapv2', pair: 'ELON/WETH', liquidity: 1000000 },
+      { dex: 'uniswapv2', pair: 'WETH/SHIB', liquidity: 500000 }
+    ]
+  },
+  {
+    path: ['ELON', 'USDT', 'WETH', 'SHIB'],
+    hops: 3,
+    totalLiquidity: 2000000,
+    expectedOutput: '448765432109876543210',
+    steps: [
+      { dex: 'sushiswap', pair: 'ELON/USDT', liquidity: 800000 },
+      { dex: 'curve', pair: 'USDT/WETH', liquidity: 1000000 },
+      { dex: 'uniswapv3', pair: 'WETH/SHIB', liquidity: 200000 }
+    ]
+  }
+]
+```
+
+### **Step 2: Smart Path Selection**
+```typescript
+class PathSelector {
+  selectBestPath(paths: Path[], userPreferences: {
+    prioritize: 'best_price' | 'highest_liquidity' | 'lowest_fees';
+    maxHops: number;
+    trustedDEXes: string[];
+  }): Path {
+    
+    // Filter by user preferences
+    let filtered = paths.filter(p => p.hops <= userPreferences.maxHops);
+    
+    if (userPreferences.trustedDEXes.length > 0) {
+      filtered = filtered.filter(p => 
+        p.steps.every(s => userPreferences.trustedDEXes.includes(s.dex))
+      );
+    }
+    
+    // Sort based on priority
+    switch (userPreferences.prioritize) {
+      case 'best_price':
+        return filtered.sort((a, b) => 
+          Number(b.expectedOutput - a.expectedOutput)
+        )[0];
+        
+      case 'highest_liquidity':
+        return filtered.sort((a, b) => 
+          b.totalLiquidity - a.totalLiquidity
+        )[0];
+        
+      case 'lowest_fees':
+        return filtered.sort((a, b) => 
+          this.calculateTotalFees(a) - this.calculateTotalFees(b)
+        )[0];
+    }
+  }
+}
+```
+
+## **8. Scaling Solutions**
+
+### **A. Graph Partitioning by Chain**
+```typescript
+// multi-chain-graph.ts
+class MultiChainLiquidityGraph {
+  private chainGraphs: Map<number, LiquidityGraph> = new Map();
+  private bridgeGraph: LiquidityGraph; // For cross-chain bridges
+  
+  async getRoute(
+    from: { chainId: number; tokenAddress: string },
+    to: { chainId: number; tokenAddress: string },
+    amount: bigint
+  ): Promise<MultiChainRoute> {
+    
+    if (from.chainId === to.chainId) {
+      // Same chain - use chain-specific graph
+      const graph = this.chainGraphs.get(from.chainId);
+      return graph?.findPath(from.tokenAddress, to.tokenAddress, amount);
+    }
+    
+    // Cross-chain route
+    return this.findCrossChainRoute(from, to, amount);
+  }
+  
+  private async findCrossChainRoute(
+    from: { chainId: number; tokenAddress: string },
+    to: { chainId: number; tokenAddress: string },
+    amount: bigint
+  ): Promise<MultiChainRoute> {
+    // Step 1: Find bridge tokens available on both chains
+    const bridgeTokens = this.findCommonBridgeTokens(from.chainId, to.chainId);
+    
+    // Step 2: For each bridge token, find:
+    //   - Route: from.token → bridgeToken (on source chain)
+    //   - Bridge: bridgeToken (chain A) → bridgeToken (chain B)
+    //   - Route: bridgeToken → to.token (on dest chain)
+    
+    const routes = [];
+    
+    for (const bridgeToken of bridgeTokens) {
+      const sourceRoute = this.chainGraphs.get(from.chainId)
+        ?.findPath(from.tokenAddress, bridgeToken.address, amount);
+      
+      if (!sourceRoute) continue;
+      
+      const bridgeQuote = await this.getBridgeQuote(
+        bridgeToken.address,
+        from.chainId,
+        to.chainId,
+        sourceRoute.expectedOutput
+      );
+      
+      const destRoute = this.chainGraphs.get(to.chainId)
+        ?.findPath(bridgeToken.address, to.tokenAddress, bridgeQuote.receivedAmount);
+      
+      if (destRoute) {
+        routes.push({
+          type: 'cross_chain',
+          totalOutput: destRoute.expectedOutput,
+          steps: [
+            ...sourceRoute.steps,
+            { type: 'bridge', ...bridgeQuote },
+            ...destRoute.steps
+          ]
+        });
+      }
+    }
+    
+    return routes.sort((a, b) => 
+      Number(b.totalOutput - a.totalOutput)
+    )[0];
+  }
+}
+```
+
+## **9. Practical Implementation Steps**
+
+### **Week 1: Core Graph Structure**
+```typescript
+// MVP: Ethereum-only with Uniswap V2
+const mvpGraph = await LiquidityGraphBuilder.buildForChain(1, {
+  dexes: ['uniswapv2'],
+  maxPairs: 10000 // Start small
+});
+
+// Test with known tokens
+const path = mvpGraph.findPath(
+  '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+  '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+  parseUnits('1000', 6) // 1000 USDC
+);
+```
+
+### **Week 2: Add Multiple DEXes**
+```typescript
+// Add SushiSwap, Curve
+const enhancedGraph = await LiquidityGraphBuilder.buildForChain(1, {
+  dexes: ['uniswapv2', 'sushiswap', 'curve'],
+  dataSources: ['thegraph', 'dexscreener']
+});
+```
+
+### **Week 3: Multi-chain Expansion**
+```typescript
+// Build graphs for top 5 chains
+const chains = [1, 56, 137, 42161, 10]; // ETH, BSC, POLY, ARB, OPT
+const graphs = await Promise.all(
+  chains.map(chainId => LiquidityGraphBuilder.buildForChain(chainId))
+);
+```
+
+### **Week 4: Optimization & Caching**
+```typescript
+// Implement Redis caching for graph data
+const cachedGraph = await CachedLiquidityGraph.getOrBuild(
+  chainId,
+  { ttl: 300 } // 5-minute cache
+);
+```
+
+This architecture can route **ANY token** on **ANY EVM chain** through **ANY DEX** by building a comprehensive liquidity graph that understands all possible trading paths!
+
+
+
+Then I want you to explain how will the Bridging be accomplished, and for the routing like from same chain then cross chain then swap how will the routing be and I want to ask, will it be that the user will have to sign the transaction multiple times
+
+So what I want to understand is the cross chain bridging for example bridging WBNB on BSC to ETH on Ethereum, how will that happen, how will we show to the user that he is getting this amount of ETH after swapping and multi hopping from TWC to ETH
+We are going to break down the cross-chain bridging process and how it integrates with multi-hop swaps. The goal is to provide a seamless experience for the user, where they can swap from any token on any chain to any other token on any other chain, possibly through multiple hops and a bridge.
+
+We'll focus on the example: TWC (on BSC) -> ETH (on Ethereum). The steps might be:
+
+Swap TWC to WBNB on BSC (via PancakeSwap or other DEX on BSC).
+
+Bridge WBNB (BSC) to WETH (Ethereum) via a bridge (like Li.FI, Socket, etc.).
+
+Optionally, swap WETH to ETH on Ethereum (if the user wants native ETH).
+
+However, note that the user might not want to hold WETH, so we might need to unwrap it.
+
+But in the context of your question, the user wants to see the entire route and the expected output (ETH) before signing.
+
+How the Routing Works
+We can break down the routing into two parts:
+
+1. Same-chain multi-hop swaps (if needed)
+For example, TWC might not have a direct pair with the bridge token (like WBNB) on BSC, so we might need to swap TWC -> BUSD -> WBNB. But in our example, we assume there is a TWC/WBNB pair.
+
+2. Cross-chain bridge
+Once we have WBNB on BSC, we need to bridge it to Ethereum. The bridge will lock WBNB on BSC and mint (or release) WETH (or ETH) on Ethereum.
+
+3. Destination chain swap (if needed)
+If the bridge outputs WETH and the user wants ETH, we need to unwrap WETH to ETH.
+
+How to Show the User the Entire Route
+We can use a unified route representation that includes:
+
+Steps: Each step can be either a swap on a DEX, a bridge, or an unwrap.
+
+Input token and amount for each step
+
+Output token and amount for each step
+
+Chain for each step
+
+For example:
+
+text
+Step 1 (BSC): Swap 1000 TWC -> 1 WBNB via PancakeSwap
+Step 2 (Bridge): Bridge 1 WBNB (BSC) -> 0.99 WETH (Ethereum) via Li.FI
+Step 3 (Ethereum): Unwrap 0.99 WETH -> 0.99 ETH via WETH contract
+How the Transaction(s) Are Signed
+There are two approaches:
+
+Approach 1: Multiple Transactions (User signs multiple times)
+The user signs a transaction for Step 1 (swap on BSC).
+
+Then, when Step 1 is confirmed, the user signs a transaction for Step 2 (bridge from BSC to Ethereum).
+
+Then, when Step 2 is completed and the tokens are received on Ethereum, the user signs a transaction for Step 3 (unwrap on Ethereum).
+
+This is not ideal because it requires the user to be present and sign multiple times, and it requires waiting for each step to complete.
+
+Approach 2: Single Transaction Using an Aggregator (User signs once)
+We use a cross-chain aggregator (like Li.FI, Socket, etc.) that can perform the entire route in one transaction. The user signs one transaction on the source chain (BSC) and the aggregator handles the rest.
+
+How it works:
+
+The user approves the aggregator's contract to spend TWC (if needed) and then submits the transaction.
+
+The aggregator's contract on BSC will perform the swap (TWC -> WBNB) and then call the bridge contract.
+
+The bridge contract will lock the WBNB and send a message to the destination chain (Ethereum) to release WETH.
+
+Optionally, the bridge contract on Ethereum can then unwrap WETH to ETH (or we can have the aggregator's contract on Ethereum do that).
+
+The user only signs one transaction on the source chain (BSC) and the entire process is handled by the aggregator's smart contracts and relayers.
+
+How to Integrate This in Your Application
+You can use an existing cross-chain aggregator SDK (like Li.FI) to get the route and then execute it.
+
+Step 1: Get the Route
+Use the aggregator's SDK to get a quote for the entire route (TWC on BSC to ETH on Ethereum). The quote should include:
+
+The steps (swap, bridge, unwrap)
+
+The expected output amount on the destination chain
+
+The transaction data for the source chain transaction
+
+Step 2: Display the Route to the User
+Show the user the entire route, including the steps and the expected output. Also, show the estimated gas and any fees.
+
+Step 3: Execute the Route
+If the user approves, then:
+
+The user signs and sends the transaction on the source chain (BSC). The transaction data is provided by the aggregator and includes all the steps (swap, bridge, etc.).
+
+The aggregator's contract on BSC will handle the swap and then bridge the tokens.
+
+The aggregator's relayers will handle the cross-chain message passing and the destination chain transaction (if needed).
+
+The user will receive the destination tokens (ETH) on the destination chain (Ethereum).
+
+Example Using Li.FI
+Li.FI has an SDK that can provide cross-chain routes. You can use getRoutes to get the possible routes and then executeRoute to execute the entire route in one transaction.
+
+Here's a simplified example:
+
+typescript
+import { LiFi, Route } from '@lifi/sdk';
+
+const lifi = new LiFi({
+  integrator: 'YourAppName',
+});
+
+// Get routes for TWC (BSC) to ETH (Ethereum)
+const routes = await lifi.getRoutes({
+  fromChainId: 56, // BSC
+  fromAmount: '1000000000000000000', // 1 TWC (with decimals)
+  fromTokenAddress: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596', // TWC
+  toChainId: 1, // Ethereum
+  toTokenAddress: '0x0000000000000000000000000000000000000000', // ETH
+});
+
+// Select the best route
+const route = routes.routes[0];
+
+// Display the route steps to the user
+console.log(route.steps);
+
+// Execute the route
+const wallet = ...; // user's wallet (on BSC)
+await lifi.executeRoute(wallet, route);
+The route.steps will contain the detailed steps (swap, bridge, etc.). The executeRoute will handle the entire process with one user signature (on the source chain).
+
+Conclusion
+For a seamless experience, we should use a cross-chain aggregator that can handle the entire route (swap, bridge, and optional unwrap) in one transaction. The user signs only once on the source chain. The aggregator's SDK will provide the route and the transaction data.
+
+In your application, you can show the user the entire route (with steps and expected output) before they sign.
+
+Note: The aggregator might charge a fee for this service, which is usually included in the quoted output amount.
+
+Let me know if you have more questions or need further clarification on any step.
+
+
+# **Cross-Chain Bridging & Routing: Complete Architecture**
+
+Let me explain how bridging works and how to create a seamless user experience where users see **ONE total amount** and sign **ONE transaction** for the entire cross-chain swap.
+
+## **1. The Cross-Chain Swap Flow**
+
+### **Example: TWC (BSC) → ETH (Ethereum)**
+```
+User's Journey:
+1. Start: TWC in wallet on BSC
+2. Step 1: Swap TWC → WBNB (BSC) via PancakeSwap
+3. Step 2: Bridge WBNB (BSC) → WETH (Ethereum) via Stargate
+4. Step 3: Swap WETH → ETH (Ethereum) via Uniswap
+5. End: ETH in wallet on Ethereum
+```
+
+## **2. How Bridging Actually Works**
+
+### **Bridge Architecture Types:**
+
+#### **A. Lock-and-Mint Bridges (Most Common)**
+```solidity
+// Example: Stargate Bridge
+1. User sends WBNB to Stargate Router on BSC
+2. Router locks WBNB in contract
+3. Message sent to Ethereum via LayerZero/Chainlink CCIP
+4. Router on Ethereum mints equivalent WETH
+5. User receives WETH on Ethereum
+```
+
+#### **B. Liquidity Network Bridges**
+```solidity
+// Example: Hop Protocol
+1. User sends WBNB to Hop Bonder on BSC
+2. Bonder provides WETH from liquidity pool on Ethereum
+3. Later, liquidity is rebalanced via arbitrage
+```
+
+#### **C. Atomic Swaps (Peer-to-Peer)**
+```solidity
+// Example: Across Protocol
+1. User sends WBNB to Relayer on BSC
+2. Relayer instantly sends WETH from their own funds
+3. Relayer later claims the locked WBNB
+```
+
+## **3. Single Transaction Signing Architecture**
+
+### **The Key: Meta Transactions & Message Passing**
+
+```typescript
+// How users sign ONCE for the entire journey
+interface CrossChainRoute {
+  id: string;
+  steps: RouteStep[];
+  // User signs THIS transaction only
+  transaction: {
+    chainId: number; // Source chain (BSC)
+    to: string; // Entry point contract
+    data: string; // Encoded instructions for ALL steps
+    value: bigint; // Native token amount (if any)
+  };
+  // Destination details
+  estimatedOutput: {
+    token: string; // ETH
+    amount: string; // "0.5"
+    chainId: number; // 1 (Ethereum)
+    minAmount: string; // With slippage
+  };
+}
+
+// The entry point contract delegates to other contracts
+const entryPointContract = {
+  executeRoute: function(steps: Step[]) {
+    // Step 1: Swap TWC → WBNB on BSC
+    pancakeSwapRouter.swapExactTokensForTokens(...);
+    
+    // Step 2: Bridge WBNB → WETH cross-chain
+    stargateRouter.swap(...);
+    
+    // Step 3: On destination chain, swap WETH → ETH
+    // This is triggered automatically via cross-chain message
+  }
+};
+```
+
+## **4. Implementation: Showing One Total Amount**
+
+### **A. Quote Aggregation System**
+```typescript
+// quote-aggregator.ts
+class CrossChainQuoteAggregator {
+  async getFullRouteQuote(
+    fromToken: Token,
+    toToken: Token,
+    amount: string
+  ): Promise<FullRouteQuote> {
+    
+    // Step 1: Get source chain swap quote (TWC → WBNB)
+    const sourceSwapQuote = await getSourceSwapQuote(
+      fromToken,
+      bridgeToken,
+      amount
+    );
+    
+    // Step 2: Get bridge quote (WBNB on BSC → WETH on Ethereum)
+    const bridgeQuote = await getBridgeQuote(
+      bridgeToken,
+      destinationToken,
+      sourceSwapQuote.expectedOutput,
+      fromToken.chainId,
+      toToken.chainId
+    );
+    
+    // Step 3: Get destination swap quote (WETH → ETH)
+    const destSwapQuote = await getDestinationSwapQuote(
+      bridgeToken, // WETH on Ethereum
+      toToken, // ETH on Ethereum
+      bridgeQuote.expectedOutput
+    );
+    
+    // Calculate total output
+    const totalOutput = destSwapQuote.expectedOutput;
+    
+    // Apply global slippage
+    const minOutput = applySlippage(totalOutput, 0.5); // 0.5% global slippage
+    
+    // Calculate fees breakdown
+    const fees = {
+      sourceSwap: sourceSwapQuote.fee,
+      bridge: bridgeQuote.fee,
+      destinationSwap: destSwapQuote.fee,
+      totalUSD: calculateTotalFeesUSD([...])
+    };
+    
+    return {
+      from: {
+        token: fromToken,
+        amount: amount,
+        chainId: fromToken.chainId
+      },
+      to: {
+        token: toToken,
+        amount: totalOutput.toString(),
+        minAmount: minOutput.toString(),
+        chainId: toToken.chainId
+      },
+      steps: [
+        { type: 'swap', ...sourceSwapQuote },
+        { type: 'bridge', ...bridgeQuote },
+        { type: 'swap', ...destSwapQuote }
+      ],
+      totalFees: fees,
+      estimatedTime: sourceSwapQuote.time + bridgeQuote.time + destSwapQuote.time,
+      successRate: calculateSuccessRate([sourceSwapQuote, bridgeQuote, destSwapQuote])
+    };
+  }
+}
+```
+
+### **B. UI Display Format**
+```tsx
+// components/RouteSummary.tsx
+function RouteSummary({ route }: { route: FullRouteQuote }) {
+  return (
+    <div className="space-y-4">
+      {/* Total Output Display */}
+      <div className="bg-gray-900 p-6 rounded-xl">
+        <div className="text-sm text-gray-400">You will receive</div>
+        <div className="flex items-center gap-3">
+          <TokenIcon token={route.to.token} size={40} />
+          <div>
+            <div className="text-3xl font-bold">
+              {formatAmount(route.to.amount)} {route.to.token.symbol}
+            </div>
+            <div className="text-sm text-gray-400">
+              ≈ ${calculateUSDValue(route.to.amount, route.to.token.priceUSD)}
+            </div>
+          </div>
+        </div>
+        <div className="mt-2 text-sm text-gray-400">
+          Minimum received: {formatAmount(route.to.minAmount)} {route.to.token.symbol}
+        </div>
+      </div>
+      
+      {/* Route Breakdown */}
+      <div className="bg-gray-900 p-4 rounded-xl">
+        <h3 className="font-medium mb-3">Route Breakdown</h3>
+        
+        {/* Step 1: Source Swap */}
+        <RouteStep
+          step={route.steps[0]}
+          stepNumber={1}
+          fromChain={route.from.chainId}
+        />
+        
+        {/* Step 2: Bridge */}
+        <div className="flex items-center justify-center my-2">
+          <div className="w-8 h-8 rounded-full bg-blue-900 flex items-center justify-center">
+            <ArrowRight className="w-4 h-4" />
+          </div>
+          <div className="ml-2 text-sm text-blue-400">
+            Bridge to {getChainName(route.to.chainId)}
+          </div>
+        </div>
+        
+        {/* Step 3: Destination Swap */}
+        <RouteStep
+          step={route.steps[2]}
+          stepNumber={2}
+          fromChain={route.to.chainId}
+        />
+        
+        {/* Fees Summary */}
+        <div className="mt-4 pt-4 border-t border-gray-800">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-400">Estimated fees</span>
+            <span>${route.totalFees.totalUSD.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-400">Estimated time</span>
+            <span>{formatTime(route.estimatedTime)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-400">Success rate</span>
+            <span className="text-green-400">{route.successRate}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## **5. Transaction Execution Flow**
+
+### **Option A: Single Transaction via Aggregator (Recommended)**
+```typescript
+// Using Li.FI or Socket.tech SDK
+const executeCrossChainSwap = async (
+  route: FullRouteQuote,
+  wallet: WalletClient
+): Promise<void> => {
+  
+  // Convert our route format to Li.FI format
+  const lifiRoute = convertToLifiRoute(route);
+  
+  // Execute with Li.FI - user signs ONCE
+  const executedRoute = await lifi.executeRoute(lifiRoute, {
+    updateRouteHook: (updatedRoute) => {
+      // Update UI with progress
+      const currentStep = updatedRoute.steps[0]?.execution?.process;
+      if (currentStep) {
+        setExecutionStatus(
+          `${currentStep.status} - ${
+            currentStep.substatus || ''
+          }`
+        );
+      }
+    }
+  });
+  
+  // Transaction is complete
+  console.log('Cross-chain swap completed:', executedRoute);
+};
+```
+
+### **Option B: Custom Single Transaction Implementation**
+```typescript
+// If building your own entry point
+const executeViaEntryPoint = async (
+  route: FullRouteQuote,
+  wallet: WalletClient
+): Promise<string> => {
+  
+  // Build encoded data for all steps
+  const encodedData = encodeCrossChainTransaction({
+    steps: route.steps,
+    minOutput: route.to.minAmount,
+    recipient: wallet.account.address,
+    deadline: Math.floor(Date.now() / 1000) + 3600 // 1 hour
+  });
+  
+  // Send single transaction
+  const hash = await wallet.sendTransaction({
+    to: ENTRY_POINT_CONTRACT[route.from.chainId],
+    data: encodedData,
+    value: route.from.token.isNative ? BigInt(route.from.amount) : 0n
+  });
+  
+  return hash;
+};
+```
+
+## **6. Bridge Integration Examples**
+
+### **A. Stargate Bridge Integration**
+```typescript
+// bridges/stargate.ts
+export async function getStargateBridgeQuote(
+  fromToken: Token,
+  toToken: Token,
+  amount: bigint,
+  fromChainId: number,
+  toChainId: number
+): Promise<BridgeQuote> {
+  
+  // Stargate Router addresses
+  const STARGATE_ROUTERS = {
+    56: '0x4a364f8c717cAAD9A442737Eb7b8A55cc6cf18D8', // BSC
+    1: '0x8731d54E9D02c286767d56ac03e8037C07e01e98', // Ethereum
+    42161: '0x53Bf833A5d6c4ddA888F69c22C88C9f356a41614', // Arbitrum
+    137: '0x45A01E4e04F14f7A4a6702c74187c5F6222033cd', // Polygon
+  };
+  
+  // Get pool IDs for tokens
+  const fromPoolId = getStargatePoolId(fromToken.address, fromChainId);
+  const toPoolId = getStargatePoolId(toToken.address, toChainId);
+  
+  // Get quote from Stargate Router
+  const quote = await stargateRouter.quoteLayerZeroFee(
+    fromChainId,
+    toChainId,
+    fromPoolId,
+    toPoolId,
+    amount,
+    { dstGasForCall: 0, dstNativeAmount: 0, dstNativeAddr: '0x' }
+  );
+  
+  return {
+    bridge: 'stargate',
+    expectedOutput: calculateExpectedOutput(amount, quote),
+    fee: {
+      bridgeFee: quote.fee,
+      crossChainMessageFee: quote.lzFee,
+      totalUSD: calculateFeeUSD(quote)
+    },
+    estimatedTime: 3 * 60, // 3 minutes
+    steps: 1
+  };
+}
+```
+
+### **B. Li.FI Bridge Aggregation**
+```typescript
+// bridges/lifi.ts
+export async function getBestBridgeQuote(
+  fromToken: Token,
+  toToken: Token,
+  amount: bigint,
+  fromChainId: number,
+  toChainId: number
+): Promise<BridgeQuote[]> {
+  
+  // Li.FI automatically finds the best bridge
+  const routes = await lifi.getRoutes({
+    fromChainId,
+    fromTokenAddress: fromToken.address,
+    fromAmount: amount.toString(),
+    toChainId,
+    toTokenAddress: toToken.address,
+    options: {
+      bridges: {
+        allow: ['stargate', 'hop', 'across', 'celer', 'multichain']
+      },
+      exchanges: {
+        allow: [] // No DEX swaps, just bridge
+      }
+    }
+  });
+  
+  return routes.routes.map(route => ({
+    bridge: route.steps[0].tool, // 'stargate', 'hop', etc.
+    expectedOutput: BigInt(route.toAmount),
+    fee: {
+      totalUSD: parseFloat(route.totalFeeUSD || '0')
+    },
+    estimatedTime: route.estimatedTimeInSeconds,
+    steps: route.steps.length
+  }));
+}
+```
+
+## **7. Real-Time Status Tracking**
+
+```typescript
+// status-tracker.ts
+class CrossChainStatusTracker {
+  private statusCallbacks: Map<string, (status: StatusUpdate) => void> = new Map();
+  
+  trackTransaction(transactionHash: string, routeId: string): void {
+    // Listen for events from source chain
+    this.listenToSourceChain(transactionHash, (sourceStatus) => {
+      this.updateStatus(routeId, {
+        step: 1,
+        status: sourceStatus,
+        txHash: transactionHash
+      });
+      
+      if (sourceStatus === 'completed') {
+        // Start listening for bridge events
+        this.listenToBridge(routeId, (bridgeStatus) => {
+          this.updateStatus(routeId, {
+            step: 2,
+            status: bridgeStatus,
+            message: getBridgeMessage(bridgeStatus)
+          });
+          
+          if (bridgeStatus === 'completed') {
+            // Start listening for destination chain
+            this.listenToDestinationChain(routeId, (destStatus) => {
+              this.updateStatus(routeId, {
+                step: 3,
+                status: destStatus,
+                txHash: destStatus.txHash
+              });
+            });
+          }
+        });
+      }
+    });
+  }
+  
+  private updateStatus(routeId: string, update: StatusUpdate): void {
+    const callback = this.statusCallbacks.get(routeId);
+    if (callback) {
+      callback(update);
+    }
+    
+    // Update UI
+    updateUI(routeId, update);
+  }
+}
+
+// UI Component
+function SwapStatus({ routeId }: { routeId: string }) {
+  const [status, setStatus] = useState<StatusUpdate[]>([]);
+  
+  useEffect(() => {
+    const tracker = new CrossChainStatusTracker();
+    tracker.statusCallbacks.set(routeId, (update) => {
+      setStatus(prev => [...prev, update]);
+    });
+  }, [routeId]);
+  
+  return (
+    <div className="space-y-2">
+      {status.map((step, index) => (
+        <div key={index} className="flex items-center gap-3">
+          <div className={`
+            w-6 h-6 rounded-full flex items-center justify-center
+            ${step.status === 'completed' ? 'bg-green-500' : 
+              step.status === 'pending' ? 'bg-yellow-500' : 
+              'bg-blue-500'}
+          `}>
+            {index + 1}
+          </div>
+          <div>
+            <div className="font-medium">{getStepTitle(step.step)}</div>
+            <div className="text-sm text-gray-400">{step.message}</div>
+            {step.txHash && (
+              <a 
+                href={getExplorerLink(step.txHash, step.chainId)}
+                target="_blank"
+                className="text-sm text-blue-400 hover:underline"
+              >
+                View on Explorer
+              </a>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## **8. User Experience Flow**
+
+### **Step-by-Step UX:**
+```typescript
+// Complete user journey
+const userJourney = {
+  1: {
+    action: 'User enters swap details',
+    ui: 'Show TWC → ETH with full route breakdown',
+    details: 'Display: 1000 TWC → 0.5 ETH (via BSC→Ethereum)'
+  },
+  
+  2: {
+    action: 'User clicks "Swap"',
+    ui: 'Show confirmation modal with:',
+    details: `
+      - Total output: 0.5 ETH
+      - Minimum received: 0.495 ETH (1% slippage)
+      - Route: TWC → WBNB → WETH → ETH
+      - Estimated time: 5 minutes
+      - Estimated fees: $2.50
+      - Sign transaction on BSC
+    `
+  },
+  
+  3: {
+    action: 'User signs transaction',
+    ui: 'Show progress tracker with 3 steps:',
+    details: `
+      Step 1: Swapping TWC to WBNB on BSC ✓
+      Step 2: Bridging to Ethereum (3 minutes) ⏳
+      Step 3: Swapping WETH to ETH on Ethereum
+    `
+  },
+  
+  4: {
+    action: 'Transaction completes',
+    ui: 'Show success screen with:',
+    details: `
+      - Received: 0.498 ETH
+      - Transaction links for all steps
+      - Option to add ETH to wallet
+      - Done button
+    `
+  }
+};
+```
+
+## **9. Error Handling & Recovery**
+
+```typescript
+// error-handler.ts
+class CrossChainErrorHandler {
+  async handleFailedTransaction(
+    transactionHash: string,
+    route: FullRouteQuote
+  ): Promise<RecoveryOptions> {
+    
+    // Check which step failed
+    const failureStep = await this.diagnoseFailure(transactionHash);
+    
+    switch (failureStep) {
+      case 'source_swap':
+        return {
+          canRecover: true,
+          options: [
+            {
+              type: 'retry',
+              action: 'Retry with higher slippage',
+              newRoute: await this.adjustRoute(route, { slippage: 0.03 })
+            },
+            {
+              type: 'refund',
+              action: 'Refund original tokens',
+              steps: await this.getRefundSteps(transactionHash)
+            }
+          ]
+        };
+        
+      case 'bridge':
+        return {
+          canRecover: true,
+          options: [
+            {
+              type: 'complete_manually',
+              action: 'Complete bridge manually',
+              url: getBridgeCompletionUrl(transactionHash)
+            },
+            {
+              type: 'refund',
+              action: 'Refund on source chain',
+              estimatedTime: '24 hours' // Bridge timeout
+            }
+          ]
+        };
+        
+      case 'destination_swap':
+        return {
+          canRecover: true,
+          options: [
+            {
+              type: 'manual_swap',
+              action: 'Swap WETH to ETH manually',
+              steps: await this.getManualSwapSteps(route)
+            }
+          ]
+        };
+    }
+  }
+}
+```
+
+## **10. Gas Optimization Across Chains**
+
+```typescript
+// gas-optimizer.ts
+class CrossChainGasOptimizer {
+  async optimizeGasAcrossSteps(
+    route: FullRouteQuote,
+    wallet: WalletClient
+  ): Promise<OptimizedRoute> {
+    
+    // Estimate gas for each step
+    const sourceGas = await estimateGasForSwap(route.steps[0], wallet);
+    const bridgeGas = await estimateBridgeGas(route.steps[1]);
+    const destGas = await estimateDestinationGas(route.steps[2]);
+    
+    // Calculate optimal gas prices
+    const optimized = {
+      sourceChain: {
+        gasLimit: sourceGas * 120n / 100n, // +20% buffer
+        maxFeePerGas: await getOptimalGasPrice(route.from.chainId)
+      },
+      // Bridge handles destination gas
+      bridgeIncludesDestGas: route.steps[1].bridge === 'stargate',
+      // If not, need to fund destination gas
+      destinationGasSponsorship: route.steps[1].bridge === 'hop' 
+        ? await this.calculateDestinationGas()
+        : null
+    };
+    
+    return optimized;
+  }
+  
+  // Some bridges let you pay destination gas from source
+  async addDestinationGasToBridge(
+    bridgeQuote: BridgeQuote,
+    destinationGas: bigint
+  ): Promise<BridgeQuote> {
+    if (bridgeQuote.bridge === 'stargate') {
+      // Stargate allows dstNativeAmount for destination gas
+      return {
+        ...bridgeQuote,
+        extraParams: {
+          dstNativeAmount: destinationGas,
+          dstNativeAddr: 'user_address_here'
+        }
+      };
+    }
+    
+    return bridgeQuote;
+  }
+}
+```
+
+## **11. Complete Example: TWC → ETH**
+
+```typescript
+// Example implementation
+async function executeTWCtoETH() {
+  // User inputs
+  const fromToken = {
+    address: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596',
+    symbol: 'TWC',
+    decimals: 9,
+    chainId: 56 // BSC
+  };
+  
+  const toToken = {
+    address: '0x0000000000000000000000000000000000000000',
+    symbol: 'ETH',
+    decimals: 18,
+    chainId: 1 // Ethereum
+  };
+  
+  const amount = '1000'; // 1000 TWC
+  
+  // Step 1: Get full route quote
+  const fullRoute = await getFullRouteQuote(
+    fromToken,
+    toToken,
+    amount
+  );
+  
+  // Display to user:
+  console.log(`
+    Swap ${amount} TWC (BSC) → ${fullRoute.to.amount} ETH (Ethereum)
+    
+    Route:
+    1. Swap TWC → WBNB on PancakeSwap
+    2. Bridge WBNB → WETH via Stargate
+    3. Swap WETH → ETH on Uniswap
+    
+    Total estimated time: 5 minutes
+    Estimated fees: $${fullRoute.totalFees.totalUSD.toFixed(2)}
+    Minimum received: ${fullRoute.to.minAmount} ETH
+  `);
+  
+  // Step 2: User approves and signs
+  const wallet = await getWalletClient();
+  
+  // User signs ONE transaction on BSC
+  const result = await executeCrossChainSwap(fullRoute, wallet);
+  
+  // Step 3: Track progress
+  const tracker = new CrossChainStatusTracker();
+  tracker.trackTransaction(result.hash, fullRoute.id);
+  
+  // Step 4: Completion
+  // User receives ETH in their Ethereum wallet
+}
+```
+
+## **Summary: Single Transaction Signing**
+
+### **How it works:**
+1. **One Quote**: User sees total ETH amount upfront
+2. **One Approval**: Single token approval (if needed)
+3. **One Signature**: Signs once on source chain
+4. **One Status**: Track entire journey in one UI
+5. **One Outcome**: ETH appears in destination wallet
+
+### **Key Technologies:**
+- **Li.FI SDK**: Handles complex routing automatically
+- **Stargate**: For efficient cross-chain transfers
+- **Socket.tech**: Alternative aggregator
+- **Custom Entry Points**: For maximum control
+
+### **User Experience Benefits:**
+- No need to switch networks manually
+- No multiple signatures
+- Real-time progress tracking
+- Automatic error recovery
+- Single, clear output amount
+
+This architecture makes cross-chain swaps as simple as same-chain swaps for users, while handling all the complexity behind the scenes.
+
+
+

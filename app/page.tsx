@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/home/sidebar";
 import { MetricStrip } from "@/components/home/metric-strip";
 import { HeroBanner } from "@/components/home/hero-banner";
 import { TabBar } from "@/components/home/tab-bar";
-import { SearchBar } from "@/components/home/search-bar";
+import { CollapsibleSearchBar } from "@/components/home/collapsible-search-bar";
 import { MarketTable } from "@/components/home/market-table";
 import { RightRail } from "@/components/home/right-rail";
 import { QuickActionButtons } from "@/components/home/quick-action-buttons";
@@ -13,6 +13,7 @@ import { MobileSpotlight } from "@/components/home/mobile-spotlight";
 import { MobileMarketList } from "@/components/home/mobile-market-list";
 import { MobileStatsGrid } from "@/components/home/mobile-stats-grid";
 import { SmartMarketsMarquee } from "@/components/home/smart-markets-marquee";
+import { NetworkSelector } from "@/components/home/network-selector";
 import Image from "next/image";
 
 type TabKey = "Favourite" | "Hot" | "New" | "Gainers" | "Losers";
@@ -34,9 +35,12 @@ export default function HomePage() {
         <main className="flex-1 px-4 lg:px-5 xl:px-5 2xl:px-6 py-4 lg:py-5 xl:py-5 2xl:py-6 flex flex-col gap-4 lg:gap-5 xl:gap-5 2xl:gap-6 overflow-hidden min-w-0 max-w-[1129px]">
           <HeroBanner />
 
-          <div className="flex items-center justify-between shrink-0 gap-3 lg:gap-4 xl:gap-4">
-            <TabBar active={activeTab} onChange={setActiveTab} />
-            <SearchBar value={searchQuery} onChange={setSearchQuery} />
+          <div className="flex items-center shrink-0 gap-3 lg:gap-4 xl:gap-4">
+            <div className="flex items-center gap-2 lg:gap-3 flex-1 min-w-0">
+              <NetworkSelector />
+              <TabBar active={activeTab} onChange={setActiveTab} />
+            </div>
+            <CollapsibleSearchBar value={searchQuery} onChange={setSearchQuery} />
           </div>
 
           <div className="flex-1 border border-[#1f261e] rounded-xl overflow-hidden flex flex-col min-h-0">
@@ -75,7 +79,7 @@ export default function HomePage() {
                 unoptimized
               />
             </div>
-            
+
             {/* Content */}
             <div className="relative flex items-center justify-between w-full z-10 cursor-pointer">
               <div className="flex gap-1 items-center shrink-0">

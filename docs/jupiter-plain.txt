@@ -1,0 +1,197 @@
+Get Order
+
+Copy page
+
+Swap via Ultra by getting a quote from the Order endpoint.
+
+To get an Ultra Swap order, you need to pass in the required parameters such as:
+Parameter	Description
+inputMint	The input token mint address
+outputMint	The output token mint address
+amount	The amount of input token to swap, in native token units (before decimals)
+taker	The user’s wallet address (Note: If the taker is not provided, there will still be an Order Response with no transaction field)
+referralAccount	The referral account address - refer to the Add Fees To Ultra Swap guide for the step by step process
+referralFee	The referral fee in basis points (bps)
+Get Order
+const orderResponse = await (
+  await fetch(
+    'https://api.jup.ag/ultra/v1/order' +
+    '?inputMint=So11111111111111111111111111111111111111112' +
+    '&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' +
+    '&amount=100000000' +
+    '&taker=jdocuPgEAjMfihABsPgKEvYtsmMzjUHeq9LX4Hvs7f3',
+    {
+      headers: {
+        'x-api-key': 'your-api-key',
+      },
+    }
+  )
+).json();
+​
+Order Response
+In the order response, you will receive a number of fields that are important to note of, such as the swapType, slippageBps, etc.
+Refer to Response section for example responses. Refer to API Reference section for the full response fields.
+The main fields you should need:
+transaction: The base64 encoded transaction that you need to sign before submitting to the network.
+requestId: The request ID of the order to be used in the Execute Order endpoint.
+Now, you are able to get a swap order, next steps is to make a post request to the Execute Order endpoint. Let’s go!
+
+
+Response{
+  "mode": "<string>",
+  "inputMint": "<string>",
+  "outputMint": "<string>",
+  "inAmount": "<string>",
+  "outAmount": "<string>",
+  "otherAmountThreshold": "<string>",
+  "swapMode": "<string>",
+  "slippageBps": 123,
+  "priceImpactPct": "<string>",
+  "routePlan": [
+    {
+      "swapInfo": {
+        "ammKey": "<string>",
+        "label": "<string>",
+        "inputMint": "<string>",
+        "outputMint": "<string>",
+        "inAmount": "<string>",
+        "outAmount": "<string>",
+        "feeAmount": "<string>",
+        "feeMint": "<string>"
+      },
+      "percent": 123,
+      "bps": 123,
+      "usdValue": 123
+    }
+  ],
+  "feeBps": 123,
+  "platformFee": {
+    "feeBps": 123,
+    "amount": "<string>"
+  },
+  "signatureFeeLamports": 123,
+  "signatureFeePayer": "<string>",
+  "prioritizationFeeLamports": 123,
+  "prioritizationFeePayer": "<string>",
+  "rentFeeLamports": 123,
+  "rentFeePayer": "<string>",
+  "swapType": "<string>",
+  "router": "iris",
+  "transaction": "<string>",
+  "gasless": true,
+  "requestId": "<string>",
+  "totalTime": 123,
+  "taker": "<string>",
+  "inUsdValue": 123,
+  "outUsdValue": 123,
+  "priceImpact": 123,
+  "swapUsdValue": 123,
+  "referralAccount": "<string>",
+  "feeMint": "<string>",
+  "quoteId": "<string>",
+  "maker": "<string>",
+  "expireAt": "<string>",
+  "errorCode": 1,
+  "errorMessage": "Insufficient funds"
+}   
+
+
+Execute Order
+
+Copy page
+
+Swap via Ultra by signing then submitting the transaction to the Execute endpoint .
+
+​
+Sign Transaction
+Using the Solana web3.js@1 library, you can sign the transaction as follows:
+Set up dependencies and wallet for signing
+
+Set up dependencies for signing
+npm install @solana/web3.js@1
+Set up Development Wallet
+You can paste in your private key for testing but this is not recommended for production.
+Either use your private key in the project directly, you can do it via a .env file.
+Or set up your private key in the Solana CLI.
+
+Store private key in .env
+
+Store private key in Solana CLI
+// In your .env file
+PRIVATE_KEY=""
+
+// In your index.js (or any file that needs the private key)
+import { Keypair } from '@solana/web3.js';
+import dotenv from 'dotenv';
+require('dotenv').config();
+
+const wallet = Keypair.fromSecretKey(bs58.decode(process.env.PRIVATE_KEY || '')));
+Sign Transaction
+import { VersionedTransaction } from '@solana/web3.js';
+
+// ... Get Order's response
+
+// Extract the transaction from the order response
+const transactionBase64 = orderResponse.transaction
+
+// Deserialize, sign and serialize the transaction
+const transaction = VersionedTransaction.deserialize(Buffer.from(transactionBase64, 'base64'));
+transaction.sign([wallet]);
+const signedTransaction = Buffer.from(transaction.serialize()).toString('base64');
+​
+Execute Order
+By making a post request to the /execute endpoint, Jupiter executes the swap transaction on behalf of you/your users through our own proprietary transaction sending infrastructure. This already includes handling of slippage, priority fees, transaction landing and more.
+To make a post request to execute a swap order, you need to pass in the required parameters,:
+signedTransaction: The signed and serialized base64 encodedtransaction like above
+requestId: The order response’s request ID from Get Order
+Execute Order
+const executeResponse = await (
+    await fetch('https://api.jup.ag/ultra/v1/execute', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': 'your-api-key',
+        },
+        body: JSON.stringify({
+            signedTransaction: signedTransaction,
+            requestId: orderResponse.requestId,
+        }),
+    })
+).json();
+​
+Transaction Status Polling
+After our transaction sending service has submitted your swap, we will actively poll for your transaction status as part of the /execute endpoint. You will receive a response with the status of the swap.
+You can submit with the same signedTransaction and requestId for up to 2 minutes regardless of state, to poll for the transaction status.
+The transaction will not double execute since it has the same signature.
+If connection got dropped, you can try again with the same signedTransaction and requestId to poll for the status of the swap.
+If there is no status, the order likely expired (did not get processed onchain and failed), but reach out to us if cases like this happen.
+Transaction Status Polling
+if (executeResponse.status === "Success") {
+    console.log('Swap successful:', JSON.stringify(executeResponse, null, 2));
+    console.log(`https://solscan.io/tx/${executeResponse.signature}`);
+} else {
+    console.error('Swap failed:', JSON.stringify(executeResponse, null, 2));
+    console.log(`https://solscan.io/tx/${executeResponse.signature}`);
+}
+
+Response
+{
+  "status": "Success",
+  "code": 123,
+  "signature": "<string>",
+  "slot": "<string>",
+  "error": "<string>",
+  "totalInputAmount": "<string>",
+  "totalOutputAmount": "<string>",
+  "inputAmountResult": "<string>",
+  "outputAmountResult": "<string>",
+  "swapEvents": [
+    {
+      "inputMint": "<string>",
+      "inputAmount": "<string>",
+      "outputMint": "<string>",
+      "outputAmount": "<string>"
+    }
+  ]
+}
+
