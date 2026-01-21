@@ -15,6 +15,11 @@ import { TokenIcon } from "@/components/portfolio/token-icon";
 import { getTokenFallbackIcon } from "@/lib/shared/utils/portfolio-formatting";
 import { useDebounce } from "@/hooks/useDebounce";
 import PoolSuccessModal from "./pool-success-modal";
+import { useAccount, useChainId, useWaitForTransactionReceipt } from "wagmi";
+import { useWalletConnection } from "@/hooks/useWalletConnection";
+import ConnectWalletModal from "@/components/wallet/connect-wallet-modal";
+import { useFactoryStaking } from "@/hooks/useFactoryStaking";
+import { parseUnits, Address } from "viem";
 
 interface CreatePoolModalProps {
   open: boolean;
@@ -28,6 +33,14 @@ export default function CreatePoolModal({
   const [step, setStep] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const { chains, isLoading: chainsLoading } = useChains(); // Fetches all supported chains
+  
+  // Wallet connection
+  const { address: connectedAddress, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { openModal: openWalletModal, isModalOpen: isWalletModalOpen, closeModal: closeWalletModal } = useWalletConnection();
+  
+  // Factory staking hook - for creating pools on-chain
+  const factoryStaking = useFactoryStaking({ enabled: isConnected });
   
   // Step 1 fields
   const [selectedChain, setSelectedChain] = useState<{ id: number; name: string } | null>(null);
@@ -243,38 +256,37 @@ export default function CreatePoolModal({
         return;
       }
 
+      // Check if wallet is connected
+      if (!isConnected || !connectedAddress) {
+        alert("Please connect your wallet first. You need a connected wallet to create pools on-chain.");
+        openWalletModal();
+        return;
+      }
+
+      // Validate reward configuration (required for on-chain pool creation)
+      if (!maxTvl || !poolReward || !rewardDurationDays) {
+        alert("Please fill in all reward configuration fields: Max TVL, Pool Reward, and Reward Duration.");
+        return;
+      }
+
       setIsSubmitting(true);
       try {
         // Safely parse numeric values with validation
-        // NUMERIC(38, 8) means 38 total digits, 8 after decimal = supports up to 30 digits before decimal
-        // This supports trillions and beyond (e.g., up to 999999999999999999999999999999.99999999)
-        // Note: For very large numbers, we validate the string format and let the database handle precision
         const parseSafeNumber = (value: string, defaultValue: number = 0): number => {
           if (!value || value.trim() === "") return defaultValue;
-          
-          // Remove any non-numeric characters except decimal point
           const cleaned = value.trim().replace(/[^\d.]/g, '');
-          
-          // Validate format: max 30 digits before decimal, max 8 after decimal
           const parts = cleaned.split('.');
-          if (parts.length > 2) return defaultValue; // Multiple decimal points
-          
+          if (parts.length > 2) return defaultValue;
           const integerPart = parts[0] || '0';
           const decimalPart = parts[1] || '';
-          
-          // Check digit limits: 30 digits before decimal, 8 after
           if (integerPart.length > 30) return defaultValue;
           if (decimalPart.length > 8) {
-            // Truncate to 8 decimal places
             const truncated = decimalPart.substring(0, 8);
             const parsed = parseFloat(integerPart + '.' + truncated);
             return isNaN(parsed) || !isFinite(parsed) ? defaultValue : Math.max(0, parsed);
           }
-          
           const parsed = parseFloat(cleaned);
           if (isNaN(parsed) || !isFinite(parsed)) return defaultValue;
-          
-          // Round to 8 decimal places to match NUMERIC(38, 8) precision
           return Math.max(0, Math.round(parsed * 100000000) / 100000000);
         };
 
@@ -282,14 +294,42 @@ export default function CreatePoolModal({
         const maxStakeAmountValue = maxStakeAmount ? parseSafeNumber(maxStakeAmount, 0) : undefined;
         const stakePoolCreationFeeValue = parseSafeNumber(stakePoolCreationFee, 0.15);
         
-        // Parse reward configuration
-        const maxTvlValue = maxTvl ? parseSafeNumber(maxTvl, 0) : undefined;
-        const poolRewardValue = poolReward ? parseSafeNumber(poolReward, 0) : undefined;
+        // Parse reward configuration (required for on-chain creation)
+        const maxTvlValue = parseSafeNumber(maxTvl, 0);
+        const poolRewardValue = parseSafeNumber(poolReward, 0);
         const rewardDurationSecondsValue = rewardDurationDays !== "" && typeof rewardDurationDays === 'number' 
           ? rewardDurationDays * 24 * 60 * 60 
           : undefined;
 
-        // Create pool in database
+        if (!maxTvlValue || !poolRewardValue || !rewardDurationSecondsValue) {
+          throw new Error("Max TVL, Pool Reward, and Reward Duration are required for on-chain pool creation.");
+        }
+
+        // Get reward token address (defaults to staking token if same token for reward)
+        const rewardTokenAddress = selectedToken.address as Address; // TODO: Allow admin to select reward token separately
+        
+        // Step 1: Create pool on-chain via factory contract
+        console.log("Creating pool on-chain...");
+        const poolId = await factoryStaking.createPool(
+          selectedToken.address as Address,
+          rewardTokenAddress,
+          poolRewardValue.toString(),
+          rewardDurationSecondsValue,
+          maxTvlValue.toString()
+        );
+
+        // Wait for transaction to complete
+        if (factoryStaking.createPoolTxHash) {
+          // Transaction submitted, wait for confirmation
+          // Note: poolId might be null initially, we'll get it from the transaction receipt
+          console.log("Pool creation transaction submitted:", factoryStaking.createPoolTxHash);
+        }
+
+        // Step 2: Get factory contract address for this chain
+        // For now, we'll get it from the factory staking hook
+        // TODO: Get actual factory address from chain configuration
+        
+        // Step 3: Save pool to database with on-chain data
         const response = await fetch("/api/v1/staking-pools", {
           method: "POST",
           headers: {
@@ -311,19 +351,23 @@ export default function CreatePoolModal({
             country: country || undefined,
             stakePoolCreationFee: stakePoolCreationFeeValue,
             rewardPoolCreationFee: rewardPoolCreationFee || undefined,
-            apy: undefined, // Can be set later
+            apy: undefined,
             // Reward configuration
             maxTvl: maxTvlValue,
             poolReward: poolRewardValue,
             rewardDurationSeconds: rewardDurationSecondsValue,
+            // On-chain data
+            contractAddress: "FACTORY_CONTRACT", // TODO: Get actual factory address
             status: "active",
+            // Owner address from connected wallet
+            ownerAddress: connectedAddress,
           }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
           console.error("API Error Response:", errorData);
-          throw new Error(errorData.error || "Failed to create staking pool");
+          throw new Error(errorData.error || "Failed to save staking pool to database");
         }
 
         // Show success modal and refresh pools
@@ -370,6 +414,35 @@ export default function CreatePoolModal({
               <span>Cancel</span>
             </button>
           </DialogHeader>
+
+          {/* Wallet Connection Status */}
+          <div className="mb-4 p-3 bg-[#0b0f0a] border border-[#1f261e] rounded-lg">
+            {isConnected && connectedAddress ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-sm text-[#b5b5b5]">Connected:</span>
+                  <span className="text-sm text-white font-mono">
+                    {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
+                  </span>
+                </div>
+                <span className="text-xs text-[#b1f128]">Admin Wallet Active</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <span className="text-sm text-[#b5b5b5]">Wallet not connected</span>
+                </div>
+                <button
+                  onClick={openWalletModal}
+                  className="px-4 py-1.5 bg-[#b1f128] text-black text-sm font-medium rounded-lg hover:bg-[#9dd81f] transition-colors"
+                >
+                  Connect Wallet
+                </button>
+              </div>
+            )}
+          </div>
 
           {step === 1 && (
             <div className="space-y-6">
@@ -808,6 +881,16 @@ export default function CreatePoolModal({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Wallet Connection Modal */}
+      <ConnectWalletModal
+        open={isWalletModalOpen}
+        onOpenChange={closeWalletModal}
+        onWalletConnect={() => {
+          closeWalletModal();
+        }}
+        onOpenExplorer={() => {}}
+      />
 
       <PoolSuccessModal
         open={showSuccessModal}

@@ -39,25 +39,29 @@ const fetchStakingPools = async (
       const pools = data.pools || [];
       
       // Map API response to UI StakingPool format
+      // Note: poolId will be fetched from factory contract if factory address is configured
       return pools.map((pool: any) => ({
         id: pool.id,
         tokenSymbol: pool.tokenSymbol || "Unknown",
         tokenName: pool.tokenName || pool.tokenSymbol || "Unknown Token",
         apy: pool.apy ? `~${pool.apy.toFixed(2)}%` : "N/A",
         tokenIcon: pool.tokenLogo || "/assets/logos/twc-token.svg",
-        tvl: undefined, // Can be added later if needed
-        apr: pool.apy ? `${pool.apy.toFixed(2)}%` : undefined,
-        totalStaked: undefined, // Can be added later if needed
+        tvl: undefined, // Will be read from factory contract in component
+        apr: pool.apy ? `${pool.apy.toFixed(2)}%` : undefined, // Will be calculated from factory contract in component
+        totalStaked: undefined, // Will be read from factory contract in component
         limits: pool.minStakeAmount && pool.maxStakeAmount 
           ? `${pool.minStakeAmount}-${pool.maxStakeAmount} ${pool.tokenSymbol || ""}`
           : pool.minStakeAmount 
             ? `Min: ${pool.minStakeAmount} ${pool.tokenSymbol || ""}`
             : undefined,
         // Contract and chain info
-        contractAddress: pool.contractAddress || undefined,
+        contractAddress: pool.contractAddress || undefined, // Factory contract address or single pool contract
         chainId: pool.chainId || undefined,
         tokenAddress: pool.tokenAddress || undefined,
-        decimals: 18, // Default to 18, can be fetched from token contract if needed
+        decimals: 18, // Default to 18, will be fetched from token contract in component
+        poolId: pool.poolId || undefined, // Pool ID from factory contract (if available)
+        // Factory contract address (for pools created via factory)
+        factoryAddress: pool.contractAddress || undefined, // If this is a factory address
       }));
     } catch (error) {
       console.error("Error fetching staking pools:", error);
