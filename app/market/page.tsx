@@ -1,47 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import MarketTabs from "@/components/market/market-tabs";
 import MarketSubTabs from "@/components/market/market-sub-tabs";
 import MarketTable from "@/components/market/market-table";
 import MobileMarketList from "@/components/market/mobile-market-list";
-import { SPOT_TOKENS, PERP_TOKENS, type MarketToken } from "@/lib/market/mock-data";
+import { NetworkSelector } from "@/components/home/network-selector";
 
 type MarketTab = "Spot" | "Perp";
 type SubTabKey = "Favourite" | "Top" | "Spotlight" | "New" | "Gainers" | "Losers";
 
-// Simulate API call - returns all tokens (pagination handled by MarketTable)
-const simulateApiCall = (
-  marketType: MarketTab,
-  subTab: SubTabKey
-): Promise<MarketToken[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const allTokens = marketType === "Spot" ? SPOT_TOKENS : PERP_TOKENS;
-      // For now, return all tokens (filtering by subTab can be added later)
-      resolve(allTokens);
-    }, 1500);
-  });
-};
-
 export default function MarketPage() {
   const [activeTab, setActiveTab] = useState<MarketTab>("Spot");
   const [activeSubTab, setActiveSubTab] = useState<SubTabKey>("Top");
-  const [tokens, setTokens] = useState<MarketToken[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // Fetch tokens when tab or sub-tab changes
-  useEffect(() => {
-    setIsLoading(true);
-    simulateApiCall(activeTab, activeSubTab)
-      .then((data) => {
-        setTokens(data);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, [activeTab, activeSubTab]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<'volume' | 'liquidity' | 'performance' | 'none'>('none');
 
   return (
     <>
@@ -58,9 +32,12 @@ export default function MarketPage() {
 
               {/* Sub Tabs (Favourite, Top, New, etc.) and Search */}
               <div className="w-full flex items-center justify-between gap-3 lg:gap-4 xl:gap-4 2xl:gap-4">
-                <MarketSubTabs activeTab={activeSubTab} onTabChange={setActiveSubTab} />
+                <div className="flex items-center gap-4 flex-1">
+                  <NetworkSelector />
+                  <MarketSubTabs activeTab={activeSubTab} onTabChange={setActiveSubTab} />
+                </div>
                 <div className="hidden lg:block">
-                  <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-full px-3 lg:px-3.5 xl:px-4 2xl:px-4 py-2.5 lg:py-3 xl:py-3 2xl:py-[13px] flex items-center gap-1.5 lg:gap-2 xl:gap-2 2xl:gap-2 w-[500px] lg:w-[550px] xl:w-[620px] 2xl:w-[676px]">
+                  <div className="bg-[#0b0f0a] border border-[#1f261e] rounded-full px-3 lg:px-3.5 xl:px-4 2xl:px-4 py-2.5 lg:py-3 xl:py-3 2xl:py-[13px] flex items-center gap-1.5 lg:gap-2 xl:gap-2 2xl:gap-2 w-[400px] xl:w-[500px] 2xl:w-[600px]">
                     <Image
                       src="/assets/icons/search-01.svg"
                       alt="Search"
@@ -71,6 +48,8 @@ export default function MarketPage() {
                     <input
                       placeholder="Search by tokens"
                       className="bg-transparent text-xs lg:text-sm xl:text-base 2xl:text-base text-[#7c7c7c] outline-none w-full"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                 </div>
@@ -78,9 +57,11 @@ export default function MarketPage() {
 
               {/* Market Table */}
               <div className="flex-1 border border-[#1f261e] rounded-xl overflow-hidden flex flex-col min-h-0 w-full" style={{ minHeight: '600px', maxHeight: 'calc(100vh - 250px)' }}>
-                <MarketTable 
-                  tokens={tokens} 
-                  isLoading={isLoading}
+                <MarketTable
+                  activeSubTab={activeSubTab}
+                  searchQuery={searchQuery}
+                  sortBy={sortBy}
+                  onSortChange={setSortBy}
                   marketType={activeTab.toLowerCase() as "spot" | "perp"}
                 />
               </div>
@@ -88,6 +69,7 @@ export default function MarketPage() {
           </div>
         </div>
       </div>
+
 
       {/* Mobile Layout */}
       <div className="flex lg:hidden flex-col items-start w-screen relative min-h-screen bg-[#010501] z-20" style={{ marginLeft: 'calc(-50vw + 50%)', marginRight: 'calc(-50vw + 50%)' }}>
@@ -99,9 +81,8 @@ export default function MarketPage() {
               <div className="flex flex-col gap-2.5 items-center">
                 <button
                   onClick={() => setActiveTab("Spot")}
-                  className={`text-sm sm:text-base font-semibold leading-normal text-center transition-colors cursor-pointer ${
-                    activeTab === "Spot" ? "text-[#b1f128]" : "text-[#7c7c7c]"
-                  }`}
+                  className={`text-sm sm:text-base font-semibold leading-normal text-center transition-colors cursor-pointer ${activeTab === "Spot" ? "text-[#b1f128]" : "text-[#7c7c7c]"
+                    }`}
                 >
                   Spot
                 </button>
@@ -112,9 +93,8 @@ export default function MarketPage() {
               <div className="flex flex-col gap-2.5 items-center">
                 <button
                   onClick={() => setActiveTab("Perp")}
-                  className={`text-sm sm:text-base font-semibold leading-normal text-center transition-colors cursor-pointer ${
-                    activeTab === "Perp" ? "text-[#b1f128]" : "text-[#7c7c7c]"
-                  }`}
+                  className={`text-sm sm:text-base font-semibold leading-normal text-center transition-colors cursor-pointer ${activeTab === "Perp" ? "text-[#b1f128]" : "text-[#7c7c7c]"
+                    }`}
                 >
                   Perp
                 </button>
@@ -142,11 +122,10 @@ export default function MarketPage() {
                 <button
                   key={tab}
                   onClick={() => setActiveSubTab(tab)}
-                  className={`px-[10px] sm:px-3 py-1.5 sm:py-2 rounded-[100px] text-xs sm:text-sm font-medium leading-normal tracking-[0.012px] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                    isActive
-                      ? "bg-[#081f02] text-[#b1f128]"
-                      : "bg-[#0b0f0a] text-[#b5b5b5]"
-                  }`}
+                  className={`px-[10px] sm:px-3 py-1.5 sm:py-2 rounded-[100px] text-xs sm:text-sm font-medium leading-normal tracking-[0.012px] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${isActive
+                    ? "bg-[#081f02] text-[#b1f128]"
+                    : "bg-[#0b0f0a] text-[#b5b5b5]"
+                    }`}
                 >
                   {tab}
                 </button>
@@ -157,8 +136,8 @@ export default function MarketPage() {
 
         {/* Market List - Card-based */}
         <div className="flex-1 w-full overflow-y-auto">
-          <MobileMarketList 
-            tokens={tokens} 
+          <MobileMarketList
+            tokens={tokens}
             isLoading={isLoading}
           />
         </div>

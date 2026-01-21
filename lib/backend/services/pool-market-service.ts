@@ -20,28 +20,19 @@ import { getCanonicalChain } from '@/lib/backend/registry/chains';
 import { getCache, CACHE_TTL } from '@/lib/backend/utils/cache';
 import { getTokenHoldersCount } from '@/lib/backend/utils/chainbase-client';
 
+import { CHAIN_ID_TO_COINGECKO_ID, COINGECKO_ID_TO_CHAIN_ID } from '@/lib/shared/constants/coingecko-networks';
+
 // CoinGecko onchain base URL
 const COINGECKO_ONCHAIN_BASE = 'https://api.coingecko.com/api/v3/onchain';
 
-// Map canonical chain IDs to CoinGecko onchain network slugs
-const COINGECKO_NETWORK_BY_CHAIN: Record<number, string> = {
-  1: 'eth',          // Ethereum
-  56: 'bsc',         // BNB Smart Chain
-  137: 'polygon',    // Polygon
-  42161: 'arbitrum', // Arbitrum
-  10: 'optimism',    // Optimism
-  8453: 'base',      // Base
-  43114: 'avax',     // Avalanche
-  7565164: 'solana', // Solana
-};
+/**
+ * Map canonical chain IDs to CoinGecko onchain network slugs.
+ * Now derived from the shared constant for consistency.
+ */
+const COINGECKO_NETWORK_BY_CHAIN: Record<number, string> = CHAIN_ID_TO_COINGECKO_ID;
 
-// Inverse map for going from network slug → canonical chainId
-const CHAIN_BY_COINGECKO_NETWORK: Record<string, number> = Object.entries(
-  COINGECKO_NETWORK_BY_CHAIN
-).reduce((acc, [id, slug]) => {
-  acc[slug] = Number(id);
-  return acc;
-}, {} as Record<string, number>);
+const CHAIN_BY_COINGECKO_NETWORK: Record<string, number> = COINGECKO_ID_TO_CHAIN_ID;
+
 
 // Map CoinGecko network names to DexScreener chain slugs
 const COINGECKO_TO_DEXSCREENER_CHAIN: Record<string, string> = {
@@ -349,7 +340,7 @@ export class PoolMarketService {
       }
 
       const json = (await res.json()) as CoingeckoPoolsResponse;
-      const pairs = await this.parsePoolsToMarketPairs(json);
+      const pairs = await this.parsePoolsToMarketPairs(json, network);
 
       this.cache.set(cacheKey, pairs, PoolMarketService.CACHE_TTL_MS);
       return pairs;
@@ -384,7 +375,6 @@ export class PoolMarketService {
     }
 
     const endpoint = `${COINGECKO_ONCHAIN_BASE}/networks/trending_pools?include=base_token,quote_token,dex,network&page=${page}`;
-
     try {
       const res = await fetch(endpoint, { headers });
       if (!res.ok) {
@@ -397,6 +387,7 @@ export class PoolMarketService {
       }
 
       const json = (await res.json()) as CoingeckoPoolsResponse;
+      console.log("json is json", json)
       const pairs = await this.parsePoolsToMarketPairs(json);
 
       this.cache.set(cacheKey, pairs, PoolMarketService.CACHE_TTL_MS);
@@ -415,7 +406,8 @@ export class PoolMarketService {
    * Handles the included array to match tokens, dex, and network to pools
    */
   private async parsePoolsToMarketPairs(
-    response: CoingeckoPoolsResponse
+    response: CoingeckoPoolsResponse,
+    defaultNetworkId?: string
   ): Promise<MarketTokenPair[]> {
     const { data: pools, included = [] } = response;
 
@@ -439,39 +431,57 @@ export class PoolMarketService {
     for (const pool of pools) {
       const baseTokenId = pool.relationships.base_token?.data?.id;
       const quoteTokenId = pool.relationships.quote_token?.data?.id;
-      const networkId = pool.relationships.network?.data?.id;
       const dexId = pool.relationships.dex?.data?.id;
+
+      // Fallback for networkId: 
+      // 1. Explicit relationship
+      // 2. Prefix from pool ID (e.g. "polygon_pos_0x..." -> "polygon_pos")
+      // 3. The default network for the current request context
+      let networkId = pool.relationships.network?.data?.id;
+      if (!networkId && pool.id.includes('_0x')) {
+        // Find the split between network and address (e.g. polygon_pos_0x...)
+        networkId = pool.id.substring(0, pool.id.lastIndexOf('_'));
+      }
+      if (!networkId) {
+        networkId = defaultNetworkId;
+      }
 
       if (!baseTokenId || !quoteTokenId || !networkId) {
         console.warn(
-          `[PoolMarketService] Missing required relationships for pool ${pool.id}`
+          `[PoolMarketService] Missing required relationships for pool ${pool.id}. baseTokenId: ${baseTokenId}, quoteTokenId: ${quoteTokenId}, networkId: ${networkId}`
         );
         continue;
       }
 
+
       const baseTokenAttrs = tokensMap.get(baseTokenId);
       const quoteTokenAttrs = tokensMap.get(quoteTokenId);
-      const networkAttrs = networkMap.get(networkId);
       const dexAttrs = dexMap.get(dexId || '');
 
-      if (!baseTokenAttrs || !quoteTokenAttrs || !networkAttrs) {
+      if (!baseTokenAttrs || !quoteTokenAttrs) {
         console.warn(
-          `[PoolMarketService] Missing token/network data for pool ${pool.id}`
+          `[PoolMarketService] Missing token data for pool ${pool.id}. base: ${!!baseTokenAttrs}, quote: ${!!quoteTokenAttrs}`
         );
         continue;
       }
 
       // Map network name to canonical chain ID
-      const chainId = CHAIN_BY_COINGECKO_NETWORK[networkId];
-      if (!chainId) {
-        console.warn(
-          `[PoolMarketService] Unknown network: ${networkId} for pool ${pool.id}`
-        );
-        continue;
-      }
+      let chainId = CHAIN_BY_COINGECKO_NETWORK[networkId];
+      let chainName = networkId.charAt(0).toUpperCase() + networkId.slice(1);
+      let chainLogo = '';
 
-      const canonicalChain = getCanonicalChain(chainId);
-      if (!canonicalChain) continue;
+      const canonicalChain = chainId ? getCanonicalChain(chainId) : null;
+      if (canonicalChain) {
+        chainName = canonicalChain.name;
+        chainLogo = canonicalChain.logoURI || '';
+      } else {
+        // For unknown chains, assign a temporary negative ID based on network string hash
+        // This ensures they still show up and are filterable without crashing the app
+        if (!chainId) {
+          chainId = this.hashStringToInt(networkId);
+          console.info(`[PoolMarketService] Dynamic chain resolved: ${networkId} -> ${chainId}`);
+        }
+      }
 
       // Clean pool name (remove percentages)
       const cleanedPoolName = this.cleanPoolName(pool.attributes.name);
@@ -480,6 +490,8 @@ export class PoolMarketService {
       const baseTokenPriceUSD = pool.attributes.base_token_price_usd || '0';
       const quoteTokenPriceUSD = pool.attributes.quote_token_price_usd || '0';
       const pairPrice = pool.attributes.base_token_price_quote_token || '0';
+
+      const chainBadge = chainName.toLowerCase().replace(/\s+/g, '-');
 
       // Create base and quote tokens with CoinGecko prices
       const baseToken: MarketToken = {
@@ -491,8 +503,8 @@ export class PoolMarketService {
         logoURI: baseTokenAttrs.image_url || '',
         priceUSD: baseTokenPriceUSD, // From CoinGecko pool data
         verified: false,
-        chainBadge: canonicalChain.name.toLowerCase(),
-        chainName: canonicalChain.name,
+        chainBadge,
+        chainName,
       };
 
       const quoteToken: MarketToken = {
@@ -504,8 +516,8 @@ export class PoolMarketService {
         logoURI: quoteTokenAttrs.image_url || '',
         priceUSD: quoteTokenPriceUSD, // From CoinGecko pool data
         verified: false,
-        chainBadge: canonicalChain.name.toLowerCase(),
-        chainName: canonicalChain.name,
+        chainBadge,
+        chainName,
       };
 
       // Extract pool metrics
@@ -539,9 +551,9 @@ export class PoolMarketService {
         holders: undefined, // Will be enriched from Chainbase
         transactionCount: transactionCount || undefined,
         chainId,
-        chainName: canonicalChain.name,
-        chainBadge: canonicalChain.name.toLowerCase(),
-        chainLogoURI: canonicalChain.logoURI,
+        chainName,
+        chainBadge: chainName.toLowerCase().replace(/\s+/g, '-'),
+        chainLogoURI: chainLogo || canonicalChain?.logoURI,
         dexId: dexId || undefined,
         pairPrice: pairPrice || undefined,
         pairPriceDisplay,
@@ -557,7 +569,22 @@ export class PoolMarketService {
   }
 
   /**
+   * Simple hash function to generate a stable, unique number from a string.
+   * Used for generating virtual chain IDs for networks not in our registry.
+   */
+  private hashStringToInt(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+  }
+
+  /**
    * Enrich holder counts from Chainbase API
+
    * Falls back to transaction count if Chainbase is unavailable or chain is unsupported
    * 
    * For each pair:

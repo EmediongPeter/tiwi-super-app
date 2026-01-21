@@ -1,42 +1,24 @@
-"use client";
-
 import { NetworkSelectorItem } from "./network-selector-item";
-
-/**
- * Static chain data for the network selector.
- * Will be replaced with prefetched chain data in the future.
- */
-const STATIC_CHAINS = [
-    { id: "solana", name: "Solana", logoPath: "/assets/chains/chain-1.svg" },
-    { id: "bsc", name: "BNB Smart Chain", logoPath: "/assets/chains/chain-2.svg" },
-    { id: "ethereum", name: "Ethereum", logoPath: "/assets/chains/chain-3.svg" },
-    { id: "arbitrum", name: "Arbitrum One", logoPath: "/assets/chains/chain-4.svg" },
-    { id: "base", name: "Base", logoPath: "/assets/chains/chain-5.svg" },
-    { id: "polygon", name: "Polygon", logoPath: "/assets/chains/chain-6.svg" },
-    { id: "avalanche", name: "Avalanche", logoPath: "/assets/chains/chain-7.svg" },
-    { id: "optimism", name: "Optimism", logoPath: "/assets/chains/chain-8.svg" },
-];
+import type { ChainDTO } from "@/lib/backend/types/backend-tokens";
+import { getCoinGeckoNetworkId } from "@/lib/shared/constants/coingecko-networks";
 
 interface NetworkSelectorDropdownProps {
-    /** Currently selected chain IDs */
-    selectedChains: string[];
-    /** Whether all networks are selected */
-    allSelected: boolean;
-    /** Callback when "All networks" is toggled */
-    onToggleAll?: () => void;
-    /** Callback when a specific chain is toggled */
-    onToggleChain?: (chainId: string) => void;
+    /** Dynamic list of chains from API */
+    chains: ChainDTO[];
+    /** Selected chain ID. null means "All networks" */
+    selectedChainId: number | null;
+    /** Callback when selection changes */
+    onSelect: (chainId: number | null, slug: string | null) => void;
 }
 
 /**
  * Dropdown panel for the network selector.
- * Displays a list of networks with checkboxes for filtering.
+ * Displays a list of networks fetched from the backend.
  */
 export function NetworkSelectorDropdown({
-    selectedChains,
-    allSelected,
-    onToggleAll,
-    onToggleChain,
+    chains,
+    selectedChainId,
+    onSelect,
 }: NetworkSelectorDropdownProps) {
     return (
         <div
@@ -52,27 +34,31 @@ export function NetworkSelectorDropdown({
             {/* All Networks Option */}
             <NetworkSelectorItem
                 name="All networks"
-                isSelected={allSelected}
+                isSelected={selectedChainId === null}
                 isAllNetworks={true}
-                onToggle={onToggleAll}
+                onToggle={() => onSelect(null, null)}
             />
 
             {/* Divider */}
             <div className="h-px bg-[#1f261e] mx-3 my-0.5" />
 
             {/* Individual Chain Options */}
-            {STATIC_CHAINS.map((chain) => (
-                <NetworkSelectorItem
-                    key={chain.id}
-                    name={chain.name}
-                    logoPath={chain.logoPath}
-                    isSelected={allSelected || selectedChains.includes(chain.id)}
-                    onToggle={() => onToggleChain?.(chain.id)}
-                />
-            ))}
+            {chains.map((chain) => {
+                const cgSlug = getCoinGeckoNetworkId(chain.id);
+                // Only show chains we can map to CoinGecko for now (as per user goal)
+                if (!cgSlug) return null;
+
+                return (
+                    <NetworkSelectorItem
+                        key={chain.id}
+                        name={chain.name}
+                        logoPath={chain.logoURI}
+                        isSelected={selectedChainId === chain.id}
+                        onToggle={() => onSelect(chain.id, cgSlug)}
+                    />
+                );
+            })}
         </div>
     );
 }
 
-// Export static chains for use in trigger component
-export { STATIC_CHAINS };

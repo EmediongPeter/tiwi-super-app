@@ -24,6 +24,8 @@ import { marketPairToToken } from "@/lib/home/token-formatter";
 import { PairLogoStack } from "@/components/ui/pair-logo-stack";
 import { SubscriptPairPrice } from "@/components/ui/subscript-pair-price";
 import { useSwapStore } from "@/lib/frontend/store/swap-store";
+import { useNetworkFilterStore } from "@/lib/frontend/store/network-store";
+
 
 type TabKey = "Favourite" | "Hot" | "New" | "Gainers" | "Losers";
 type SortKey = 'volume' | 'liquidity' | 'performance' | 'none';
@@ -70,10 +72,16 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
     Gainers: 'gainers',
     Losers: 'losers',
     Favourite: null,
-        };
+  };
 
   const activeCategory = categoryMap[activeTab];
-        
+  const { selectedNetworkSlug } = useNetworkFilterStore();
+
+  // Reset to page 1 when network or category changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedNetworkSlug, activeCategory]);
+
   // Category-based market pairs (Hot/New/Gainers/Losers) - fetched via TanStack Query
   const {
     data: marketPairsResponse,
@@ -81,10 +89,21 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
     error: categoryError,
   } = useMarketPairsQuery({
     params: activeCategory
-      ? { category: activeCategory, limit: rowsPerPage, page: currentPage }
-      : { category: 'hot', limit: rowsPerPage, page: currentPage }, // Fallback (shouldn't happen)
+      ? {
+        category: activeCategory,
+        limit: rowsPerPage,
+        page: currentPage,
+        network: selectedNetworkSlug || undefined
+      }
+      : {
+        category: 'hot',
+        limit: rowsPerPage,
+        page: currentPage,
+        network: selectedNetworkSlug || undefined
+      },
     enabled: !!activeCategory,
   });
+
 
   const marketPairs = marketPairsResponse?.pairs ?? [];
 
@@ -106,31 +125,31 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
       try {
         const stored = localStorage.getItem("favouriteTokens");
         const favouriteIds: string[] = stored ? JSON.parse(stored) : [];
-          
+
         if (favouriteIds.length === 0) {
           setFavouriteTokens([]);
           return;
         }
 
-            const tokensPromises = favouriteIds.map(async (id: string) => {
+        const tokensPromises = favouriteIds.map(async (id: string) => {
           const [chainId, address] = id.split("-");
-              try {
+          try {
             const url = new URL("/api/v1/tokens", window.location.origin);
             url.searchParams.set("address", address);
             url.searchParams.set("chains", chainId);
             url.searchParams.set("limit", "1");
-                const response = await fetch(url.toString());
-                if (response.ok) {
-                  const data = await response.json();
+            const response = await fetch(url.toString());
+            if (response.ok) {
+              const data = await response.json();
               return data.tokens?.[0] as Token | undefined;
-                }
-              } catch (e) {
+            }
+          } catch (e) {
             console.error(`[MarketTable] Error fetching favourite token ${id}:`, e);
-              }
-              return null;
-            });
-            
-            const results = await Promise.all(tokensPromises);
+          }
+          return null;
+        });
+
+        const results = await Promise.all(tokensPromises);
         setFavouriteTokens(results.filter(Boolean) as Token[]);
       } catch (error) {
         console.error("[MarketTable] Error fetching favourite tokens:", error);
@@ -159,8 +178,8 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
     let working: Token[] = [...rawTokens];
 
     // Client-side search
-        if (searchQuery.trim()) {
-          const query = searchQuery.toLowerCase();
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
       working = working.filter((token) => {
         const symbol = token.symbol?.toLowerCase() || "";
         const name = token.name?.toLowerCase() || "";
@@ -179,20 +198,20 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
     // Sorting (volume, liquidity, performance)
     if (sortBy !== "none") {
       formatted = [...formatted].sort((a, b) => {
-            switch (sortBy) {
+        switch (sortBy) {
           case "volume":
-                return (b.token.volume24h || 0) - (a.token.volume24h || 0);
+            return (b.token.volume24h || 0) - (a.token.volume24h || 0);
           case "liquidity":
-                return (b.token.liquidity || 0) - (a.token.liquidity || 0);
+            return (b.token.liquidity || 0) - (a.token.liquidity || 0);
           case "performance":
             return (
               (b.token.priceChange24h || 0) - (a.token.priceChange24h || 0)
             );
-              default:
-                return 0;
-            }
-          });
+          default:
+            return 0;
         }
+      });
+    }
 
     // Return full list; pagination handled separately
     return formatted;
@@ -293,7 +312,7 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
   // Measure row heights on mount and when data changes
   useEffect(() => {
     if (isLoading || homepageTokens.length === 0) return;
-    
+
     // Initial sync after render
     const timeoutId = setTimeout(() => {
       syncRowHeights();
@@ -346,199 +365,198 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
             {/* LEFT TABLE: All columns except Buy/Sell */}
             <div className="flex-1">
               <div className="w-full">
-              <Table ref={leftTableRef} className="table-fixed w-full">
+                <Table ref={leftTableRef} className="table-fixed w-full">
+                  <TableHeader className="sticky top-0 z-20 bg-[#010501]">
+                    <TableRow className="border-b border-[#1f261e]/80 hover:bg-transparent">
+                      <TableHead className="z-20 w-[10rem] lg:w-[11.5rem] xl:w-[13rem] 2xl:w-[14.5rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-left text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501]">
+                        Token
+                      </TableHead>
+                      <TableHead className="z-20 w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501]">
+                        Price
+                      </TableHead>
+                      <TableHead
+                        className="z-20 w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-[#b1f128] transition-colors"
+                        onClick={() => onSortChange?.(sortBy === 'performance' ? 'none' : 'performance')}
+                      >
+                        24h Change {sortBy === 'performance' ? '▼' : ''}
+                      </TableHead>
+                      <TableHead
+                        className="z-20 w-[5.5rem] lg:w-[6rem] xl:w-[6.875rem] 2xl:w-[7.5rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-[#b1f128] transition-colors"
+                        onClick={() => onSortChange?.(sortBy === 'volume' ? 'none' : 'volume')}
+                      >
+                        24h Vol {sortBy === 'volume' ? '▼' : ''}
+                      </TableHead>
+                      <TableHead
+                        className="z-20 w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-[#b1f128] transition-colors"
+                        onClick={() => onSortChange?.(sortBy === 'liquidity' ? 'none' : 'liquidity')}
+                      >
+                        Liquidity {sortBy === 'liquidity' ? '▼' : ''}
+                      </TableHead>
+                      <TableHead className="z-20 w-[4.5rem] lg:w-[4.75rem] xl:w-[5.3125rem] 2xl:w-[5.625rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501]">
+                        Holders
+                      </TableHead>
+                      {/* Buy/Sell column intentionally NOT here - it's in the right table */}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableSkeleton rows={10} />
+                    ) : homepageTokens.length === 0 && searchQuery.trim() ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-[#b5b5b5]">
+                          No tokens found
+                        </TableCell>
+                      </TableRow>
+                    ) : !isCategoryLoading && !hasAnyTokens ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-[#b5b5b5]">
+                          No tokens available
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      homepageTokens.map((token: HomepageToken, idx: number) => (
+                        <TableRow
+                          key={token.symbol}
+                          ref={(el) => {
+                            if (el) leftRowRefs.current[idx] = el;
+                          }}
+                          className="group border-b border-[#1f261e]/60 hover:bg-[#0b0f0a] transition-colors"
+                        >
+                          <TableCell className="w-[10rem] lg:w-[11.5rem] xl:w-[13rem] 2xl:w-[14.5rem] px-3 lg:px-3.5 xl:px-4 2xl:px-5 py-2.5 lg:py-3 xl:py-4 text-white text-[10px] lg:text-xs xl:text-sm font-semibold align-middle">
+                            <div className="flex items-center gap-1.5 lg:gap-2 xl:gap-2.5 2xl:gap-3">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Toggle favourite
+                                  const tokenId = `${token.token.chainId}-${token.token.address.toLowerCase()}`;
+                                  const newFavourites = [...favourites];
+                                  const index = newFavourites.indexOf(tokenId);
+                                  if (index > -1) {
+                                    newFavourites.splice(index, 1);
+                                  } else {
+                                    newFavourites.push(tokenId);
+                                  }
+                                  setFavourites(newFavourites);
+                                  localStorage.setItem('favouriteTokens', JSON.stringify(newFavourites));
+                                }}
+                                className="shrink-0 cursor-pointer"
+                                aria-label="Toggle favourite"
+                              >
+                                <Image
+                                  src={favourites.includes(`${token.token.chainId}-${token.token.address.toLowerCase()}`)
+                                    ? "/assets/icons/wallet/star18.svg"
+                                    : "/assets/icons/home/star.svg"
+                                  }
+                                  alt="star"
+                                  width={16}
+                                  height={16}
+                                  className="w-4 h-4 lg:w-4 lg:h-4 xl:w-4.5 xl:h-4.5 shrink-0"
+                                />
+                              </button>
+                              {/* Use PairLogoStack for market pairs, TokenImage for favourites */}
+                              {token.token.baseToken && token.token.quoteToken ? (
+                                <PairLogoStack
+                                  baseToken={token.token.baseToken}
+                                  quoteToken={token.token.quoteToken}
+                                  pairName={token.token.symbol || token.token.name}
+                                  chainName={token.token.chain || ''}
+                                  chainLogoURI={token.token.chainLogo}
+                                  className="shrink-0"
+                                />
+                              ) : (
+                                <>
+                                  <TokenImage
+                                    src={token.icon}
+                                    alt={token.symbol}
+                                    width={26}
+                                    height={26}
+                                    symbol={token.symbol}
+                                    className="lg:w-7 lg:h-7 xl:w-9 xl:h-9 2xl:w-10 2xl:h-10 shrink-0"
+                                  />
+                                  <span className="whitespace-nowrap">{token.symbol}</span>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
+                            {/* Use SubscriptPairPrice for market pairs, formatted price for favourites */}
+                            {token.token.baseToken && token.token.quoteToken && token.token.pairPrice ? (
+                              <SubscriptPairPrice
+                                price={token.token.pairPrice}
+                                quoteSymbol={token.token.quoteToken.symbol || 'USD'}
+                                className="text-right"
+                              />
+                            ) : (
+                              token.price
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className={`w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-[10px] lg:text-xs xl:text-base font-medium ${token.changePositive ? "text-[#3fea9b]" : "text-[#ff5c5c]"
+                              }`}
+                          >
+                            {token.change}
+                          </TableCell>
+                          <TableCell className="w-[5.5rem] lg:w-[6rem] xl:w-[6.875rem] 2xl:w-[7.5rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
+                            {token.vol}
+                          </TableCell>
+                          <TableCell className="w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
+                            {token.liq}
+                          </TableCell>
+                          <TableCell className="w-[4.5rem] lg:w-[4.75rem] xl:w-[5.3125rem] 2xl:w-[5.625rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
+                            {token.holders}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* RIGHT TABLE: Fixed Buy/Sell column */}
+            <div className="shrink-0 w-[5.25rem] lg:w-[5.5rem] xl:w-[6rem] 2xl:w-[6.25rem] relative z-30 bg-[#010501] sticky right-0 shadow-[-8px_0_12px_rgba(0,0,0,0.45)]">
+              <Table
+                ref={rightTableRef}
+                className="table-fixed w-full bg-[#010501]"
+              >
                 <TableHeader className="sticky top-0 z-20 bg-[#010501]">
                   <TableRow className="border-b border-[#1f261e]/80 hover:bg-transparent">
-                    <TableHead className="z-20 w-[10rem] lg:w-[11.5rem] xl:w-[13rem] 2xl:w-[14.5rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-left text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501]">
-                      Token
+                    <TableHead className="sticky top-0 z-20 px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-center text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] border-l border-[#1f261e]/40">
+                      Buy/Sell
                     </TableHead>
-                    <TableHead className="z-20 w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501]">
-                      Price
-                    </TableHead>
-                    <TableHead 
-                      className="z-20 w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-[#b1f128] transition-colors"
-                      onClick={() => onSortChange?.(sortBy === 'performance' ? 'none' : 'performance')}
-                    >
-                      24h Change {sortBy === 'performance' ? '▼' : ''}
-                    </TableHead>
-                    <TableHead 
-                      className="z-20 w-[5.5rem] lg:w-[6rem] xl:w-[6.875rem] 2xl:w-[7.5rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-[#b1f128] transition-colors"
-                      onClick={() => onSortChange?.(sortBy === 'volume' ? 'none' : 'volume')}
-                    >
-                      24h Vol {sortBy === 'volume' ? '▼' : ''}
-                    </TableHead>
-                    <TableHead 
-                      className="z-20 w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-[#b1f128] transition-colors"
-                      onClick={() => onSortChange?.(sortBy === 'liquidity' ? 'none' : 'liquidity')}
-                    >
-                      Liquidity {sortBy === 'liquidity' ? '▼' : ''}
-                    </TableHead>
-                    <TableHead className="z-20 w-[4.5rem] lg:w-[4.75rem] xl:w-[5.3125rem] 2xl:w-[5.625rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-right text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501]">
-                      Holders
-                    </TableHead>
-                    {/* Buy/Sell column intentionally NOT here - it's in the right table */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isLoading ? (
-                    <TableSkeleton rows={10} />
-                  ) : homepageTokens.length === 0 && searchQuery.trim() ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-[#b5b5b5]">
-                        No tokens found
-                      </TableCell>
-                    </TableRow>
-                  ) : !isCategoryLoading && !hasAnyTokens ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-[#b5b5b5]">
-                        No tokens available
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    homepageTokens.map((token: HomepageToken, idx: number) => (
+                  {!isLoading && homepageTokens.length > 0 && homepageTokens.map((token, idx) => (
                     <TableRow
                       key={token.symbol}
-                      ref={(el) => {
-                        if (el) leftRowRefs.current[idx] = el;
-                      }}
+                      data-row-index={idx}
                       className="group border-b border-[#1f261e]/60 hover:bg-[#0b0f0a] transition-colors"
                     >
-                      <TableCell className="w-[10rem] lg:w-[11.5rem] xl:w-[13rem] 2xl:w-[14.5rem] px-3 lg:px-3.5 xl:px-4 2xl:px-5 py-2.5 lg:py-3 xl:py-4 text-white text-[10px] lg:text-xs xl:text-sm font-semibold align-middle">
-                        <div className="flex items-center gap-1.5 lg:gap-2 xl:gap-2.5 2xl:gap-3">
+                      <TableCell className="text-center bg-[#010501] border-l border-[#1f261e]/40 transition-colors">
+                        <div className="flex justify-center items-center">
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Toggle favourite
-                              const tokenId = `${token.token.chainId}-${token.token.address.toLowerCase()}`;
-                              const newFavourites = [...favourites];
-                              const index = newFavourites.indexOf(tokenId);
-                              if (index > -1) {
-                                newFavourites.splice(index, 1);
-                              } else {
-                                newFavourites.push(tokenId);
-                              }
-                              setFavourites(newFavourites);
-                              localStorage.setItem('favouriteTokens', JSON.stringify(newFavourites));
-                            }}
-                            className="shrink-0 cursor-pointer"
-                            aria-label="Toggle favourite"
+                            onClick={(e) => handleTradeClick(token, e)}
+                            className="bg-[#081F02] rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 group-hover:opacity-100 px-5 py-2 gap-2 hover:opacity-95"
                           >
-                          <Image
-                              src={favourites.includes(`${token.token.chainId}-${token.token.address.toLowerCase()}`)
-                                ? "/assets/icons/wallet/star18.svg"
-                                : "/assets/icons/home/star.svg"
-                              }
-                            alt="star"
-                              width={16}
-                              height={16}
-                              className="w-4 h-4 lg:w-4 lg:h-4 xl:w-4.5 xl:h-4.5 shrink-0"
-                          />
-                          </button>
-                          {/* Use PairLogoStack for market pairs, TokenImage for favourites */}
-                          {token.token.baseToken && token.token.quoteToken ? (
-                            <PairLogoStack
-                              baseToken={token.token.baseToken}
-                              quoteToken={token.token.quoteToken}
-                              pairName={token.token.symbol || token.token.name}
-                              chainName={token.token.chain || ''}
-                              chainLogoURI={token.token.chainLogo}
-                              className="shrink-0"
+                            <Image
+                              src="/assets/icons/home/trade.svg"
+                              alt="trade"
+                              width={24}
+                              height={24}
+                              className="w-3 h-3"
                             />
-                          ) : (
-                            <>
-                          <TokenImage
-                            src={token.icon}
-                            alt={token.symbol}
-                                width={26}
-                                height={26}
-                            symbol={token.symbol}
-                                className="lg:w-7 lg:h-7 xl:w-9 xl:h-9 2xl:w-10 2xl:h-10 shrink-0"
-                          />
-                              <span className="whitespace-nowrap">{token.symbol}</span>
-                            </>
-                          )}
+                            <span className="hidden group-hover:inline text-[#b1f128] text-[12.5px] lg:text-[13px] xl:text-[14px] font-semibold leading-none whitespace-nowrap">
+                              Trade
+                            </span>
+                          </button>
                         </div>
                       </TableCell>
-                      <TableCell className="w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
-                        {/* Use SubscriptPairPrice for market pairs, formatted price for favourites */}
-                        {token.token.baseToken && token.token.quoteToken && token.token.pairPrice ? (
-                          <SubscriptPairPrice
-                            price={token.token.pairPrice}
-                            quoteSymbol={token.token.quoteToken.symbol || 'USD'}
-                            className="text-right"
-                          />
-                        ) : (
-                          token.price
-                        )}
-                      </TableCell>
-                      <TableCell
-                        className={`w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-[10px] lg:text-xs xl:text-base font-medium ${
-                          token.changePositive ? "text-[#3fea9b]" : "text-[#ff5c5c]"
-                        }`}
-                      >
-                        {token.change}
-                      </TableCell>
-                      <TableCell className="w-[5.5rem] lg:w-[6rem] xl:w-[6.875rem] 2xl:w-[7.5rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
-                        {token.vol}
-                      </TableCell>
-                      <TableCell className="w-[5rem] lg:w-[5.5rem] xl:w-[6.5625rem] 2xl:w-[6.875rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
-                        {token.liq}
-                      </TableCell>
-                      <TableCell className="w-[4.5rem] lg:w-[4.75rem] xl:w-[5.3125rem] 2xl:w-[5.625rem] px-3 lg:px-4 xl:px-5 2xl:px-6 py-2.5 lg:py-3 xl:py-4 text-right text-white text-[10px] lg:text-xs xl:text-base font-medium">
-                        {token.holders}
-                      </TableCell>
                     </TableRow>
-                    ))
-                  )}
+                  ))}
                 </TableBody>
               </Table>
             </div>
-          </div>
-
-          {/* RIGHT TABLE: Fixed Buy/Sell column */}
-          <div className="shrink-0 w-[5.25rem] lg:w-[5.5rem] xl:w-[6rem] 2xl:w-[6.25rem] relative z-30 bg-[#010501] sticky right-0 shadow-[-8px_0_12px_rgba(0,0,0,0.45)]">
-            <Table
-              ref={rightTableRef}
-              className="table-fixed w-full bg-[#010501]"
-            >
-              <TableHeader className="sticky top-0 z-20 bg-[#010501]">
-                <TableRow className="border-b border-[#1f261e]/80 hover:bg-transparent">
-                  <TableHead className="sticky top-0 z-20 px-3 lg:px-4 xl:px-5 2xl:px-6 py-1.5 lg:py-2 text-center text-[10px] lg:text-xs xl:text-sm text-[#7c7c7c] font-semibold bg-[#010501] border-l border-[#1f261e]/40">
-                    Buy/Sell
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {!isLoading && homepageTokens.length > 0 && homepageTokens.map((token, idx) => (
-                  <TableRow
-                    key={token.symbol}
-                    data-row-index={idx}
-                    className="group border-b border-[#1f261e]/60 hover:bg-[#0b0f0a] transition-colors"
-                  >
-                    <TableCell className="text-center bg-[#010501] border-l border-[#1f261e]/40 transition-colors">
-                      <div className="flex justify-center items-center">
-                        <button
-                          onClick={(e) => handleTradeClick(token, e)}
-                          className="bg-[#081F02] rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 group-hover:opacity-100 px-5 py-2 gap-2 hover:opacity-95"
-                        >
-                          <Image
-                            src="/assets/icons/home/trade.svg"
-                            alt="trade"
-                            width={24}
-                            height={24}
-                            className="w-3 h-3"
-                          />
-                          <span className="hidden group-hover:inline text-[#b1f128] text-[12.5px] lg:text-[13px] xl:text-[14px] font-semibold leading-none whitespace-nowrap">
-                            Trade
-                          </span>
-                        </button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
           </div>
         </div>
       </div>
@@ -553,7 +571,7 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
             aria-label="Previous page"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-4 lg:w-4 xl:w-5 2xl:w-6 h-4 lg:h-4 xl:h-5 2xl:h-6">
-              <path d="M15 18L9 12L15 6" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M15 18L9 12L15 6" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
 
@@ -562,11 +580,10 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
             {/* Always show page 1 */}
             <button
               onClick={() => changePage(1)}
-              className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                currentPage === 1
-                  ? "bg-[#b1f128] text-[#010501] font-semibold"
-                  : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-              }`}
+              className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${currentPage === 1
+                ? "bg-[#b1f128] text-[#010501] font-semibold"
+                : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
+                }`}
             >
               1
             </button>
@@ -575,11 +592,10 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
             {currentPage <= 3 && (
               <button
                 onClick={() => changePage(2)}
-                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                  currentPage === 2
-                    ? "bg-[#b1f128] text-[#010501] font-semibold"
-                    : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-                }`}
+                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${currentPage === 2
+                  ? "bg-[#b1f128] text-[#010501] font-semibold"
+                  : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
+                  }`}
               >
                 2
               </button>
@@ -589,11 +605,10 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
             {currentPage <= 3 && (
               <button
                 onClick={() => changePage(3)}
-                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                  currentPage === 3
-                    ? "bg-[#b1f128] text-[#010501] font-semibold"
-                    : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-                }`}
+                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${currentPage === 3
+                  ? "bg-[#b1f128] text-[#010501] font-semibold"
+                  : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
+                  }`}
               >
                 3
               </button>
@@ -624,7 +639,7 @@ export function MarketTable({ activeTab = "Hot", searchQuery = "", sortBy = 'non
             aria-label="Next page"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="rotate-180 w-4 lg:w-4 xl:w-5 2xl:w-6 h-4 lg:h-4 xl:h-5 2xl:h-6">
-              <path d="M15 18L9 12L15 6" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M15 18L9 12L15 6" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>

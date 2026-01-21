@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -12,52 +12,131 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import MarketTableRowSkeleton from "./market-table-row-skeleton";
-import type { MarketToken } from "@/lib/market/mock-data";
+import { useNetworkFilterStore } from "@/lib/frontend/store/network-store";
+import { useMarketPairsBatch } from "@/hooks/useMarketPairsBatch";
+import { PairLogoStack } from "@/components/ui/pair-logo-stack";
+import { SubscriptPairPrice } from "@/components/ui/subscript-pair-price";
+import { SubscriptUSDPrice } from "@/components/ui/subscript-usd-price";
+import { formatPercentageChange, formatNumber } from "@/lib/frontend/utils/price-formatter";
+import type { MarketTokenPair } from "@/lib/backend/types/backend-tokens";
+import type { Token } from "@/lib/frontend/types/tokens";
 
 interface MarketTableProps {
-  tokens: MarketToken[];
-  isLoading?: boolean;
+  activeSubTab: "Favourite" | "Top" | "Spotlight" | "New" | "Gainers" | "Losers";
+  searchQuery: string;
+  sortBy: 'volume' | 'liquidity' | 'performance' | 'none';
+  onSortChange: (sort: 'volume' | 'liquidity' | 'performance' | 'none') => void;
   marketType?: "spot" | "perp";
 }
 
-export default function MarketTable({ 
-  tokens, 
-  isLoading = false,
+/**
+ * Helper to transform backend MarketTokenPair to frontend Token format
+ */
+const marketPairToToken = (pair: MarketTokenPair): Token => {
+  const { baseToken, quoteToken } = pair;
+  return {
+    id: `${pair.chainId}-${baseToken.address.toLowerCase()}`,
+    name: baseToken.name,
+    symbol: baseToken.symbol,
+    address: baseToken.address,
+    logo: baseToken.logoURI,
+    logoURI: baseToken.logoURI,
+    chain: pair.chainName,
+    chainId: pair.chainId,
+    decimals: baseToken.decimals,
+    price: pair.pairPrice || baseToken.priceUSD,
+    priceChange24h: pair.priceChange24h,
+    volume24h: pair.volume24h,
+    liquidity: pair.liquidity,
+    marketCap: pair.marketCap,
+    transactionCount: pair.transactionCount,
+    // Store pair info for specific rendering
+    pair: pair,
+  };
+};
+
+export default function MarketTable({
+  activeSubTab,
+  searchQuery,
+  sortBy,
+  onSortChange,
   marketType = "spot"
 }: MarketTableProps) {
   const router = useRouter();
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const scrollYContainerRef = useRef<HTMLDivElement | null>(null);
-  
-  // Navigate to trading page when row is clicked
-  const handleRowClick = (token: MarketToken) => {
-    // Convert symbol to pair format (e.g., "BTC" -> "BTC-USDT", "BTC-PERP" -> "BTC-USDT")
-    const baseSymbol = token.symbol.replace("-PERP", "");
-    const pair = `${baseSymbol}-USDT`;
-    router.push(`/market/${pair}`);
+
+  const { selectedNetworkSlug } = useNetworkFilterStore();
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 60; // Fetch 3 CoinGecko pages (20 each)
+
+  // Mapping subtabs to API categories
+  const categoryMap: Record<string, 'hot' | 'new' | 'gainers' | 'losers' | null> = {
+    Top: 'hot',
+    Spotlight: 'hot', // Spotlight can map to Hot for now
+    New: 'new',
+    Gainers: 'gainers',
+    Losers: 'losers',
+    Favourite: null,
   };
 
-  // Pagination - show 50 rows at a time (market page shows more pairs)
-  const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 50;
-  const totalPages = Math.ceil(tokens.length / rowsPerPage);
-  const startIndex = (currentPage - 1) * rowsPerPage;
-  const endIndex = startIndex + rowsPerPage;
-  const displayedTokens = tokens.slice(startIndex, endIndex);
+  const activeCategory = categoryMap[activeSubTab] || 'hot';
+
+  // Reset to page 1 when network or category changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedNetworkSlug, activeSubTab]);
+
+  // Fetch real data in batches (60 items)
+  const {
+    pairs: marketPairs,
+    isLoading,
+    total
+  } = useMarketPairsBatch({
+    category: activeCategory,
+    network: selectedNetworkSlug || undefined,
+    uiPage: currentPage,
+    uiRowsPerPage: rowsPerPage,
+  });
+
+  // Transform to tokens
+  const tokens = useMemo(() => {
+    let result = marketPairs.map(marketPairToToken);
+
+    // Apply client-side search
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        t => t.symbol.toLowerCase().includes(query) || t.name.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply sorting
+    if (sortBy !== 'none') {
+      result.sort((a, b) => {
+        if (sortBy === 'volume') return (b.volume24h || 0) - (a.volume24h || 0);
+        if (sortBy === 'liquidity') return (b.liquidity || 0) - (a.liquidity || 0);
+        if (sortBy === 'performance') return (b.priceChange24h || 0) - (a.priceChange24h || 0);
+        return 0;
+      });
+    }
+
+    return result;
+  }, [marketPairs, searchQuery, sortBy]);
+
+  const handleRowClick = (token: Token) => {
+    // If it's a pair, use the pool address or symbol
+    const symbol = token.symbol;
+    router.push(`/market/${symbol}-USDT`);
+  };
 
   const changePage = (page: number) => {
-    const clamped = Math.min(Math.max(page, 1), totalPages || 1);
-    if (clamped === currentPage) return;
-    setCurrentPage(clamped);
+    if (page < 1) return;
+    setCurrentPage(page);
     if (scrollYContainerRef.current) {
       scrollYContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
-
-  // Reset to page 1 when tokens change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [tokens.length]);
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden relative">
@@ -67,138 +146,137 @@ export default function MarketTable({
         className="flex-1 overflow-y-auto market-table-scrollbar min-h-0"
       >
         {/* Horizontal scroll container */}
-        <div className="overflow-x-auto market-table-scrollbar pr-6">
+        <div className="overflow-x-auto market-table-scrollbar">
           <div className="min-w-[1129px]">
             <Table className="table-auto w-full relative">
               <TableHeader className="sticky top-0 z-30 bg-[#010501]">
                 <TableRow className="border-b-[0.5px] border-[#1f261e] hover:bg-transparent">
-                  <TableHead className="w-[140px] lg:w-[120px] xl:w-[132px] 2xl:w-[140px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-left text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
+                  <TableHead className="w-[200px] px-6 py-4 text-left text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
                     Token
                   </TableHead>
-                  <TableHead className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
+                  <TableHead className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
                     Price
                   </TableHead>
-                  <TableHead className="w-[81px] lg:w-[72px] xl:w-[81px] 2xl:w-[81px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
-                    24h Change
+                  <TableHead
+                    className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-white"
+                    onClick={() => onSortChange(sortBy === 'performance' ? 'none' : 'performance')}
+                  >
+                    24h Change {sortBy === 'performance' && '↓'}
                   </TableHead>
-                  <TableHead className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
-                    24h Vol
+                  <TableHead
+                    className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-white"
+                    onClick={() => onSortChange(sortBy === 'volume' ? 'none' : 'volume')}
+                  >
+                    24h Vol {sortBy === 'volume' && '↓'}
                   </TableHead>
-                  <TableHead className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
-                    Liquidity
+                  <TableHead
+                    className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501] cursor-pointer hover:text-white"
+                    onClick={() => onSortChange(sortBy === 'liquidity' ? 'none' : 'liquidity')}
+                  >
+                    Liquidity {sortBy === 'liquidity' && '↓'}
                   </TableHead>
-                  <TableHead className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
-                    Holders
+                  <TableHead className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
+                    Market Cap
                   </TableHead>
                   {marketType === "perp" && (
                     <>
-                      <TableHead className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
+                      <TableHead className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
                         Funding Rate
                       </TableHead>
-                      <TableHead className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-right text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
+                      <TableHead className="w-[120px] px-6 py-4 text-right text-[14px] text-[#7c7c7c] font-semibold bg-[#010501]">
                         Open Interest
                       </TableHead>
                     </>
                   )}
-                  <TableHead className="w-[88px] lg:w-[70px] xl:w-[78px] 2xl:w-[88px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-2 sm:py-2.5 2xl:py-[10px] text-center text-[12px] sm:text-[13px] xl:text-[14px] text-[#7c7c7c] font-semibold bg-[#010501] sticky right-0 z-40 shadow-[-8px_0_12px_rgba(0,0,0,0.45)]">
+                  <TableHead className="w-[110px] px-6 py-4 text-center text-[14px] text-[#7c7c7c] font-semibold bg-[#010501] sticky right-0 z-40 shadow-[-8px_0_12px_rgba(0,0,0,0.45)]">
                     Buy/Sell
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  Array.from({ length: 10 }).map((_, idx) => (
+                  Array.from({ length: 15 }).map((_, idx) => (
                     <MarketTableRowSkeleton key={`skeleton-${idx}`} includePerpColumns={marketType === "perp"} />
                   ))
                 ) : (
-                  displayedTokens.map((token, idx) => {
-                    const rowId = `row-${token.symbol}-${startIndex + idx}`;
-                        const isHovered = hoveredRowId === rowId;
+                  tokens.map((token, idx) => {
+                    const rowId = `row-${token.id}-${idx}`;
+                    const isHovered = hoveredRowId === rowId;
+                    const pair = token.pair;
+
                     return (
                       <TableRow
-                        key={token.symbol}
-                        data-row-id={rowId}
+                        key={token.id}
                         onMouseEnter={() => setHoveredRowId(rowId)}
                         onMouseLeave={() => setHoveredRowId(null)}
                         onClick={() => handleRowClick(token)}
-                        className={`border-b-[0.5px] border-[#1f261e] transition-colors cursor-pointer ${
-                          isHovered ? "bg-[#0b0f0a]" : ""
-                        }`}
+                        className={`border-b-[0.5px] border-[#1f261e] transition-colors cursor-pointer ${isHovered ? "bg-[#0b0f0a]" : ""
+                          }`}
                       >
-                        <TableCell className="w-[140px] lg:w-[120px] xl:w-[132px] 2xl:w-[140px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-white text-[13px] sm:text-[14px] xl:text-[16px] font-semibold">
-                          <div className="flex items-center gap-1.5 sm:gap-2">
+                        <TableCell className="px-6 py-5">
+                          <div className="flex items-center gap-3">
                             <Image
                               src="/assets/icons/home/star.svg"
                               alt="star"
-                              width={20}
-                              height={20}
-                              className="w-4 h-4 sm:w-4 sm:h-4 xl:w-5 xl:h-5 shrink-0"
+                              width={18}
+                              height={18}
+                              className="shrink-0 opacity-40 hover:opacity-100 transition-opacity"
                             />
-                            <Image
-                              src={token.icon}
-                              alt={token.symbol}
-                              width={32}
-                              height={32}
-                              className="w-7 h-7 sm:w-7 sm:h-7 xl:w-8 xl:h-8 shrink-0"
-                            />
-                            <span className="whitespace-nowrap">{token.symbol}</span>
+                            {pair ? (
+                              <PairLogoStack
+                                baseLogo={pair.baseToken.logoURI}
+                                quoteLogo={pair.quoteToken.logoURI}
+                                baseSymbol={pair.baseToken.symbol}
+                                quoteSymbol={pair.quoteToken.symbol}
+                                size="md"
+                              />
+                            ) : (
+                              <Image src={token.logo || ''} alt={token.symbol} width={32} height={32} className="rounded-full" />
+                            )}
+                            <div className="flex flex-col">
+                              <span className="text-white font-bold text-[16px]">{token.symbol}/{pair?.quoteToken.symbol || 'USDT'}</span>
+                              <span className="text-[#7c7c7c] text-[12px]">{token.name}</span>
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-white text-[13px] sm:text-[14px] xl:text-[16px] font-medium">
-                          {token.price}
+                        <TableCell className="px-6 py-5 text-right">
+                          <div className="flex flex-col items-end">
+                            {pair ? (
+                              <SubscriptPairPrice price={pair.pairPrice || '0'} quoteSymbol={pair.quoteToken.symbol} className="text-white font-semibold text-[16px]" />
+                            ) : (
+                              <SubscriptUSDPrice price={token.price || '0'} className="text-white font-semibold text-[16px]" />
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell
-                          className={`w-[81px] lg:w-[72px] xl:w-[81px] 2xl:w-[81px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-[13px] sm:text-[14px] xl:text-[16px] font-medium ${
-                            token.changePositive ? "text-[#3fea9b]" : "text-[#ff5c5c]"
-                          }`}
-                        >
-                          {token.change}
+                        <TableCell className={`px-6 py-5 text-right font-medium text-[16px] ${(token.priceChange24h || 0) >= 0 ? "text-[#3fea9b]" : "text-[#ff5c5c]"
+                          }`}>
+                          {formatPercentageChange(token.priceChange24h)}
                         </TableCell>
-                        <TableCell className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-white text-[13px] sm:text-[14px] xl:text-[16px] font-medium">
-                          {token.vol}
+                        <TableCell className="px-6 py-5 text-right text-white font-medium text-[16px]">
+                          ${formatNumber(token.volume24h, true)}
                         </TableCell>
-                        <TableCell className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-white text-[13px] sm:text-[14px] xl:text-[16px] font-medium">
-                          {token.liq}
+                        <TableCell className="px-6 py-5 text-right text-white font-medium text-[16px]">
+                          ${formatNumber(token.liquidity, true)}
                         </TableCell>
-                        <TableCell className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-white text-[13px] sm:text-[14px] xl:text-[16px] font-medium">
-                          {token.holders}
+                        <TableCell className="px-6 py-5 text-right text-white font-medium text-[16px]">
+                          ${formatNumber(token.marketCap, true)}
                         </TableCell>
+
                         {marketType === "perp" && (
                           <>
-                            <TableCell className={`w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-[13px] sm:text-[14px] xl:text-[16px] font-medium ${
-                              token.fundingRate?.startsWith('+') ? "text-[#3fea9b]" : token.fundingRate?.startsWith('-') ? "text-[#ff5c5c]" : "text-white"
-                            }`}>
-                              {token.fundingRate || "N/A"}
-                            </TableCell>
-                            <TableCell className="w-[80px] lg:w-[70px] xl:w-[80px] 2xl:w-[80px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-right text-white text-[13px] sm:text-[14px] xl:text-[16px] font-medium">
-                              {token.openInterest || "N/A"}
-                            </TableCell>
+                            <TableCell className="px-6 py-5 text-right text-white font-medium text-[16px]">0.01%</TableCell>
+                            <TableCell className="px-6 py-5 text-right text-white font-medium text-[16px]">$1.2M</TableCell>
                           </>
                         )}
-                        <TableCell className="w-[95px] lg:w-[80px] xl:w-[86px] 2xl:w-[96px] px-3 sm:px-4 xl:px-5 2xl:px-6 py-[14px] sm:py-[16px] xl:py-5 2xl:py-5 text-center sticky right-0 bg-[#010501] z-30 shadow-[-8px_0_12px_rgba(0,0,0,0.45)]">
-                          <div className="flex justify-center items-center">
-                            <button
-                              className={`bg-[#081F02] flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 w-[46px] h-[36px] xl:w-[50px] xl:h-[40px] min-w-[46px] hover:opacity-95 ${
-                                isHovered
-                                  ? "px-3 xl:px-4 py-2 gap-2 min-w-[86px] h-[38px] xl:h-[42px] opacity-100"
-                                  : ""
+
+                        <TableCell className="px-6 py-5 text-center sticky right-0 bg-[#010501] z-30 shadow-[-8px_0_12px_rgba(0,0,0,0.45)]">
+                          <button
+                            className={`bg-[#081F02] mx-auto flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 w-[46px] h-[36px] hover:opacity-95 ${isHovered ? "w-[90px] gap-2" : ""
                               }`}
-                              aria-label={`Trade ${token.symbol}`}
-                            >
-                              <Image
-                                src="/assets/icons/home/trade.svg"
-                                alt="trade"
-                                width={24}
-                                height={24}
-                                className="w-5 h-5"
-                              />
-                              {isHovered && (
-                                <span className="text-[#b1f128] text-[12.5px] lg:text-[13px] xl:text-[14px] font-semibold leading-none whitespace-nowrap">
-                                  Trade
-                                </span>
-                              )}
-                            </button>
-                          </div>
+                          >
+                            <Image src="/assets/icons/home/trade.svg" alt="trade" width={22} height={22} />
+                            {isHovered && <span className="text-[#b1f128] text-[14px] font-semibold">Trade</span>}
+                          </button>
                         </TableCell>
                       </TableRow>
                     );
@@ -211,105 +289,37 @@ export default function MarketTable({
       </div>
 
       {/* Pagination Controls */}
-      {!isLoading && totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 lg:gap-2 xl:gap-2.5 2xl:gap-2.5 px-3 lg:px-4 xl:px-5 2xl:px-6 py-2 lg:py-2.5 xl:py-2.5 2xl:py-3 bg-[#010501]">
+      {!isLoading && (
+        <div className="flex items-center justify-center gap-4 py-6 bg-[#010501] border-t border-[#1f261e]">
           <button
             onClick={() => changePage(currentPage - 1)}
             disabled={currentPage === 1}
-            className="bg-[#0b0f0a] border border-[#1f261e] flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-80"
-            aria-label="Previous page"
+            className="bg-[#0b0f0a] border border-[#1f261e] p-2 rounded-lg disabled:opacity-30 hover:bg-[#1a1f19] transition-colors"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-4 lg:w-4 xl:w-5 2xl:w-6 h-4 lg:h-4 xl:h-5 2xl:h-6">
-              <path d="M15 18L9 12L15 6" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <Image src="/assets/icons/home/arrow-down-01.svg" alt="prev" width={20} height={20} className="rotate-90 opacity-60" />
           </button>
-          
-          {/* Page Numbers */}
-          <div className="flex items-center gap-1.5 lg:gap-2 xl:gap-2.5 2xl:gap-2.5">
-            {/* Always show page 1 */}
-            <button
-              onClick={() => changePage(1)}
-              className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                currentPage === 1
-                  ? "bg-[#b1f128] text-[#010501] font-semibold"
-                  : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-              }`}
-            >
-              1
-            </button>
-            
-            {/* Show page 2 if on page 1, 2, or 3 */}
-            {currentPage <= 3 && (
+
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4, 5].map((p) => (
               <button
-                onClick={() => changePage(2)}
-                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                  currentPage === 2
-                    ? "bg-[#b1f128] text-[#010501] font-semibold"
-                    : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-                }`}
+                key={p}
+                onClick={() => changePage(p)}
+                className={`w-9 h-9 rounded-lg flex items-center justify-center text-[15px] font-medium transition-colors ${currentPage === p
+                    ? 'bg-[#b1f128] text-black font-bold'
+                    : 'text-[#7c7c7c] hover:text-white hover:bg-[#0b0f0a]'
+                  }`}
               >
-                2
+                {p}
               </button>
-            )}
-            
-            {/* Show page 3 if on page 1, 2, or 3 */}
-            {currentPage <= 3 && totalPages >= 3 && (
-              <button
-                onClick={() => changePage(3)}
-                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                  currentPage === 3
-                    ? "bg-[#b1f128] text-[#010501] font-semibold"
-                    : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-                }`}
-              >
-                3
-              </button>
-            )}
-            
-            {/* Show ellipsis if current page is far from start */}
-            {currentPage > 4 && (
-              <span className="text-xs lg:text-sm xl:text-base 2xl:text-base font-medium text-[#b5b5b5] px-0.5 lg:px-0.5 xl:px-1 2xl:px-1">...</span>
-            )}
-            
-            {/* Show current page if it's in the middle */}
-            {currentPage > 3 && currentPage < totalPages - 2 && (
-              <button
-                onClick={() => changePage(currentPage)}
-                className="bg-[#b1f128] flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base font-semibold text-[#010501] min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px]"
-              >
-                {currentPage}
-              </button>
-            )}
-            
-            {/* Show ellipsis before last page if needed */}
-            {currentPage < totalPages - 2 && totalPages > 5 && (
-              <span className="text-xs lg:text-sm xl:text-base 2xl:text-base font-medium text-[#b5b5b5] px-0.5 lg:px-0.5 xl:px-1 2xl:px-1">...</span>
-            )}
-            
-            {/* Show last page if not already shown */}
-            {totalPages > 3 && (
-              <button
-                onClick={() => changePage(totalPages)}
-                className={`flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg text-xs lg:text-sm xl:text-base 2xl:text-base transition-colors min-w-[20px] lg:min-w-[22px] xl:min-w-[24px] 2xl:min-w-[24px] h-[20px] lg:h-[22px] xl:h-[24px] 2xl:h-[24px] ${
-                  currentPage === totalPages
-                    ? "bg-[#b1f128] text-[#010501] font-semibold"
-                    : "bg-[#0b0f0a] border border-[#1f261e] text-[#b5b5b5] font-medium hover:bg-[#081f02]"
-                }`}
-              >
-                {totalPages}
-              </button>
-            )}
+            ))}
+            <span className="text-[#3a3a3a]">...</span>
           </div>
-          
+
           <button
             onClick={() => changePage(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            className="bg-[#0b0f0a] border border-[#1f261e] flex items-center justify-center p-1.5 lg:p-1.5 xl:p-2 2xl:p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-80"
-            aria-label="Next page"
+            className="bg-[#0b0f0a] border border-[#1f261e] p-2 rounded-lg hover:bg-[#1a1f19] transition-colors"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="rotate-180 w-4 lg:w-4 xl:w-5 2xl:w-6 h-4 lg:h-4 xl:h-5 2xl:h-6">
-              <path d="M15 18L9 12L15 6" stroke="#b5b5b5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <Image src="/assets/icons/home/arrow-down-01.svg" alt="next" width={20} height={20} className="-rotate-90 opacity-60" />
           </button>
         </div>
       )}

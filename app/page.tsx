@@ -16,11 +16,16 @@ import { SmartMarketsMarquee } from "@/components/home/smart-markets-marquee";
 import { NetworkSelector } from "@/components/home/network-selector";
 import Image from "next/image";
 
+import { usePrefetchMarkets } from "@/hooks/usePrefetchMarkets";
+
 type TabKey = "Favourite" | "Hot" | "New" | "Gainers" | "Losers";
 type MobileTabKey = "Favourite" | "Top" | "Spotlight" | "New" | "Gainers" | "Losers";
 
 export default function HomePage() {
+
+  usePrefetchMarkets();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabKey>("Hot");
   const [activeMobileTab, setActiveMobileTab] = useState<MobileTabKey>("Top");
   const [searchQuery, setSearchQuery] = useState("");

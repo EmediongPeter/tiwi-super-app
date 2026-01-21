@@ -1,36 +1,23 @@
-"use client";
-
 import { useState, useRef, useEffect } from "react";
 import { NetworkSelectorTrigger } from "./network-selector-trigger";
-import { NetworkSelectorDropdown, STATIC_CHAINS } from "./network-selector-dropdown";
-
-interface NetworkSelectorProps {
-    /** Optional callback when selection changes (for future implementation) */
-    onSelectionChange?: (selectedChains: string[]) => void;
-}
+import { NetworkSelectorDropdown } from "./network-selector-dropdown";
+import { useChainsQuery } from "@/hooks/useChainsQuery";
+import { useNetworkFilterStore } from "@/lib/frontend/store/network-store";
 
 /**
  * Network Selector Component
  * 
- * A dropdown component for filtering tokens by blockchain network.
- * Styled after PancakeSwap's network selector with Tiwi's brand colors.
- * 
- * Features:
- * - Pill-shaped trigger with stacked chain icons
- * - Dropdown with "All networks" toggle and individual chain checkboxes
- * - Click-outside to close
- * - Smooth animations
- * 
- * Note: Currently static - functionality will be added later.
+ * Dynamically fetches chains and manages global network filtering state.
  */
-export function NetworkSelector({ onSelectionChange }: NetworkSelectorProps) {
+export function NetworkSelector() {
     const [isOpen, setIsOpen] = useState(false);
-    const [allSelected, setAllSelected] = useState(true);
-    const [selectedChains, setSelectedChains] = useState<string[]>(
-        STATIC_CHAINS.map(chain => chain.id)
-    );
-
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // Fetch real chains from backend
+    const { data: chains = [], isLoading } = useChainsQuery();
+
+    // Get/Set global filter state
+    const { selectedChainId, setNetwork } = useNetworkFilterStore();
 
     // Handle click outside to close dropdown
     useEffect(() => {
@@ -49,61 +36,34 @@ export function NetworkSelector({ onSelectionChange }: NetworkSelectorProps) {
         };
     }, [isOpen]);
 
-    // Handle toggle for "All networks"
-    const handleToggleAll = () => {
-        const newAllSelected = !allSelected;
-        setAllSelected(newAllSelected);
-
-        if (newAllSelected) {
-            setSelectedChains(STATIC_CHAINS.map(chain => chain.id));
-        } else {
-            setSelectedChains([]);
-        }
-
-        onSelectionChange?.(newAllSelected ? STATIC_CHAINS.map(chain => chain.id) : []);
+    const handleSelect = (chainId: number | null, slug: string | null) => {
+        setNetwork(chainId, slug);
+        setIsOpen(false);
     };
 
-    // Handle toggle for individual chain
-    const handleToggleChain = (chainId: string) => {
-        let newSelectedChains: string[];
-
-        if (selectedChains.includes(chainId)) {
-            // Remove chain
-            newSelectedChains = selectedChains.filter(id => id !== chainId);
-        } else {
-            // Add chain
-            newSelectedChains = [...selectedChains, chainId];
-        }
-
-        setSelectedChains(newSelectedChains);
-
-        // Update allSelected status
-        const allAreSelected = newSelectedChains.length === STATIC_CHAINS.length;
-        setAllSelected(allAreSelected);
-
-        onSelectionChange?.(newSelectedChains);
-    };
+    if (isLoading && chains.length === 0) {
+        return <div className="w-[140px] h-9 bg-[#0b0f0a] border border-[#1f261e] rounded-full animate-pulse" />;
+    }
 
     return (
         <div ref={containerRef} className="relative">
             {/* Trigger Button */}
             <NetworkSelectorTrigger
                 isOpen={isOpen}
-                selectedCount={selectedChains.length}
-                totalChains={STATIC_CHAINS.length}
-                allSelected={allSelected}
+                selectedChainId={selectedChainId}
+                chains={chains}
                 onClick={() => setIsOpen(!isOpen)}
             />
 
             {/* Dropdown Panel */}
             {isOpen && (
                 <NetworkSelectorDropdown
-                    selectedChains={selectedChains}
-                    allSelected={allSelected}
-                    onToggleAll={handleToggleAll}
-                    onToggleChain={handleToggleChain}
+                    chains={chains}
+                    selectedChainId={selectedChainId}
+                    onSelect={handleSelect}
                 />
             )}
         </div>
     );
 }
+
