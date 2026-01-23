@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Image from "next/image";
 import { IoArrowBack, IoChevronForward, IoChevronDown, IoRefresh, IoBugOutline } from "react-icons/io5";
 import { FiCopy, FiCheck, FiDownload, FiTrash2, FiFile, FiSettings, FiMail, FiSend, FiPlus, FiUpload } from "react-icons/fi";
@@ -50,7 +50,7 @@ const recoveryPhrase = [
 ];
 
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [currentView, setCurrentView] = useState<SettingsView>("main");
@@ -105,7 +105,7 @@ export default function SettingsPage() {
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
   const [userBugReports, setUserBugReports] = useState<BugReport[]>([]);
   const [isLoadingBugReports, setIsLoadingBugReports] = useState(false);
-  
+
   // FAQ state
   interface FAQ {
     id: string;
@@ -117,7 +117,7 @@ export default function SettingsPage() {
   }
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [isLoadingFAQs, setIsLoadingFAQs] = useState(false);
-  
+
   // Live Status state
   interface LiveStatus {
     id: string;
@@ -127,7 +127,7 @@ export default function SettingsPage() {
   }
   const [liveStatuses, setLiveStatuses] = useState<LiveStatus[]>([]);
   const [isLoadingLiveStatuses, setIsLoadingLiveStatuses] = useState(false);
-  
+
   // Tutorial state
   interface Tutorial {
     id: string;
@@ -141,7 +141,7 @@ export default function SettingsPage() {
   }
   const [tutorials, setTutorials] = useState<Tutorial[]>([]);
   const [isLoadingTutorials, setIsLoadingTutorials] = useState(false);
-  
+
   // Fetch FAQs from API
   const fetchFAQs = async () => {
     setIsLoadingFAQs(true);
@@ -159,7 +159,7 @@ export default function SettingsPage() {
       setIsLoadingFAQs(false);
     }
   };
-  
+
   // Fetch Tutorials from API
   const fetchTutorials = async () => {
     setIsLoadingTutorials(true);
@@ -177,7 +177,7 @@ export default function SettingsPage() {
       setIsLoadingTutorials(false);
     }
   };
-  
+
   // Fetch Live Statuses from API
   const fetchLiveStatuses = async () => {
     setIsLoadingLiveStatuses(true);
@@ -195,28 +195,28 @@ export default function SettingsPage() {
       setIsLoadingLiveStatuses(false);
     }
   };
-  
+
   // Fetch FAQs when FAQs view is active
   useEffect(() => {
     if (currentView === "faqs") {
       fetchFAQs();
     }
   }, [currentView]);
-  
+
   // Fetch Tutorials when tutorials view is active
   useEffect(() => {
     if (currentView === "tutorials") {
       fetchTutorials();
     }
   }, [currentView]);
-  
+
   // Fetch Live Statuses when live-status view is active
   useEffect(() => {
     if (currentView === "live-status") {
       fetchLiveStatuses();
     }
   }, [currentView]);
-  
+
   // Helper functions for live status display
   const getStatusColor = (status: LiveStatus['status']) => {
     switch (status) {
@@ -231,7 +231,7 @@ export default function SettingsPage() {
         return "bg-[#7c7c7c] text-white";
     }
   };
-  
+
   const getStatusLabel = (status: LiveStatus['status']) => {
     switch (status) {
       case "operational":
@@ -322,13 +322,13 @@ export default function SettingsPage() {
     // Fetch when wallet is connected or when viewing bug reports
     if (currentView === "view-bug-reports" || currentView === "report-bug" || currentView === "create-bug-report") {
       fetchUserBugReports();
-      
+
       // Set up polling to refresh bug reports every 30 seconds when viewing
       if (currentView === "view-bug-reports") {
         const interval = setInterval(() => {
           fetchUserBugReports();
         }, 30000); // Refresh every 30 seconds
-        
+
         return () => clearInterval(interval);
       }
     }
@@ -400,11 +400,11 @@ export default function SettingsPage() {
       // Get device info if enabled
       const deviceInfo = sendDeviceInfo
         ? {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
-            language: navigator.language,
-            screenResolution: `${window.screen.width}x${window.screen.height}`,
-          }
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language,
+          screenResolution: `${window.screen.width}x${window.screen.height}`,
+        }
         : undefined;
 
       // Submit bug report
@@ -467,8 +467,8 @@ export default function SettingsPage() {
       label: name,
     });
 
-      setNewWalletName("");
-      setCurrentView("main");
+    setNewWalletName("");
+    setCurrentView("main");
   };
 
   const handleGoBack = () => {
@@ -507,7 +507,7 @@ export default function SettingsPage() {
   };
 
   const { t } = useTranslation();
-  
+
   const settingsMenuItems = [
     { label: t("settings.account_details"), view: "main" as SettingsView },
     { label: t("settings.connected_devices"), view: "connected-devices" as SettingsView },
@@ -534,17 +534,17 @@ export default function SettingsPage() {
               );
               params.set("view", view);
               router.replace(`/settings?${params.toString()}`);
-            } catch {}
+            } catch { }
           }}
           onGoBack={handleGoBack}
           walletName={
             hasWalletConnected
               ? activeManagedWallet?.label ||
-                (activeManagedWallet
-                  ? activeManagedWallet.isLocal
-                    ? "Local Wallet"
-                    : walletSourceLabel || "Wallet"
-                  : "Wallet")
+              (activeManagedWallet
+                ? activeManagedWallet.isLocal
+                  ? "Local Wallet"
+                  : walletSourceLabel || "Wallet"
+                : "Wallet")
               : "No wallet connected"
           }
           walletAddress={walletAddress}
@@ -630,16 +630,16 @@ export default function SettingsPage() {
                 );
                 params.set("view", view);
                 router.replace(`/settings?${params.toString()}`);
-              } catch {}
+              } catch { }
             }}
             walletName={
               hasWalletConnected
                 ? activeManagedWallet?.label ||
-                  (activeManagedWallet
-                    ? activeManagedWallet.isLocal
-                      ? "Local Wallet"
-                      : walletSourceLabel || "Wallet"
-                    : "Wallet")
+                (activeManagedWallet
+                  ? activeManagedWallet.isLocal
+                    ? "Local Wallet"
+                    : walletSourceLabel || "Wallet"
+                  : "Wallet")
                 : "No wallet connected"
             }
             walletAddress={walletAddress}
@@ -1464,11 +1464,11 @@ export default function SettingsPage() {
                     // Filter FAQs based on search term
                     const searchTerm = faqSearch.toLowerCase().trim();
                     const filteredFAQs = searchTerm
-                      ? faqs.filter((faq) => 
-                          faq.question.toLowerCase().includes(searchTerm) ||
-                          faq.answer.toLowerCase().includes(searchTerm) ||
-                          faq.category.toLowerCase().includes(searchTerm)
-                        )
+                      ? faqs.filter((faq) =>
+                        faq.question.toLowerCase().includes(searchTerm) ||
+                        faq.answer.toLowerCase().includes(searchTerm) ||
+                        faq.category.toLowerCase().includes(searchTerm)
+                      )
                       : faqs;
 
                     if (filteredFAQs.length === 0) {
@@ -1506,9 +1506,8 @@ export default function SettingsPage() {
                           </div>
                           <IoChevronDown
                             size={20}
-                            className={`text-[#B5B5B5] opacity-60 transition-transform shrink-0 ml-2 ${
-                              expandedFaq === faq.id ? "rotate-180" : ""
-                            }`}
+                            className={`text-[#B5B5B5] opacity-60 transition-transform shrink-0 ml-2 ${expandedFaq === faq.id ? "rotate-180" : ""
+                              }`}
                           />
                         </button>
                         {expandedFaq === faq.id && (
@@ -1560,11 +1559,11 @@ export default function SettingsPage() {
                     const searchTerm = tutorialSearch.toLowerCase().trim();
                     const filteredTutorials = searchTerm
                       ? tutorials.filter((tutorial) => {
-                          const titleMatch = tutorial.title?.toLowerCase().includes(searchTerm) || false;
-                          const descMatch = tutorial.description?.toLowerCase().includes(searchTerm) || false;
-                          const categoryMatch = tutorial.category?.toLowerCase().includes(searchTerm) || false;
-                          return titleMatch || descMatch || categoryMatch;
-                        })
+                        const titleMatch = tutorial.title?.toLowerCase().includes(searchTerm) || false;
+                        const descMatch = tutorial.description?.toLowerCase().includes(searchTerm) || false;
+                        const categoryMatch = tutorial.category?.toLowerCase().includes(searchTerm) || false;
+                        return titleMatch || descMatch || categoryMatch;
+                      })
                       : tutorials;
 
                     if (filteredTutorials.length === 0) {
@@ -1601,7 +1600,7 @@ export default function SettingsPage() {
                                 <span className="text-[#6E7873] text-sm">No Image</span>
                               </div>
                             )}
-                            
+
                             {/* Content */}
                             <div className="p-4 flex-1 flex flex-col">
                               <div className="flex items-center gap-2 mb-2">
@@ -1872,7 +1871,7 @@ export default function SettingsPage() {
                   >
                     {isSubmittingBug ? "Submitting..." : "Submit Bug/Report"}
                   </button>
-                  
+
                   {!wallet.address && (
                     <p className="text-xs text-[#ff5c5c] text-center mt-2">
                       Please connect your wallet to submit a bug report.
@@ -2166,6 +2165,14 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageContent />
+    </Suspense>
   );
 }
 
